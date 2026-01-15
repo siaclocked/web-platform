@@ -42,11 +42,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        const { data: profile } = await supabase
+        let { data: profile } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
           .single();
+
+        // If user doesn't exist in users table, create them
+        if (!profile) {
+          // Create a default company first
+          const { data: company } = await supabase
+            .from('companies')
+            .select('id')
+            .eq('name', 'Default Company')
+            .single();
+
+          let companyId = company?.id;
+          
+          if (!companyId) {
+            const { data: newCompany } = await supabase
+              .from('companies')
+              .insert({ name: 'Default Company' })
+              .select('id')
+              .single();
+            companyId = newCompany?.id;
+          }
+
+          const { data: newProfile } = await supabase
+            .from('users')
+            .insert({
+              id: session.user.id,
+              email: session.user.email,
+              first_name: session.user.user_metadata?.first_name || 'New',
+              last_name: session.user.user_metadata?.last_name || 'User',
+              role: 'worker',
+              company_id: companyId,
+            })
+            .select()
+            .single();
+          
+          profile = newProfile;
+        }
 
         setUser(profile as User);
       } else if (event === 'SIGNED_OUT') {

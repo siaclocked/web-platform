@@ -22,19 +22,23 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      console.log('Sending OTP to:', email.trim().toLowerCase());
       const supabase = createClient();
 
-      const { error } = await supabase.auth.signInWithOtp({
+      const { data, error } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
           shouldCreateUser: true,
         },
       });
 
+      console.log('OTP response:', { data, error });
+
       if (error) throw error;
 
       setStep('otp');
     } catch (err) {
+      console.error('Send OTP error:', err);
       setError(err instanceof Error ? err.message : 'Failed to send OTP');
     } finally {
       setIsLoading(false);
@@ -47,18 +51,23 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
+      console.log('Verifying OTP:', otp);
       const supabase = createClient();
 
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
         token: otp,
         type: 'email',
       });
 
+      console.log('Verify OTP response:', { data, error });
+
       if (error) throw error;
 
+      console.log('OTP verified successfully, redirecting...');
       router.push('/dashboard');
     } catch (err) {
+      console.error('Verify OTP error:', err);
       setError(err instanceof Error ? err.message : 'Invalid OTP');
     } finally {
       setIsLoading(false);
@@ -130,7 +139,7 @@ export default function LoginPage() {
                     Check your email
                   </h2>
                   <p className="text-sm text-foreground-muted">
-                    We sent a 6-digit code to{' '}
+                    We sent a verification code to{' '}
                     <span className="text-foreground">{email}</span>
                   </p>
                 </div>
@@ -139,9 +148,9 @@ export default function LoginPage() {
                   type="text"
                   placeholder="123456"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
                   className="text-center text-2xl tracking-widest"
-                  maxLength={6}
+                  maxLength={8}
                   required
                   autoFocus
                 />
@@ -156,7 +165,7 @@ export default function LoginPage() {
                   type="submit"
                   className="w-full"
                   isLoading={isLoading}
-                  disabled={otp.length !== 6}
+                  disabled={otp.length < 6}
                 >
                   Verify
                 </Button>
