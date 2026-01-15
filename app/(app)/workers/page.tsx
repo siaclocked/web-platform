@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Modal, Badge, Avatar, Select } from '@/components/ui';
-import { Plus, Search, Phone, MapPin, Star, MoreVertical, UserPlus } from 'lucide-react';
+import { Plus, Search, Mail, MapPin, Star, MoreVertical, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 
 interface Worker {
   id: string;
   firstName: string;
   lastName: string;
-  phone: string;
+  email: string;
   skills: string[];
   places: string[];
   hourlyRate: number;
@@ -23,7 +23,7 @@ const mockWorkers: Worker[] = [
     id: '1',
     firstName: 'John',
     lastName: 'Doe',
-    phone: '+1 234 567 8901',
+    email: 'john.doe@example.com',
     skills: ['Waiter', 'Bartender'],
     places: ['Downtown Restaurant'],
     hourlyRate: 18,
@@ -34,7 +34,7 @@ const mockWorkers: Worker[] = [
     id: '2',
     firstName: 'Sarah',
     lastName: 'Miller',
-    phone: '+1 234 567 8902',
+    email: 'sarah.miller@example.com',
     skills: ['Cook'],
     places: ['Downtown Restaurant', 'Mall Location'],
     hourlyRate: 22,
@@ -45,7 +45,7 @@ const mockWorkers: Worker[] = [
     id: '3',
     firstName: 'Mike',
     lastName: 'Johnson',
-    phone: '+1 234 567 8903',
+    email: 'mike.johnson@example.com',
     skills: ['Security'],
     places: ['Airport Branch'],
     hourlyRate: 20,
@@ -56,7 +56,7 @@ const mockWorkers: Worker[] = [
     id: '4',
     firstName: 'Emily',
     lastName: 'Brown',
-    phone: '+1 234 567 8904',
+    email: 'emily.brown@example.com',
     skills: ['Waiter'],
     places: ['Mall Location'],
     hourlyRate: 16,
@@ -85,7 +85,7 @@ export default function WorkersPage() {
   const [newWorker, setNewWorker] = useState({
     firstName: '',
     lastName: '',
-    phone: '',
+    email: '',
     hourlyRate: '',
   });
 
@@ -93,17 +93,17 @@ export default function WorkersPage() {
     (worker) =>
       worker.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       worker.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      worker.phone.includes(searchQuery)
+      worker.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleAddWorker = () => {
-    if (!newWorker.firstName || !newWorker.phone) return;
+    if (!newWorker.firstName || !newWorker.email) return;
 
     const worker: Worker = {
       id: Date.now().toString(),
       firstName: newWorker.firstName,
       lastName: newWorker.lastName,
-      phone: newWorker.phone,
+      email: newWorker.email,
       skills: [],
       places: [],
       hourlyRate: parseFloat(newWorker.hourlyRate) || 15,
@@ -113,7 +113,7 @@ export default function WorkersPage() {
 
     setWorkers([...workers, worker]);
     setShowAddModal(false);
-    setNewWorker({ firstName: '', lastName: '', phone: '', hourlyRate: '' });
+    setNewWorker({ firstName: '', lastName: '', email: '', hourlyRate: '' });
   };
 
   const getStatusVariant = (status: Worker['status']) => {
@@ -169,8 +169,8 @@ export default function WorkersPage() {
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-foreground-muted">
-                  <Phone className="w-3 h-3" />
-                  <span>{worker.phone}</span>
+                  <Mail className="w-3 h-3" />
+                  <span>{worker.email}</span>
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {worker.skills.map((skill) => (
@@ -235,11 +235,12 @@ export default function WorkersPage() {
             />
           </div>
           <Input
-            label="Phone Number"
-            placeholder="+1 234 567 8900"
-            value={newWorker.phone}
+            label="Email"
+            type="email"
+            placeholder="worker@example.com"
+            value={newWorker.email}
             onChange={(e) =>
-              setNewWorker({ ...newWorker, phone: e.target.value })
+              setNewWorker({ ...newWorker, email: e.target.value })
             }
           />
           <Input
@@ -252,7 +253,7 @@ export default function WorkersPage() {
             }
           />
           <p className="text-xs text-foreground-muted">
-            An OTP will be sent to the worker&apos;s phone to complete registration
+            An OTP will be sent to the worker&apos;s email to complete registration
           </p>
           <div className="flex gap-3 pt-2">
             <Button
@@ -265,7 +266,7 @@ export default function WorkersPage() {
             <Button
               className="flex-1"
               onClick={handleAddWorker}
-              disabled={!newWorker.firstName || !newWorker.phone}
+              disabled={!newWorker.firstName || !newWorker.email}
             >
               Add Worker
             </Button>

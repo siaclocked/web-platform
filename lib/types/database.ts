@@ -13,14 +13,15 @@ export interface Company {
 
 export interface User {
   id: string;
-  phone: string;
-  email?: string;
+  email: string;
+  phone?: string;
   first_name: string;
   last_name: string;
   role: UserRole;
   company_id: string;
   avatar_url?: string;
   hourly_rate?: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }

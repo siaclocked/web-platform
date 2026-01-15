@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button, Input, Card, CardContent } from '@/components/ui';
-import { Mail, ArrowRight, Clock } from 'lucide-react';
+import { Phone, ArrowRight, Clock } from 'lucide-react';
 
-type Step = 'email' | 'otp';
+type Step = 'phone' | 'otp';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
+  const [step, setStep] = useState<Step>('phone');
+  const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -23,12 +23,10 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
+      const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
 
       const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
-        options: {
-          shouldCreateUser: true,
-        },
+        phone: formattedPhone,
       });
 
       if (error) throw error;
@@ -48,11 +46,12 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient();
+      const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
 
       const { error } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
+        phone: formattedPhone,
         token: otp,
-        type: 'email',
+        type: 'sms',
       });
 
       if (error) throw error;
@@ -63,10 +62,6 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const isValidEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
 
   return (
@@ -84,24 +79,24 @@ export default function LoginPage() {
 
         <Card>
           <CardContent className="pt-6">
-            {step === 'email' ? (
+            {step === 'phone' ? (
               <form onSubmit={handleSendOTP} className="space-y-4">
                 <div>
                   <h2 className="text-lg font-semibold text-foreground mb-1">
                     Welcome back
                   </h2>
                   <p className="text-sm text-foreground-muted">
-                    Enter your email to receive a verification code
+                    Enter your phone number to receive a verification code
                   </p>
                 </div>
 
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground-muted" />
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground-muted" />
                   <Input
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    type="tel"
+                    placeholder="+1 234 567 8900"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
                     className="pl-11"
                     required
                   />
@@ -117,7 +112,7 @@ export default function LoginPage() {
                   type="submit"
                   className="w-full"
                   isLoading={isLoading}
-                  disabled={!isValidEmail(email)}
+                  disabled={!phone.trim()}
                 >
                   Continue
                   <ArrowRight className="w-4 h-4 ml-2" />
@@ -127,11 +122,11 @@ export default function LoginPage() {
               <form onSubmit={handleVerifyOTP} className="space-y-4">
                 <div>
                   <h2 className="text-lg font-semibold text-foreground mb-1">
-                    Check your email
+                    Enter verification code
                   </h2>
                   <p className="text-sm text-foreground-muted">
                     We sent a 6-digit code to{' '}
-                    <span className="text-foreground">{email}</span>
+                    <span className="text-foreground">{phone}</span>
                   </p>
                 </div>
 
@@ -161,27 +156,17 @@ export default function LoginPage() {
                   Verify
                 </Button>
 
-                <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSendOTP}
-                    disabled={isLoading}
-                    className="w-full text-sm text-primary hover:text-primary-hover transition-colors disabled:opacity-50"
-                  >
-                    Resend code
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('email');
-                      setOtp('');
-                      setError('');
-                    }}
-                    className="w-full text-sm text-foreground-muted hover:text-foreground transition-colors"
-                  >
-                    Use a different email
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('phone');
+                    setOtp('');
+                    setError('');
+                  }}
+                  className="w-full text-sm text-foreground-muted hover:text-foreground transition-colors"
+                >
+                  Use a different phone number
+                </button>
               </form>
             )}
           </CardContent>

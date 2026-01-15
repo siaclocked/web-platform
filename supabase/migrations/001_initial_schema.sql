@@ -17,8 +17,8 @@ CREATE TABLE companies (
 CREATE TABLE users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
-  phone VARCHAR(20) NOT NULL UNIQUE,
-  email VARCHAR(255),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  phone VARCHAR(20),
   first_name VARCHAR(100) NOT NULL,
   last_name VARCHAR(100) NOT NULL,
   role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'manager', 'worker')),

@@ -134,18 +134,18 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Phone className="w-5 h-5 text-foreground-muted" />
+                <Mail className="w-5 h-5 text-foreground-muted" />
                 <div>
-                  <p className="text-xs text-foreground-muted">Phone</p>
-                  <p className="text-foreground">{user.phone}</p>
+                  <p className="text-xs text-foreground-muted">Email</p>
+                  <p className="text-foreground">{user.email}</p>
                 </div>
               </div>
-              {user.email && (
+              {user.phone && (
                 <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-foreground-muted" />
+                  <Phone className="w-5 h-5 text-foreground-muted" />
                   <div>
-                    <p className="text-xs text-foreground-muted">Email</p>
-                    <p className="text-foreground">{user.email}</p>
+                    <p className="text-xs text-foreground-muted">Phone</p>
+                    <p className="text-foreground">{user.phone}</p>
                   </div>
                 </div>
               )}
