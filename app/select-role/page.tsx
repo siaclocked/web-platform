@@ -67,11 +67,11 @@ export default function SelectRolePage() {
     setSelectedRole(role);
     setIsLoading(true);
 
-    // Redirect to appropriate login page based on role
+    // Redirect to appropriate login/signup page based on role
     setTimeout(() => {
       switch (role) {
         case 'company':
-          router.push('/login/company');
+          router.push('/signup/company');
           break;
         case 'manager':
           router.push('/login/manager');
