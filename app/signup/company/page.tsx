@@ -3,7 +3,6 @@
 import React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { Button, Input, Card, CardContent } from '@/components/ui';
 import { Building2, Mail, Lock, ArrowRight, Eye, EyeOff, Clock, User, Phone } from 'lucide-react';
 
@@ -57,62 +56,37 @@ export default function CompanySignupPage() {
         throw new Error('Password must be at least 8 characters long');
       }
 
-      const supabase = createClient();
-
-      // 1. Create the company
-      const { data: company, error: companyError } = await supabase
-        .from('companies')
-        .insert({
-          name: companyData.name.trim(),
-          timezone: companyData.timezone
+      console.log('Calling company signup API...');
+      
+      // Call the API route instead of direct database access
+      const response = await fetch('/api/signup/company', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyData,
+          adminData
         })
-        .select()
-        .single();
-
-      if (companyError) throw companyError;
-
-      // 2. Create the user account
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: adminData.email.trim().toLowerCase(),
-        password: adminData.password,
-        options: {
-          data: {
-            first_name: adminData.firstName.trim(),
-            last_name: adminData.lastName.trim(),
-            phone: adminData.phone.trim() || null
-          }
-        }
       });
 
-      if (authError) throw authError;
+      console.log('API response status:', response.status);
+      console.log('API response headers:', response.headers.get('content-type'));
 
-      if (!authData.user) {
-        throw new Error('Failed to create user account');
+      // Check if the response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('API returned non-JSON response:', text);
+        throw new Error('Server returned an invalid response. Please check the console for details.');
       }
 
-      // 3. Create the user profile
-      const { error: userError } = await supabase
-        .from('users')
-        .insert({
-          id: authData.user.id,
-          company_id: company.id,
-          email: adminData.email.trim().toLowerCase(),
-          first_name: adminData.firstName.trim(),
-          last_name: adminData.lastName.trim(),
-          phone: adminData.phone.trim() || null,
-          role: 'admin',
-          is_active: true
-        });
+      const result = await response.json();
+      console.log('API response:', result);
 
-      if (userError) throw userError;
-
-      // 4. Sign in the user
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: adminData.email.trim().toLowerCase(),
-        password: adminData.password
-      });
-
-      if (signInError) throw signInError;
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create company account');
+      }
 
       console.log('Company signup successful, redirecting...');
       router.push('/dashboard/company');

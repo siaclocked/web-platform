@@ -36,6 +36,7 @@ export default function ManagerLoginPage() {
       const supabase = createClient();
 
       // 1. Check if email exists as a manager in any company
+      console.log('Checking if manager exists:', email.trim().toLowerCase());
       const { data: managerData, error: managerError } = await supabase
         .from('users')
         .select(`
@@ -50,7 +51,10 @@ export default function ManagerLoginPage() {
         .eq('is_active', true)
         .single();
 
+      console.log('Manager lookup result:', { managerData, managerError });
+
       if (managerError || !managerData) {
+        console.log('Manager not found, throwing error');
         throw new Error('This email is not registered to any company! Please contact the person responsible for the Company profile!');
       }
 
