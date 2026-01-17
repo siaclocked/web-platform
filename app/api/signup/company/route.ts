@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     // Create a Supabase client with service role key to bypass RLS
     // Fall back to anon key if service role is not available
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     
     console.log('API: Creating Supabase client with URL:', supabaseUrl);
     
@@ -45,17 +45,16 @@ export async function POST(request: Request) {
 
       console.log('API: Company created successfully:', company.id);
 
-      // 2. Create the user account
+      // 2. Create the user account with password
       console.log('API: Creating user account:', adminData.email);
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: adminData.email.trim().toLowerCase(),
         password: adminData.password,
-        options: {
-          data: {
-            first_name: adminData.firstName.trim(),
-            last_name: adminData.lastName.trim(),
-            phone: adminData.phone.trim() || null
-          }
+        email_confirm: true, // Skip email confirmation for company admin
+        user_metadata: {
+          first_name: adminData.firstName.trim(),
+          last_name: adminData.lastName.trim(),
+          phone: adminData.phone.trim() || null
         }
       });
 
@@ -96,20 +95,7 @@ export async function POST(request: Request) {
 
       console.log('API: User profile created successfully');
 
-      // 4. Sign in the user
-      console.log('API: Signing in user');
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: adminData.email.trim().toLowerCase(),
-        password: adminData.password
-      });
-
-      console.log('Sign in result:', { signInError });
-
-      if (signInError) {
-        console.error('API: Sign in error:', signInError);
-        return NextResponse.json({ error: signInError.message }, { status: 400 });
-      }
-
+      // 4. No sign-in needed - user will use OTP to login
       console.log('API: Company signup completed successfully');
 
       return NextResponse.json({ 

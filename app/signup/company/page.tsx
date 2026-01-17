@@ -88,8 +88,8 @@ export default function CompanySignupPage() {
         throw new Error(result.error || 'Failed to create company account');
       }
 
-      console.log('Company signup successful, redirecting...');
-      router.push('/dashboard/company');
+      console.log('Company signup successful, redirecting to login...');
+      router.push('/login/company-password?message=Company created successfully. You can now sign in with your credentials.');
 
     } catch (err) {
       console.error('Company signup error:', err);
