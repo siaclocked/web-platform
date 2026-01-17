@@ -83,6 +83,10 @@ export default function CompanyDashboard() {
     router.push('/dashboard/company/managers/add');
   };
 
+  const handleAddWorker = () => {
+    router.push('/dashboard/company/workers/add');
+  };
+
   const handleViewManager = (managerId: string) => {
     router.push(`/dashboard/company/managers/${managerId}`);
   };
@@ -184,7 +188,7 @@ export default function CompanyDashboard() {
                 <Calendar className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">24</p>
+                <p className="text-2xl font-bold text-foreground">0</p>
                 <p className="text-xs text-foreground-muted">Active Schedules</p>
               </div>
             </div>
@@ -198,7 +202,7 @@ export default function CompanyDashboard() {
                 <TrendingUp className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">156</p>
+                <p className="text-2xl font-bold text-foreground">0</p>
                 <p className="text-xs text-foreground-muted">Total Workers</p>
               </div>
             </div>
@@ -212,7 +216,7 @@ export default function CompanyDashboard() {
                 <Clock className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">1,248</p>
+                <p className="text-2xl font-bold text-foreground">0</p>
                 <p className="text-xs text-foreground-muted">Hours This Month</p>
               </div>
             </div>
@@ -285,9 +289,29 @@ export default function CompanyDashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={handleAddWorker}
+          className="text-left hover:bg-background-secondary transition-colors cursor-pointer"
+        >
+          <Card className="h-full">
+            <CardContent className="flex items-center gap-4 py-4">
+              <div className="w-12 h-12 bg-success-muted rounded-lg flex items-center justify-center">
+                <Plus className="w-6 h-6 text-success" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-foreground">Add Worker</p>
+                <p className="text-sm text-foreground-muted">
+                  Create new worker account
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-foreground-muted" />
+            </CardContent>
+          </Card>
+        </button>
+
         <Link href="/dashboard/company/schedules">
-          <Card className="hover:bg-background-secondary transition-colors cursor-pointer">
+          <Card className="hover:bg-background-secondary transition-colors cursor-pointer h-full">
             <CardContent className="flex items-center gap-4 py-4">
               <div className="w-12 h-12 bg-primary-muted rounded-lg flex items-center justify-center">
                 <Calendar className="w-6 h-6 text-primary" />
@@ -304,7 +328,7 @@ export default function CompanyDashboard() {
         </Link>
 
         <Link href="/dashboard/company/documents">
-          <Card className="hover:bg-background-secondary transition-colors cursor-pointer">
+          <Card className="hover:bg-background-secondary transition-colors cursor-pointer h-full">
             <CardContent className="flex items-center gap-4 py-4">
               <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center">
                 <FileText className="w-6 h-6 text-accent" />

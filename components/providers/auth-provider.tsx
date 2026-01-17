@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
 import type { User } from '@/lib/types/database';
+import { clearAuth } from '@/lib/auth-clear';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setUser, setLoading } = useAuthStore();
@@ -11,20 +12,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = createClient();
 
+    // Auto sign out when tab is closed
+    const handleBeforeUnload = () => {
+      supabase.auth.signOut({ scope: 'local' });
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     const fetchUser = async () => {
       try {
+        // First clear any existing auth to prevent loops
+        await clearAuth();
+        
         const {
           data: { user: authUser },
         } = await supabase.auth.getUser();
 
         if (authUser) {
-          const { data: profile } = await supabase
+          const { data: profile, error } = await supabase
             .from('users')
             .select('*')
             .eq('id', authUser.id)
             .single();
 
-          setUser(profile as User);
+          if (error) {
+            // User not found in database, sign out
+            console.log('User not in database, signing out');
+            await supabase.auth.signOut({ scope: 'local' });
+            setUser(null);
+          } else if (profile) {
+            setUser(profile as User);
+          }
         } else {
           setUser(null);
         }
@@ -41,51 +59,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, session?.user?.id);
+      
       if (event === 'SIGNED_IN' && session?.user) {
-        let { data: profile } = await supabase
+        let { data: profile, error } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
           .single();
 
-        // If user doesn't exist in users table, create them
-        if (!profile) {
-          // Create a default company first
-          const { data: company } = await supabase
-            .from('companies')
-            .select('id')
-            .eq('name', 'Default Company')
-            .single();
+        console.log('Profile query result:', { profile, error });
 
-          let companyId = company?.id;
-          
-          if (!companyId) {
-            const { data: newCompany } = await supabase
-              .from('companies')
-              .insert({ name: 'Default Company' })
-              .select('id')
-              .single();
-            companyId = newCompany?.id;
-          }
-
-          const { data: newProfile } = await supabase
-            .from('users')
-            .insert({
-              id: session.user.id,
-              email: session.user.email,
-              first_name: session.user.user_metadata?.first_name || 'New',
-              last_name: session.user.user_metadata?.last_name || 'User',
-              role: 'worker',
-              company_id: companyId,
-            })
-            .select()
-            .single();
-          
-          profile = newProfile;
+        // If user doesn't exist in users table, sign them out
+        if (error || !profile) {
+          console.log('User not found in database, signing out');
+          await supabase.auth.signOut({ scope: 'local' });
+          setUser(null);
+          setLoading(false);
+          return;
         }
 
+        console.log('User found, setting profile:', profile);
         setUser(profile as User);
       } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
         setUser(null);
       }
       setLoading(false);
@@ -93,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       subscription.unsubscribe();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [setUser, setLoading]);
 

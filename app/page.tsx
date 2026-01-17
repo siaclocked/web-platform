@@ -27,7 +27,7 @@ export default function Home() {
                 Get Started
               </Link>
               <Link
-                href="/select-role"
+                href="/login"
                 className="inline-flex items-center justify-center px-8 py-3 border border-border text-foreground font-medium rounded-lg hover:bg-background-tertiary transition-colors"
               >
                 Sign In

@@ -118,7 +118,7 @@ export default function WorkerLoginPage() {
         }
 
         console.log('Worker OTP verified successfully, redirecting...');
-        router.push('/dashboard/worker');
+        router.push('/dashboard');
       }
     } catch (err) {
       console.error('Verify OTP error:', err);

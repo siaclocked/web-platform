@@ -44,15 +44,25 @@ export default function CompanyPasswordLoginPage() {
       console.log('Login successful, checking user role...');
       
       // Check if user is a company admin
-      const { data: userData } = await supabase
+      const { data: userData, error: userError } = await supabase
         .from('users')
         .select('role')
         .eq('id', data.user?.id)
         .single();
 
-      if (userData?.role === 'admin') {
-        console.log('User is admin, redirecting to company dashboard...');
-        router.push('/dashboard/company');
+      console.log('User data check:', { userData, userError });
+
+      if (userError || !userData) {
+        // User not found in database, sign them out and redirect to signup
+        console.log('User not found in database, signing out');
+        await supabase.auth.signOut();
+        setError('Account not found. Please sign up for a company account.');
+        setTimeout(() => {
+          router.push('/signup/company');
+        }, 2000);
+      } else if (userData.role === 'admin') {
+        console.log('User is admin, redirecting to dashboard...');
+        router.push('/dashboard');
       } else {
         setError('This login is for company administrators only');
       }

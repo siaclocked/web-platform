@@ -122,7 +122,7 @@ export default function ManagerLoginPage() {
         }
 
         console.log('Manager OTP verified successfully, redirecting...');
-        router.push('/dashboard/manager');
+        router.push('/dashboard');
       }
     } catch (err) {
       console.error('Verify OTP error:', err);
