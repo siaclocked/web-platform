@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useState } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Modal, Badge, Avatar } from '@/components/ui';
