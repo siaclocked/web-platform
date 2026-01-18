@@ -118,7 +118,7 @@ export default function WorkerLoginPage() {
         }
 
         console.log('Worker OTP verified successfully, redirecting...');
-        router.push('/dashboard');
+        router.push('/worker');
       }
     } catch (err) {
       console.error('Verify OTP error:', err);
@@ -133,17 +133,33 @@ export default function WorkerLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-background">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <User className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground">Worker Login</h1>
-          <p className="text-foreground-muted mt-2">
-            Sign in to view your schedule and manage your work
-          </p>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="border-b border-border">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <button
+            onClick={() => router.push('/')}
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
+              <Clock className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Clocked</h1>
+          </button>
         </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-foreground mb-2">
+              Worker Login
+            </h2>
+            <p className="text-foreground-muted">
+              Sign in to view your schedule and manage your work
+            </p>
+          </div>
 
         <Card>
           <CardContent className="pt-6">
@@ -266,16 +282,17 @@ export default function WorkerLoginPage() {
 
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/select-role')}
+            onClick={() => router.push('/login')}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
-            ← Back to role selection
+            ← Back to login options
           </button>
         </div>
 
         <p className="text-center text-xs text-foreground-muted mt-6">
           By continuing, you agree to our Terms of Service and Privacy Policy
         </p>
+        </div>
       </div>
     </div>
   );

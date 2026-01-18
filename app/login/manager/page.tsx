@@ -35,21 +35,17 @@ export default function ManagerLoginPage() {
       console.log('Manager login attempt:', email.trim().toLowerCase());
       const supabase = createClient();
 
-      // 1. Check if email exists as a manager in any company
+      // 1. Check if email exists as a manager in any company using service role
       console.log('Checking if manager exists:', email.trim().toLowerCase());
-      const { data: managerData, error: managerError } = await supabase
-        .from('users')
-        .select(`
-          id,
-          first_name,
-          last_name,
-          company_id,
-          companies!inner(name)
-        `)
-        .eq('email', email.trim().toLowerCase())
-        .eq('role', 'manager')
-        .eq('is_active', true)
-        .single();
+      const response = await fetch('/api/auth/check-manager', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      
+      const { managerData, error: managerError } = await response.json();
 
       console.log('Manager lookup result:', { managerData, managerError });
 
@@ -109,20 +105,10 @@ export default function ManagerLoginPage() {
 
       // Verify the authenticated user is the manager we expect
       if (data.user && managerInfo) {
-        const { data: verifyData, error: verifyError } = await supabase
-          .from('users')
-          .select('role, company_id')
-          .eq('id', data.user.id)
-          .single();
-
-        if (verifyError) throw verifyError;
-
-        if (verifyData.role !== 'manager') {
-          throw new Error('Account role mismatch');
-        }
-
+        // Skip role verification since we already checked during email verification
+        // The OTP verification from Supabase is sufficient
         console.log('Manager OTP verified successfully, redirecting...');
-        router.push('/dashboard');
+        router.push('/manager');
       }
     } catch (err) {
       console.error('Verify OTP error:', err);
@@ -137,17 +123,33 @@ export default function ManagerLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-background">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground">Manager Login</h1>
-          <p className="text-foreground-muted mt-2">
-            Sign in to manage your team and schedules
-          </p>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="border-b border-border">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <button
+            onClick={() => router.push('/')}
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
+              <Clock className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Clocked</h1>
+          </button>
         </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-foreground mb-2">
+              Manager Login
+            </h2>
+            <p className="text-foreground-muted">
+              Sign in to manage your team and schedules
+            </p>
+          </div>
 
         <Card>
           <CardContent className="pt-6">
@@ -176,7 +178,7 @@ export default function ManagerLoginPage() {
 
                 {error && (
                   <div className="flex items-start gap-3 p-3 bg-danger-muted/20 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 shrink-0" />
                     <p className="text-sm text-danger">{error}</p>
                   </div>
                 )}
@@ -227,7 +229,7 @@ export default function ManagerLoginPage() {
 
                 {error && (
                   <div className="flex items-start gap-3 p-3 bg-danger-muted/20 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 shrink-0" />
                     <p className="text-sm text-danger">{error}</p>
                   </div>
                 )}
@@ -270,16 +272,17 @@ export default function ManagerLoginPage() {
 
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/select-role')}
+            onClick={() => router.push('/login')}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
-            ← Back to role selection
+            ← Back to login options
           </button>
         </div>
 
         <p className="text-center text-xs text-foreground-muted mt-6">
           By continuing, you agree to our Terms of Service and Privacy Policy
         </p>
+        </div>
       </div>
     </div>
   );

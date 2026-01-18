@@ -18,24 +18,24 @@ import { usePathname } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
 
 const workerNavItems = [
-  { href: '/dashboard', icon: Home, label: 'Home' },
-  { href: '/schedule', icon: Calendar, label: 'Schedule' },
-  { href: '/time-tracking', icon: Clock, label: 'Clock In' },
-  { href: '/documents', icon: FileText, label: 'Documents' },
-  { href: '/profile', icon: User, label: 'Profile' },
+  { href: '/worker', icon: Home, label: 'Home' },
+  { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
+  { href: '/worker/time-tracking', icon: Clock, label: 'Clock In' },
+  { href: '/worker/documents', icon: FileText, label: 'Documents' },
+  { href: '/worker/profile', icon: User, label: 'Profile' },
 ];
 
 const managerNavItems = [
-  { href: '/dashboard', icon: Home, label: 'Home' },
-  { href: '/places', icon: MapPin, label: 'Places' },
-  { href: '/workers', icon: Users, label: 'Workers' },
-  { href: '/schedules', icon: Calendar, label: 'Schedules' },
-  { href: '/timesheets', icon: ClipboardList, label: 'Timesheets' },
+  { href: '/manager', icon: Home, label: 'Home' },
+  { href: '/manager/places', icon: MapPin, label: 'Places' },
+  { href: '/manager/workers', icon: Users, label: 'Workers' },
+  { href: '/manager/schedule', icon: Calendar, label: 'Schedules' },
+  { href: '/manager/timesheets', icon: ClipboardList, label: 'Timesheets' },
 ];
 
 const adminNavItems = [
-  { href: '/dashboard', icon: Home, label: 'Home' },
-  { href: '/company', icon: Settings, label: 'Company' },
+  { href: '/company', icon: Home, label: 'Home' },
+  { href: '/company/settings', icon: Settings, label: 'Company' },
   { href: '/managers', icon: Users, label: 'Managers' },
 ];
 

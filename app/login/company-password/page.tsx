@@ -44,12 +44,16 @@ export default function CompanyPasswordLoginPage() {
       console.log('Login successful, checking user role...');
       
       // Check if user is a company admin
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', data.user?.id)
-        .single();
-
+      // Use service role for admin check to avoid RLS issues
+      const response = await fetch('/api/auth/check-role', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: data.user?.id }),
+      });
+      
+      const { userData, userError } = await response.json();
       console.log('User data check:', { userData, userError });
 
       if (userError || !userData) {
@@ -61,8 +65,9 @@ export default function CompanyPasswordLoginPage() {
           router.push('/signup/company');
         }, 2000);
       } else if (userData.role === 'admin') {
-        console.log('User is admin, redirecting to dashboard...');
-        router.push('/dashboard');
+        console.log('User is admin, redirecting to company dashboard...');
+        // Redirect immediately
+        router.push('/company');
       } else {
         setError('This login is for company administrators only');
       }
@@ -79,17 +84,33 @@ export default function CompanyPasswordLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-background">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Clock className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground">Clocked</h1>
-          <p className="text-foreground-muted mt-2">
-            Company Administrator Login
-          </p>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="border-b border-border">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <button
+            onClick={() => router.push('/')}
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
+              <Clock className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground">Clocked</h1>
+          </button>
         </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-foreground mb-2">
+              Company Administrator Login
+            </h2>
+            <p className="text-foreground-muted">
+              Enter your credentials to access your company dashboard
+            </p>
+          </div>
 
         {message && (
           <div className="mb-4 p-3 bg-success-muted/20 border border-success/30 rounded-lg">
@@ -164,16 +185,17 @@ export default function CompanyPasswordLoginPage() {
 
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/select-role')}
+            onClick={() => router.push('/login')}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
-            ← Back to role selection
+            ← Back to login options
           </button>
         </div>
 
         <p className="text-center text-xs text-foreground-muted mt-6">
           By continuing, you agree to our Terms of Service and Privacy Policy
         </p>
+        </div>
       </div>
     </div>
   );

@@ -1,19 +1,16 @@
 import { createClient } from './supabase/client';
 
-// Clear all auth data
+// Clear auth data (only on tab close/app exit)
 export async function clearAuth() {
   const supabase = createClient();
+  // Only sign out locally, keep the session for potential re-opening
   await supabase.auth.signOut({ scope: 'local' });
   
-  // Clear localStorage
+  // Only clear sessionStorage, keep localStorage for persistence
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('supabase.auth.token');
-    localStorage.removeItem('supabase.auth.refreshToken');
-    // Clear all supabase-related items
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('supabase.')) {
-        localStorage.removeItem(key);
-      }
+    // Clear sessionStorage (temporary data)
+    Object.keys(sessionStorage).forEach(key => {
+      sessionStorage.removeItem(key);
     });
   }
 }

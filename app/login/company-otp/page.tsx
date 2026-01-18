@@ -229,10 +229,10 @@ export default function CompanyOTPLoginPage() {
 
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/select-role')}
+            onClick={() => router.push('/login')}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
-            ← Back to role selection
+            ← Back to login options
           </button>
         </div>
 

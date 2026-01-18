@@ -23,7 +23,7 @@ export function Header() {
     <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border">
       <div className="flex items-center justify-between h-14 px-4 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="flex items-center gap-2">
+          <Link href={`/${user.role === 'admin' ? 'company' : user.role}`} className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-sm">C</span>
             </div>

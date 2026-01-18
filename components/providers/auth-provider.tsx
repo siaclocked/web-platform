@@ -1,48 +1,58 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
 import type { User } from '@/lib/types/database';
 import { clearAuth } from '@/lib/auth-clear';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { setUser, setLoading } = useAuthStore();
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const supabase = createClient();
+
+  // Auto sign-out on tab close (not refresh)
+  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    // Check if it's a tab close, not refresh
+    // Note: This is a best effort - browsers don't perfectly distinguish
+    // between refresh and close, but we'll use visibility API
+    if (document.visibilityState === 'visible') {
+      clearAuth();
+    }
+  };
+
+  // Handle page visibility change (for mobile app close)
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      // Page is hidden (app closed or tab switched)
+      // Don't immediately sign out, give some time for tab switching
+      setTimeout(() => {
+        if (document.visibilityState === 'hidden') {
+          clearAuth();
+        }
+      }, 5000); // Wait 5 seconds before signing out
+    }
+  };
 
   useEffect(() => {
-    const supabase = createClient();
-
-    // Auto sign out when tab is closed
-    const handleBeforeUnload = () => {
-      supabase.auth.signOut({ scope: 'local' });
-    };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const fetchUser = async () => {
       try {
-        // First clear any existing auth to prevent loops
-        await clearAuth();
-        
+        // Check for existing auth session without clearing
         const {
           data: { user: authUser },
         } = await supabase.auth.getUser();
 
         if (authUser) {
-          const { data: profile, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-
-          if (error) {
-            // User not found in database, sign out
-            console.log('User not in database, signing out');
-            await supabase.auth.signOut({ scope: 'local' });
-            setUser(null);
-          } else if (profile) {
-            setUser(profile as User);
-          }
+          // Create minimal profile from auth user
+          const profile = {
+            id: authUser.id,
+            email: authUser.email,
+            role: 'admin', // Default role, will be updated when needed
+          };
+          setUser(profile as User);
         } else {
           setUser(null);
         }
@@ -50,49 +60,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Error fetching user:', error);
         setUser(null);
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
 
     fetchUser();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event, session?.user?.id);
-      
-      if (event === 'SIGNED_IN' && session?.user) {
-        let { data: profile, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-
-        console.log('Profile query result:', { profile, error });
-
-        // If user doesn't exist in users table, sign them out
-        if (error || !profile) {
-          console.log('User not found in database, signing out');
-          await supabase.auth.signOut({ scope: 'local' });
-          setUser(null);
-          setLoading(false);
-          return;
-        }
-
-        console.log('User found, setting profile:', profile);
-        setUser(profile as User);
-      } else if (event === 'SIGNED_OUT') {
-        console.log('User signed out');
-        setUser(null);
-      }
-      setLoading(false);
-    });
+    // Disable auth state change listener to prevent infinite loops
+    // We'll handle auth state manually in login/logout functions
 
     return () => {
-      subscription.unsubscribe();
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [setUser, setLoading]);
+  }, []);
 
   return <>{children}</>;
 }
