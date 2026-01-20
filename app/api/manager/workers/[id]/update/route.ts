@@ -3,11 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { position_id, hourly_rate } = await request.json();
-    const workerId = params.id;
+    const { id: workerId } = await params;
 
     console.log('Update worker request:', { params, workerId, position_id, hourly_rate });
 

@@ -3,10 +3,11 @@ import { NextResponse } from 'next/server';
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { name, description } = await request.json();
+    const { id: positionId } = await params;
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -63,7 +64,7 @@ export async function PUT(
         description: description?.trim() || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', params.id)
+      .eq('id', positionId)
       .eq('manager_id', user.id) // Ensure manager owns this position
       .select()
       .single();
@@ -100,9 +101,11 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: positionId } = await params;
+    
     // Create service role client to bypass RLS
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -147,7 +150,7 @@ export async function DELETE(
     const { count, error: countError } = await supabase
       .from('users')
       .select('*', { count: 'exact', head: true })
-      .eq('position_id', params.id)
+      .eq('position_id', positionId)
       .eq('manager_id', user.id);
 
     if (countError) {
@@ -169,7 +172,7 @@ export async function DELETE(
     const { error } = await supabase
       .from('positions')
       .delete()
-      .eq('id', params.id)
+      .eq('id', positionId)
       .eq('manager_id', user.id); // Ensure manager owns this position
 
     if (error) {
@@ -180,7 +183,7 @@ export async function DELETE(
       );
     }
 
-    console.log('Position deleted successfully:', { positionId: params.id, managerId: user.id });
+    console.log('Position deleted successfully:', { positionId, managerId: user.id });
 
     return NextResponse.json({ 
       success: true 
