@@ -10,8 +10,7 @@ export default function CompanySignupPage() {
   const router = useRouter();
   const [step, setStep] = useState<'company' | 'admin'>('company');
   const [companyData, setCompanyData] = useState({
-    name: '',
-    timezone: 'America/New_York'
+    name: ''
   });
   const [adminData, setAdminData] = useState({
     email: '',
@@ -103,16 +102,6 @@ export default function CompanySignupPage() {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
 
-  const timezones = [
-    'America/New_York',
-    'America/Chicago',
-    'America/Denver',
-    'America/Los_Angeles',
-    'Europe/London',
-    'Europe/Paris',
-    'Asia/Tokyo',
-    'Australia/Sydney'
-  ];
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-background">
@@ -153,20 +142,6 @@ export default function CompanySignupPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">
-                    Timezone
-                  </label>
-                  <select
-                    value={companyData.timezone}
-                    onChange={(e) => setCompanyData(prev => ({ ...prev, timezone: e.target.value }))}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {timezones.map(tz => (
-                      <option key={tz} value={tz}>{tz}</option>
-                    ))}
-                  </select>
-                </div>
 
                 {error && (
                   <p className="text-sm text-danger bg-danger-muted/20 px-3 py-2 rounded-lg">

@@ -40,7 +40,6 @@ export async function POST(request: Request) {
       .from('companies')
       .insert({
         name: 'Default Company',
-        timezone: 'America/New_York',
         is_active: true
       })
       .select()

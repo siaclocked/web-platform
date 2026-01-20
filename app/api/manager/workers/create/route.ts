@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { email, firstName, lastName, phone } = await request.json();
+    const { email, firstName, lastName, phone, userId } = await request.json();
 
-    if (!email || !firstName || !lastName) {
+    if (!email || !firstName || !lastName || !userId) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -24,16 +24,16 @@ export async function POST(request: Request) {
       }
     );
 
-    // Get manager's company (for now, we'll use the first company found)
-    const { data: company } = await supabase
-      .from('companies')
-      .select('id')
-      .limit(1)
+    // Get manager's company
+    const { data: manager } = await supabase
+      .from('users')
+      .select('company_id')
+      .eq('id', userId)
       .single();
 
-    if (!company) {
+    if (!manager || !manager.company_id) {
       return NextResponse.json(
-        { error: 'No company found' },
+        { error: 'Manager not found or has no company' },
         { status: 404 }
       );
     }
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       .from('users')
       .insert({
         id: authData.user.id,
-        company_id: company.id,
+        company_id: manager.company_id,
         email: email.trim().toLowerCase(),
         first_name: firstName.trim(),
         last_name: lastName.trim(),
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     console.log('Worker created successfully:', { 
       userId: authData.user.id, 
       email,
-      companyId: company.id 
+      companyId: manager.company_id 
     });
 
     return NextResponse.json({ 

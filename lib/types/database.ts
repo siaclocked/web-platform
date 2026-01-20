@@ -31,7 +31,6 @@ export interface Place {
   company_id: string;
   name: string;
   address?: string;
-  timezone: string;
   settings: PlaceSettings;
   created_at: string;
   updated_at: string;

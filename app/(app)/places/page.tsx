@@ -9,7 +9,6 @@ interface Place {
   id: string;
   name: string;
   address: string;
-  timezone: string;
   workerCount: number;
   isActive: boolean;
 }
@@ -19,7 +18,6 @@ const mockPlaces: Place[] = [
     id: '1',
     name: 'Downtown Restaurant',
     address: '123 Main St, New York, NY',
-    timezone: 'America/New_York',
     workerCount: 8,
     isActive: true,
   },
@@ -27,7 +25,6 @@ const mockPlaces: Place[] = [
     id: '2',
     name: 'Mall Location',
     address: '456 Shopping Center, New York, NY',
-    timezone: 'America/New_York',
     workerCount: 5,
     isActive: true,
   },
@@ -35,7 +32,6 @@ const mockPlaces: Place[] = [
     id: '3',
     name: 'Airport Branch',
     address: 'JFK Airport, Terminal 4',
-    timezone: 'America/New_York',
     workerCount: 3,
     isActive: false,
   },
@@ -54,7 +50,6 @@ export default function PlacesPage() {
       id: Date.now().toString(),
       name: newPlaceName,
       address: newPlaceAddress,
-      timezone: 'America/New_York',
       workerCount: 0,
       isActive: true,
     };
@@ -106,10 +101,6 @@ export default function PlacesPage() {
                   <span className="flex items-center gap-1">
                     <Users className="w-3 h-3" />
                     {place.workerCount} workers
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {place.timezone.split('/')[1]}
                   </span>
                 </div>
               </div>

@@ -30,8 +30,7 @@ export async function POST(request: Request) {
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .insert({
-          name: companyData.name.trim(),
-          timezone: companyData.timezone
+          name: companyData.name.trim()
         })
         .select()
         .single();

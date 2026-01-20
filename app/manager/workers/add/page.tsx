@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input } from '@/components/ui';
 import { ArrowLeft, Mail, User, Phone, Building2 } from 'lucide-react';
@@ -24,6 +25,12 @@ export default function AddWorkerPage() {
     setIsLoading(true);
 
     try {
+      const supabase = createClient();
+      
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       // Create worker using API route
       const response = await fetch('/api/manager/workers/create', {
         method: 'POST',
@@ -35,6 +42,7 @@ export default function AddWorkerPage() {
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
           phone: formData.phone.trim() || null,
+          userId: user.id
         }),
       });
 
