@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get manager's company and positions
+    // Get manager's company
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('company_id')
@@ -50,20 +50,21 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get positions - simplified query without complex join
-    const { data: positions, error } = await supabase
-      .from('positions')
+    // Get places for this manager
+    const { data: places, error } = await supabase
+      .from('places')
       .select('*')
       .eq('manager_id', user.id)
-      .eq('company_id', userData.company_id);
+      .eq('company_id', userData.company_id)
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Database error:', error);
       // If table doesn't exist, return empty array
       if (error.message.includes('does not exist') || error.code === '42P01') {
-        console.log('Positions table does not exist yet');
+        console.log('Places table does not exist yet');
         return NextResponse.json({ 
-          positions: [] 
+          places: [] 
         });
       }
       return NextResponse.json(
@@ -72,56 +73,42 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get worker counts for each position (only if positions exist)
-    let positionsWithCounts = positions || [];
-    if (positionsWithCounts.length > 0) {
+    // Get worker counts for each place (only if places exist)
+    let placesWithCounts = places || [];
+    if (placesWithCounts.length > 0) {
       try {
-        positionsWithCounts = await Promise.all(
-          positionsWithCounts.map(async (position) => {
+        placesWithCounts = await Promise.all(
+          placesWithCounts.map(async (place) => {
             try {
-              // First, get all workers for this position to debug
-              const { data: allWorkers, error: allError } = await supabase
-                .from('users')
-                .select('id, first_name, last_name, manager_id, position_id')
-                .eq('position_id', position.id);
-
-              if (allError) {
-                console.error('Error fetching all workers for position:', position.id, allError);
-              } else {
-                console.log(`All workers for position ${position.name} (${position.id}):`, allWorkers);
-              }
-
-              // Then get count for current manager
               const { count } = await supabase
                 .from('users')
                 .select('*', { count: 'exact', head: true })
-                .eq('position_id', position.id)
-                .eq('manager_id', user.id);
-
-              console.log(`Position ${position.name} (${position.id}): ${count} workers for manager ${user.id}`);
+                .eq('place_id', place.id)
+                .eq('company_id', userData.company_id);
 
               return {
-                ...position,
+                ...place,
                 worker_count: count || 0,
               };
             } catch (countError) {
-              console.error('Error getting worker count for position:', position.id, countError);
+              console.error('Error getting worker count for place:', place.id, countError);
               return {
-                ...position,
+                ...place,
                 worker_count: 0,
               };
             }
           })
         );
-      } catch (aggregateError) {
-        console.error('Error aggregating worker counts:', aggregateError);
-        // Continue without worker counts
+      } catch (promiseError) {
+        console.error('Error processing place counts:', promiseError);
+        // Continue without counts if there's an error
       }
     }
 
     return NextResponse.json({ 
-      positions: positionsWithCounts 
+      places: placesWithCounts 
     });
+
   } catch (err) {
     console.error('API error:', err);
     return NextResponse.json(
@@ -133,11 +120,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { name, description } = await request.json();
+    const { name, address } = await request.json();
 
     if (!name?.trim()) {
       return NextResponse.json(
-        { error: 'Position name is required' },
+        { error: 'Place name is required' },
         { status: 400 }
       );
     }
@@ -154,25 +141,18 @@ export async function POST(request: Request) {
       }
     );
 
-    // Get current user from session - try multiple methods
-    let user = null;
-    let authError = null;
-
-    // Method 1: Check Authorization header
-    const authHeader = request.headers.get('authorization');
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const result = await supabase.auth.getUser(token);
-      user = result.data.user;
-      authError = result.error;
+    // Get user from session token in request
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
 
-    // Method 2: If no header, try to get from cookies (for client-side requests)
-    if (!user && !authError) {
-      const { data: { user: cookieUser }, error: cookieError } = await supabase.auth.getUser();
-      user = cookieUser;
-      authError = cookieError;
-    }
+    // Verify the token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
       console.error('Auth error:', authError);
@@ -196,38 +176,31 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create position
+    // Create place
     const { data, error } = await supabase
-      .from('positions')
+      .from('places')
       .insert({
-        company_id: userData.company_id,
-        manager_id: user.id,
         name: name.trim(),
-        description: description?.trim() || null,
+        address: address?.trim() || null,
+        manager_id: user.id,
+        company_id: userData.company_id,
       })
       .select()
       .single();
 
     if (error) {
       console.error('Database error:', error);
-      // If table doesn't exist, provide a helpful error
-      if (error.message.includes('does not exist') || error.code === '42P01') {
-        return NextResponse.json(
-          { error: 'Positions table not found. Please run the database migration first.' },
-          { status: 400 }
-        );
-      }
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
       );
     }
 
-    console.log('Position created successfully:', { positionId: data.id, managerId: user.id });
+    console.log('Place created successfully:', { placeId: data.id, managerId: user.id });
 
     return NextResponse.json({ 
       success: true, 
-      position: data 
+      place: data 
     });
   } catch (err) {
     console.error('API error:', err);

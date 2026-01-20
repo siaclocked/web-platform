@@ -4,40 +4,40 @@ import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { Briefcase, Plus, Edit2, Trash2, Users } from 'lucide-react';
+import { MapPin, Plus, Edit2, Trash2, Users } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
-interface Position {
+interface Place {
   id: string;
   name: string;
-  description?: string;
+  address?: string;
   created_at: string;
   worker_count?: number;
 }
 
-export default function ManagerPositionsPage() {
-  const [positions, setPositions] = useState<Position[]>([]);
+export default function ManagerPlacesPage() {
+  const [places, setPlaces] = useState<Place[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAddingPosition, setIsAddingPosition] = useState(false);
-  const [editingPosition, setEditingPosition] = useState<Position | null>(null);
+  const [isAddingPlace, setIsAddingPlace] = useState(false);
+  const [editingPlace, setEditingPlace] = useState<Place | null>(null);
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
+    address: '',
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    fetchPositions();
+    fetchPlaces();
   }, []);
 
-  const fetchPositions = async () => {
+  const fetchPlaces = async () => {
     try {
       // Get auth token
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
-      const response = await fetch('/api/manager/positions', {
+      const response = await fetch('/api/manager/places', {
         headers: {
           'Authorization': `Bearer ${session?.access_token || ''}`,
         },
@@ -45,23 +45,22 @@ export default function ManagerPositionsPage() {
       
       if (response.ok) {
         const data = await response.json();
-        setPositions(data.positions || []);
+        setPlaces(data.places || []);
       }
     } catch (error) {
-      console.error('Error fetching positions:', error);
+      console.error('Error fetching places:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
     if (!formData.name.trim()) {
-      setError('Position name is required');
+      setError('Place name is required');
       return;
     }
 
@@ -70,11 +69,11 @@ export default function ManagerPositionsPage() {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
-      const url = editingPosition 
-        ? `/api/manager/positions/${editingPosition.id}`
-        : '/api/manager/positions';
+      const url = editingPlace 
+        ? `/api/manager/places/${editingPlace.id}`
+        : '/api/manager/places';
       
-      const method = editingPosition ? 'PUT' : 'POST';
+      const method = editingPlace ? 'PUT' : 'POST';
       
       const response = await fetch(url, {
         method,
@@ -82,35 +81,38 @@ export default function ManagerPositionsPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          address: formData.address?.trim() || null,
+        }),
       });
 
       if (response.ok) {
-        setSuccess(editingPosition ? 'Position updated successfully!' : 'Position added successfully!');
-        setFormData({ name: '', description: '' });
-        setIsAddingPosition(false);
-        setEditingPosition(null);
-        fetchPositions();
+        setSuccess(editingPlace ? 'Place updated successfully!' : 'Place added successfully!');
+        setFormData({ name: '', address: '' });
+        setIsAddingPlace(false);
+        setEditingPlace(null);
+        fetchPlaces();
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save position');
+        throw new Error(errorData.error || 'Failed to save place');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save position');
+      setError(err instanceof Error ? err.message : 'Failed to save place');
     }
   };
 
-  const handleEdit = (position: Position) => {
-    setEditingPosition(position);
+  const handleEdit = (place: Place) => {
+    setEditingPlace(place);
     setFormData({
-      name: position.name,
-      description: position.description || '',
+      name: place.name,
+      address: place.address || '',
     });
-    setIsAddingPosition(true);
+    setIsAddingPlace(true);
   };
 
-  const handleDelete = async (positionId: string) => {
-    if (!confirm('Are you sure you want to delete this position?')) {
+  const handleDelete = async (placeId: string) => {
+    if (!confirm('Are you sure you want to delete this place?')) {
       return;
     }
 
@@ -119,7 +121,7 @@ export default function ManagerPositionsPage() {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
-      const response = await fetch(`/api/manager/positions/${positionId}`, {
+      const response = await fetch(`/api/manager/places/${placeId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${session?.access_token || ''}`,
@@ -127,21 +129,21 @@ export default function ManagerPositionsPage() {
       });
 
       if (response.ok) {
-        setSuccess('Position deleted successfully!');
-        fetchPositions();
+        setSuccess('Place deleted successfully!');
+        fetchPlaces();
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete position');
+        throw new Error(errorData.error || 'Failed to delete place');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete position');
+      setError(err instanceof Error ? err.message : 'Failed to delete place');
     }
   };
 
   const handleCancel = () => {
-    setIsAddingPosition(false);
-    setEditingPosition(null);
-    setFormData({ name: '', description: '' });
+    setIsAddingPlace(false);
+    setEditingPlace(null);
+    setFormData({ name: '', address: '' });
     setError('');
     setSuccess('');
   };
@@ -162,47 +164,47 @@ export default function ManagerPositionsPage() {
         <div className="mb-6">
           <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-foreground">Positions</h1>
+            <h1 className="text-2xl font-bold text-foreground">Places</h1>
             <Button
-              onClick={() => setIsAddingPosition(true)}
+              onClick={() => setIsAddingPlace(true)}
               className="flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
-              Add Position
+              Add Place
             </Button>
           </div>
           <p className="text-foreground-muted">
-            Manage job positions for your workers
+            Manage work locations for your workers
           </p>
         </div>
 
-        {/* Add/Edit Position Form */}
-        {isAddingPosition && (
+        {/* Add/Edit Place Form */}
+        {isAddingPlace && (
           <Card className="mb-6">
             <CardContent className="p-6">
               <h3 className="text-lg font-semibold mb-4">
-                {editingPosition ? 'Edit Position' : 'Add New Position'}
+                {editingPlace ? 'Edit Place' : 'Add New Place'}
               </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Position Name *
+                    Place Name *
                   </label>
                   <Input
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Waiter, Cook, Security"
+                    placeholder="e.g., Downtown Restaurant, Main Office"
                     required
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Description
+                    Address
                   </label>
                   <Input
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Optional description of the position"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    placeholder="123 Main St, City, State"
                   />
                 </div>
 
@@ -220,7 +222,7 @@ export default function ManagerPositionsPage() {
 
                 <div className="flex gap-3">
                   <Button type="submit" isLoading={false}>
-                    {editingPosition ? 'Update Position' : 'Add Position'}
+                    {editingPlace ? 'Update Place' : 'Add Place'}
                   </Button>
                   <Button type="button" variant="outline" onClick={handleCancel}>
                     Cancel
@@ -231,43 +233,43 @@ export default function ManagerPositionsPage() {
           </Card>
         )}
 
-        {/* Positions List */}
+        {/* Places List */}
         <div className="space-y-4">
-          {positions.length === 0 ? (
+          {places.length === 0 ? (
             <Card>
               <CardContent className="text-center py-8">
-                <Briefcase className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">No positions yet</h3>
+                <MapPin className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-medium mb-2">No places yet</h3>
                 <p className="text-muted-foreground mb-4">
-                  Add your first position to get started
+                  Add your first work location to get started
                 </p>
-                <Button onClick={() => setIsAddingPosition(true)}>
+                <Button onClick={() => setIsAddingPlace(true)}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Position
+                  Add Place
                 </Button>
               </CardContent>
             </Card>
           ) : (
-            positions.map((position) => (
-              <Card key={position.id}>
+            places.map((place) => (
+              <Card key={place.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <h3 className="font-medium text-foreground mb-1">
-                        {position.name}
+                        {place.name}
                       </h3>
-                      {position.description && (
+                      {place.address && (
                         <p className="text-sm text-muted-foreground mb-2">
-                          {position.description}
+                          {place.address}
                         </p>
                       )}
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
-                          <span>{position.worker_count || 0} workers</span>
+                          <span>{place.worker_count || 0} workers</span>
                         </div>
                         <span>
-                          Created {new Date(position.created_at).toLocaleDateString()}
+                          Created {new Date(place.created_at).toLocaleDateString()}
                         </span>
                       </div>
                     </div>
@@ -275,14 +277,14 @@ export default function ManagerPositionsPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleEdit(position)}
+                        onClick={() => handleEdit(place)}
                       >
                         <Edit2 className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => handleDelete(position.id)}
+                        onClick={() => handleDelete(place.id)}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>

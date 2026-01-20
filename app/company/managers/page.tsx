@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { Users, Plus, Eye, Trash2, Mail, Phone } from 'lucide-react';
+import { Card, CardContent, Button, Badge, Input } from '@/components/ui';
+import { Users, Plus, Eye, Trash2, Mail, Phone, Search } from 'lucide-react';
 
 interface Manager {
   id: string;
@@ -22,11 +22,30 @@ interface Manager {
 export default function CompanyManagersPage() {
   const router = useRouter();
   const [managers, setManagers] = useState<Manager[]>([]);
+  const [filteredManagers, setFilteredManagers] = useState<Manager[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchManagers();
   }, []);
+
+  useEffect(() => {
+    // Filter managers based on search term
+    if (searchTerm.trim() === '') {
+      setFilteredManagers(managers);
+    } else {
+      const searchLower = searchTerm.toLowerCase();
+      const filtered = managers.filter(manager => 
+        manager.first_name.toLowerCase().includes(searchLower) ||
+        manager.last_name.toLowerCase().includes(searchLower) ||
+        manager.email.toLowerCase().includes(searchLower) ||
+        `${manager.first_name} ${manager.last_name}`.toLowerCase().includes(searchLower) ||
+        `${manager.last_name} ${manager.first_name}`.toLowerCase().includes(searchLower)
+      );
+      setFilteredManagers(filtered);
+    }
+  }, [searchTerm, managers]);
 
   const fetchManagers = async () => {
     try {
@@ -45,12 +64,15 @@ export default function CompanyManagersPage() {
       if (response.ok) {
         const { managers: managersData } = await response.json();
         setManagers(managersData || []);
+        setFilteredManagers(managersData || []);
       } else {
         setManagers([]);
+        setFilteredManagers([]);
       }
     } catch (error) {
       console.error('Error fetching managers:', error);
       setManagers([]);
+      setFilteredManagers([]);
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +104,7 @@ export default function CompanyManagersPage() {
       description="Manage your company managers"
     >
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h2 className="text-xl font-semibold">Your Managers</h2>
           <Button onClick={() => router.push('/company/managers/add')}>
             <Plus className="w-4 h-4 mr-2" />
@@ -90,25 +112,44 @@ export default function CompanyManagersPage() {
           </Button>
         </div>
 
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <Input
+            type="text"
+            placeholder="Search managers by name or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+
         {isLoading ? (
           <div className="text-center py-8">Loading managers...</div>
-        ) : managers.length === 0 ? (
+        ) : filteredManagers.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
               <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-medium mb-2">No managers yet</h3>
+              <h3 className="text-lg font-medium mb-2">
+                {searchTerm ? 'No managers found' : 'No managers yet'}
+              </h3>
               <p className="text-muted-foreground mb-4">
-                Add your first manager to help manage the company
+                {searchTerm 
+                  ? 'Try adjusting your search terms'
+                  : 'Add your first manager to help manage the company'
+                }
               </p>
-              <Button onClick={() => router.push('/company/managers/add')}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Manager
-              </Button>
+              {!searchTerm && (
+                <Button onClick={() => router.push('/company/managers/add')}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Manager
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4">
-            {managers.map((manager) => (
+            {filteredManagers.map((manager) => (
               <Card key={manager.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">

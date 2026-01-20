@@ -6,20 +6,22 @@ import { Card, CardContent, Button } from '@/components/ui';
 import {
   Calendar,
   Users,
+  Plus,
+  Briefcase,
   MapPin,
   ClipboardList,
   TrendingUp,
-  Briefcase,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
 export default function ManagerDashboard() {
   const [workerCount, setWorkerCount] = useState(0);
+  const [placesCount, setPlacesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchWorkerCount();
+    fetchAllCounts();
   }, []);
 
   const fetchWorkerCount = async () => {
@@ -39,9 +41,33 @@ export default function ManagerDashboard() {
       }
     } catch (error) {
       console.error('Error fetching worker count:', error);
-    } finally {
-      setIsLoading(false);
     }
+  };
+
+  const fetchPlacesCount = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch('/api/manager/places', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPlacesCount(data.places?.length || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching places count:', error);
+    }
+  };
+
+  const fetchAllCounts = async () => {
+    setIsLoading(true);
+    await Promise.all([fetchWorkerCount(), fetchPlacesCount()]);
+    setIsLoading(false);
   };
 
   return (
@@ -89,23 +115,13 @@ export default function ManagerDashboard() {
                 <MapPin className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">0</p>
+                <p className="text-2xl font-bold text-foreground">{placesCount}</p>
                 <p className="text-xs text-foreground-muted">Places</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Pending Actions */}
-      <Card className="mb-4">
-        <CardContent>
-          <h3 className="font-semibold text-foreground mb-3">Pending Actions</h3>
-          <div className="text-center py-4">
-            <p className="text-foreground-muted">No pending actions</p>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 gap-3">
@@ -126,6 +142,17 @@ export default function ManagerDashboard() {
               <Users className="w-6 h-6 text-accent mb-2" />
               <span className="text-sm font-medium text-foreground">
                 Workers
+              </span>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/manager/places">
+          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+            <CardContent className="flex flex-col items-center py-4">
+              <MapPin className="w-6 h-6 text-warning mb-2" />
+              <span className="text-sm font-medium text-foreground">
+                Places
               </span>
             </CardContent>
           </Card>

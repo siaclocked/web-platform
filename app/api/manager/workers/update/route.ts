@@ -3,9 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function PUT(request: Request) {
   try {
-    const { workerId, position_id, hourly_rate } = await request.json();
+    const { workerId, position_id, hourly_rate, place_id } = await request.json();
 
-    console.log('Update worker request (new route):', { workerId, position_id, hourly_rate });
+    console.log('Update worker request (new route):', { workerId, position_id, hourly_rate, place_id });
 
     if (!workerId) {
       console.error('Worker ID is missing from request body');
@@ -67,6 +67,7 @@ export async function PUT(request: Request) {
       .update({
         position_id: position_id || null,
         hourly_rate: hourly_rate || null,
+        place_id: place_id || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', workerId)

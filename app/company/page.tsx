@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { Building2, Users, Calendar, FileText, Plus, TrendingUp } from 'lucide-react';
+import { Building2, Users, Calendar, FileText, Plus, TrendingUp, MapPin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
@@ -103,7 +103,7 @@ export default function CompanyPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="grid md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -118,6 +118,24 @@ export default function CompanyPage() {
               <Button className="w-full" onClick={() => router.push('/company/managers/add')}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Manager
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">Places</h3>
+                <Button onClick={() => router.push('/company/places')}>
+                  View All
+                </Button>
+              </div>
+              <p className="text-muted-foreground mb-4">
+                View work locations across all managers
+              </p>
+              <Button className="w-full" onClick={() => router.push('/company/places')}>
+                <MapPin className="w-4 h-4 mr-2" />
+                View Places
               </Button>
             </CardContent>
           </Card>
@@ -140,27 +158,6 @@ export default function CompanyPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardContent className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
-            <div className="space-y-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span className="text-sm">System running normally</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span className="text-sm">All shifts covered this week</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                <span className="text-sm">3 schedules pending approval</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </PageContainer>
   );
