@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button } from '@/components/ui';
 import {
@@ -11,8 +12,38 @@ import {
   Briefcase,
 } from 'lucide-react';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 
 export default function ManagerDashboard() {
+  const [workerCount, setWorkerCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchWorkerCount();
+  }, []);
+
+  const fetchWorkerCount = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch('/api/manager/workers', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setWorkerCount(data.workers?.length || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching worker count:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <PageContainer>
       <div className="mb-6">
@@ -42,7 +73,9 @@ export default function ManagerDashboard() {
                 <Users className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">0</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {isLoading ? '...' : workerCount}
+                </p>
                 <p className="text-xs text-foreground-muted">Workers</p>
               </div>
             </div>
@@ -87,12 +120,12 @@ export default function ManagerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/manager/workers/add">
+        <Link href="/manager/workers">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center py-4">
               <Users className="w-6 h-6 text-accent mb-2" />
               <span className="text-sm font-medium text-foreground">
-                Add Worker
+                Workers
               </span>
             </CardContent>
           </Card>

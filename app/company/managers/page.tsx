@@ -30,10 +30,15 @@ export default function CompanyManagersPage() {
 
   const fetchManagers = async () => {
     try {
+      // Get auth token
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const response = await fetch('/api/company/managers', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
       });
       

@@ -45,11 +45,18 @@ export async function middleware(request: NextRequest) {
 
   // Check if this is a navigation away from protected pages (not a refresh)
   const referer = request.headers.get('referer');
-  const isNavigationAway = referer && (
-    referer.includes('/company') || 
-    referer.includes('/manager') || 
-    referer.includes('/worker')
-  ) && !pathname.startsWith('/company') && !pathname.startsWith('/manager') && !pathname.startsWith('/worker');
+  const host = request.headers.get('host');
+  
+  // Only consider it navigation away if:
+  // 1. There's a referer from the same site
+  // 2. The referer is from a protected page
+  // 3. The current path is NOT a protected page
+  // 4. This is not a refresh (same path as referer)
+  const isNavigationAway = referer && 
+    host && referer.includes(host) &&
+    (referer.includes('/company') || referer.includes('/manager') || referer.includes('/worker')) &&
+    !pathname.startsWith('/company') && !pathname.startsWith('/manager') && !pathname.startsWith('/worker') &&
+    !referer.endsWith(pathname);
 
   // Only sign out if user is navigating away (not refreshing)
   // Also ensure we're not on API routes or static assets

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   try {
-    // Create service role client to bypass RLS
+    // Create service role client to bypass RLS for data access
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -15,22 +15,23 @@ export async function GET(request: Request) {
       }
     );
 
-    // Get current user from session
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
+    // Get user from session token in request
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
       return NextResponse.json(
-        { error: 'Authorization required' },
+        { error: 'Authentication required' },
         { status: 401 }
       );
     }
 
-    // Extract token from Bearer token
-    const token = authHeader.replace('Bearer ', '');
+    // Verify the token and get user
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return NextResponse.json(
-        { error: 'Invalid authentication' },
+        { error: 'Authentication required' },
         { status: 401 }
       );
     }
@@ -49,41 +50,59 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get positions with worker counts
+    // Get positions - simplified query without complex join
     const { data: positions, error } = await supabase
       .from('positions')
-      .select(`
-        *,
-        users!inner(
-          company_id
-        )
-      `)
+      .select('*')
       .eq('manager_id', user.id)
-      .eq('users.company_id', userData.company_id);
+      .eq('company_id', userData.company_id);
 
     if (error) {
       console.error('Database error:', error);
+      // If table doesn't exist, return empty array
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        console.log('Positions table does not exist yet');
+        return NextResponse.json({ 
+          positions: [] 
+        });
+      }
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
       );
     }
 
-    // Get worker counts for each position
-    const positionsWithCounts = await Promise.all(
-      (positions || []).map(async (position) => {
-        const { count } = await supabase
-          .from('users')
-          .select('*', { count: 'exact', head: true })
-          .eq('position_id', position.id)
-          .eq('manager_id', user.id);
+    // Get worker counts for each position (only if positions exist)
+    let positionsWithCounts = positions || [];
+    if (positionsWithCounts.length > 0) {
+      try {
+        positionsWithCounts = await Promise.all(
+          positionsWithCounts.map(async (position) => {
+            try {
+              const { count } = await supabase
+                .from('users')
+                .select('*', { count: 'exact', head: true })
+                .eq('position_id', position.id)
+                .eq('manager_id', user.id);
 
-        return {
-          ...position,
-          worker_count: count || 0,
-        };
-      })
-    );
+              return {
+                ...position,
+                worker_count: count || 0,
+              };
+            } catch (countError) {
+              console.error('Error getting worker count for position:', position.id, countError);
+              return {
+                ...position,
+                worker_count: 0,
+              };
+            }
+          })
+        );
+      } catch (aggregateError) {
+        console.error('Error aggregating worker counts:', aggregateError);
+        // Continue without worker counts
+      }
+    }
 
     return NextResponse.json({ 
       positions: positionsWithCounts 
@@ -120,22 +139,30 @@ export async function POST(request: Request) {
       }
     );
 
-    // Get current user from session
+    // Get current user from session - try multiple methods
+    let user = null;
+    let authError = null;
+
+    // Method 1: Check Authorization header
     const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401 }
-      );
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const result = await supabase.auth.getUser(token);
+      user = result.data.user;
+      authError = result.error;
     }
 
-    // Extract token from Bearer token
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    // Method 2: If no header, try to get from cookies (for client-side requests)
+    if (!user && !authError) {
+      const { data: { user: cookieUser }, error: cookieError } = await supabase.auth.getUser();
+      user = cookieUser;
+      authError = cookieError;
+    }
 
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return NextResponse.json(
-        { error: 'Invalid authentication' },
+        { error: 'Authentication required' },
         { status: 401 }
       );
     }
@@ -168,6 +195,13 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('Database error:', error);
+      // If table doesn't exist, provide a helpful error
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        return NextResponse.json(
+          { error: 'Positions table not found. Please run the database migration first.' },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(
         { error: error.message },
         { status: 500 }

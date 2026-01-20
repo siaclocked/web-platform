@@ -15,12 +15,47 @@ export async function GET(request: Request) {
       }
     );
 
-    // Fetch company stats
+    // Get user from session token in request
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Verify the token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      console.error('Auth error:', authError);
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    // Get user's company
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('company_id')
+      .eq('id', user.id)
+      .single();
+
+    if (userError || !userData) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    // Fetch company stats for this company
     const [managers, workers, places, schedules] = await Promise.all([
-      supabase.from('users').select('id').eq('role', 'manager'),
-      supabase.from('users').select('id').eq('role', 'worker'),
-      supabase.from('places').select('id'),
-      supabase.from('schedules').select('id').eq('status', 'PUBLISHED')
+      supabase.from('users').select('id').eq('role', 'manager').eq('company_id', userData.company_id),
+      supabase.from('users').select('id').eq('role', 'worker').eq('company_id', userData.company_id),
+      supabase.from('places').select('id').eq('company_id', userData.company_id),
+      supabase.from('schedules').select('id').eq('status', 'PUBLISHED').eq('company_id', userData.company_id)
     ]);
 
     const stats = {

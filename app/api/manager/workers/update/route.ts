@@ -1,8 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-export async function GET(request: Request) {
+export async function PUT(request: Request) {
   try {
+    const { workerId, position_id, hourly_rate } = await request.json();
+
+    console.log('Update worker request (new route):', { workerId, position_id, hourly_rate });
+
+    if (!workerId) {
+      console.error('Worker ID is missing from request body');
+      return NextResponse.json(
+        { error: 'Worker ID is required' },
+        { status: 400 }
+      );
+    }
+
     // Create service role client to bypass RLS
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,17 +27,16 @@ export async function GET(request: Request) {
       }
     );
 
-    // Get user from session token in request
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
+    // Get auth token from header
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
 
-    // Verify the token and get user
+    const token = authHeader.split(' ')[1];
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
@@ -36,7 +47,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get user's company
+    // Get manager's company
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('company_id')
@@ -50,22 +61,18 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get all managers for this company
-    const { data: managers, error } = await supabase
+    // Update worker
+    const { data, error } = await supabase
       .from('users')
-      .select(`
-        id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        is_active,
-        companies!inner(name)
-      `)
-      .eq('role', 'manager')
-      .eq('company_id', userData.company_id)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
+      .update({
+        position_id: position_id || null,
+        hourly_rate: hourly_rate || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', workerId)
+      .eq('company_id', userData.company_id) // Ensure worker belongs to same company
+      .select()
+      .single();
 
     if (error) {
       console.error('Database error:', error);
@@ -75,7 +82,19 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json({ managers: managers || [] });
+    if (!data) {
+      return NextResponse.json(
+        { error: 'Worker not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    console.log('Worker updated successfully:', { workerId, managerId: user.id });
+
+    return NextResponse.json({ 
+      success: true, 
+      worker: data 
+    });
   } catch (err) {
     console.error('API error:', err);
     return NextResponse.json(

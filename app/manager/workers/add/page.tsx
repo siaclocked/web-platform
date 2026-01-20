@@ -21,20 +21,46 @@ export default function AddWorkerPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [positions, setPositions] = useState<Array<{id: string, name: string}>>([]);
+  const [isLoadingPositions, setIsLoadingPositions] = useState(true);
+
+  // Debug: Log positions state changes
+  useEffect(() => {
+    console.log('Positions state changed:', positions);
+  }, [positions]);
 
   useEffect(() => {
     fetchPositions();
   }, []);
 
   const fetchPositions = async () => {
+    console.log('Fetching positions...');
     try {
-      const response = await fetch('/api/manager/positions');
+      // Get auth token
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Session:', session ? 'exists' : 'none');
+      
+      const response = await fetch('/api/manager/positions', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
+      console.log('Response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Response data:', data);
         setPositions(data.positions || []);
+      } else {
+        console.error('Failed to fetch positions:', response.status);
+        setPositions([]); // Set empty array on error
       }
     } catch (error) {
       console.error('Error fetching positions:', error);
+      setPositions([]); // Set empty array on error
+    } finally {
+      setIsLoadingPositions(false);
     }
   };
 
@@ -176,14 +202,17 @@ export default function AddWorkerPage() {
               value={formData.positionId}
               onChange={(e) => setFormData({ ...formData, positionId: e.target.value })}
               required
-            >
-              <option value="">Select a position</option>
-              {positions.map(position => (
-                <option key={position.id} value={position.id}>
-                  {position.name}
-                </option>
-              ))}
-            </Select>
+              disabled={isLoadingPositions}
+              placeholder={isLoadingPositions ? 'Loading positions...' : 'Select a position'}
+              options={isLoadingPositions ? [] : 
+                positions.length === 0 ? 
+                [{ value: '', label: 'No positions available. Please add positions first.' }] :
+                (positions || []).map(position => ({
+                  value: position.id,
+                  label: position.name
+                }))
+              }
+            />
 
             <Input
               type="number"

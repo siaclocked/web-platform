@@ -5,6 +5,7 @@ import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
 import { Briefcase, Plus, Edit2, Trash2, Users } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Position {
   id: string;
@@ -32,7 +33,16 @@ export default function ManagerPositionsPage() {
 
   const fetchPositions = async () => {
     try {
-      const response = await fetch('/api/manager/positions');
+      // Get auth token
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch('/api/manager/positions', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
       if (response.ok) {
         const data = await response.json();
         setPositions(data.positions || []);
@@ -55,6 +65,10 @@ export default function ManagerPositionsPage() {
     }
 
     try {
+      // Get auth token
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const url = editingPosition 
         ? `/api/manager/positions/${editingPosition.id}`
         : '/api/manager/positions';
@@ -65,6 +79,7 @@ export default function ManagerPositionsPage() {
         method,
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify(formData),
       });
@@ -99,8 +114,15 @@ export default function ManagerPositionsPage() {
     }
 
     try {
+      // Get auth token
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const response = await fetch(`/api/manager/positions/${positionId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
       });
 
       if (response.ok) {

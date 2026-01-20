@@ -23,11 +23,16 @@ export default function CompanyPage() {
 
   const fetchStats = async () => {
     try {
+      // Get auth token
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
       // Use service role API to bypass RLS issues
       const response = await fetch('/api/company/stats', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
       });
       

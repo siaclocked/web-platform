@@ -27,22 +27,30 @@ export async function PUT(
       }
     );
 
-    // Get current user from session
+    // Get current user from session - try multiple methods
+    let user = null;
+    let authError = null;
+
+    // Method 1: Check Authorization header
     const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401 }
-      );
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const result = await supabase.auth.getUser(token);
+      user = result.data.user;
+      authError = result.error;
     }
 
-    // Extract token from Bearer token
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    // Method 2: If no header, try to get from cookies (for client-side requests)
+    if (!user && !authError) {
+      const { data: { user: cookieUser }, error: cookieError } = await supabase.auth.getUser();
+      user = cookieUser;
+      authError = cookieError;
+    }
 
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return NextResponse.json(
-        { error: 'Invalid authentication' },
+        { error: 'Authentication required' },
         { status: 401 }
       );
     }
@@ -107,22 +115,30 @@ export async function DELETE(
       }
     );
 
-    // Get current user from session
+    // Get current user from session - try multiple methods
+    let user = null;
+    let authError = null;
+
+    // Method 1: Check Authorization header
     const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401 }
-      );
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const result = await supabase.auth.getUser(token);
+      user = result.data.user;
+      authError = result.error;
     }
 
-    // Extract token from Bearer token
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    // Method 2: If no header, try to get from cookies (for client-side requests)
+    if (!user && !authError) {
+      const { data: { user: cookieUser }, error: cookieError } = await supabase.auth.getUser();
+      user = cookieUser;
+      authError = cookieError;
+    }
 
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return NextResponse.json(
-        { error: 'Invalid authentication' },
+        { error: 'Authentication required' },
         { status: 401 }
       );
     }

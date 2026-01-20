@@ -60,55 +60,55 @@ CREATE TABLE worker_shift_assignments (
 -- Add RLS policies for positions
 ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Managers can view their company positions" ON positions
-  FOR SELECT USING (company_id = auth.jwt() ->> 'company_id');
+  FOR SELECT USING (company_id::text = auth.jwt() ->> 'company_id');
 
 CREATE POLICY "Managers can insert their company positions" ON positions
-  FOR INSERT WITH CHECK (company_id = auth.jwt() ->> 'company_id');
+  FOR INSERT WITH CHECK (company_id::text = auth.jwt() ->> 'company_id');
 
 CREATE POLICY "Managers can update their company positions" ON positions
-  FOR UPDATE USING (company_id = auth.jwt() ->> 'company_id');
+  FOR UPDATE USING (company_id::text = auth.jwt() ->> 'company_id');
 
 CREATE POLICY "Managers can delete their company positions" ON positions
-  FOR DELETE USING (company_id = auth.jwt() ->> 'company_id');
+  FOR DELETE USING (company_id::text = auth.jwt() ->> 'company_id');
 
 -- Add RLS policies for shift_timeframes
 ALTER TABLE shift_timeframes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Managers can view their company timeframes" ON shift_timeframes
-  FOR SELECT USING (company_id = auth.jwt() ->> 'company_id');
+  FOR SELECT USING (company_id::text = auth.jwt() ->> 'company_id');
 
 CREATE POLICY "Managers can insert their company timeframes" ON shift_timeframes
-  FOR INSERT WITH CHECK (company_id = auth.jwt() ->> 'company_id');
+  FOR INSERT WITH CHECK (company_id::text = auth.jwt() ->> 'company_id');
 
 CREATE POLICY "Managers can update their company timeframes" ON shift_timeframes
-  FOR UPDATE USING (company_id = auth.jwt() ->> 'company_id');
+  FOR UPDATE USING (company_id::text = auth.jwt() ->> 'company_id');
 
 CREATE POLICY "Managers can delete their company timeframes" ON shift_timeframes
-  FOR DELETE USING (company_id = auth.jwt() ->> 'company_id');
+  FOR DELETE USING (company_id::text = auth.jwt() ->> 'company_id');
 
 -- Add RLS policies for shift_slots
 ALTER TABLE shift_slots ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Managers can view their company shift slots" ON shift_slots
   FOR SELECT USING (timeframe_id IN (
     SELECT id FROM shift_timeframes 
-    WHERE company_id = auth.jwt() ->> 'company_id'
+    WHERE company_id::text = auth.jwt() ->> 'company_id'
   ));
 
 CREATE POLICY "Managers can insert their company shift slots" ON shift_slots
   FOR INSERT WITH CHECK (timeframe_id IN (
     SELECT id FROM shift_timeframes 
-    WHERE company_id = auth.jwt() ->> 'company_id'
+    WHERE company_id::text = auth.jwt() ->> 'company_id'
   ));
 
 CREATE POLICY "Managers can update their company shift slots" ON shift_slots
   FOR UPDATE USING (timeframe_id IN (
     SELECT id FROM shift_timeframes 
-    WHERE company_id = auth.jwt() ->> 'company_id'
+    WHERE company_id::text = auth.jwt() ->> 'company_id'
   ));
 
 CREATE POLICY "Managers can delete their company shift slots" ON shift_slots
   FOR DELETE USING (timeframe_id IN (
     SELECT id FROM shift_timeframes 
-    WHERE company_id = auth.jwt() ->> 'company_id'
+    WHERE company_id::text = auth.jwt() ->> 'company_id'
   ));
 
 -- Add RLS policies for worker_shift_assignments
@@ -129,7 +129,7 @@ CREATE POLICY "Managers can view assignments for their company" ON worker_shift_
   FOR SELECT USING (shift_slot_id IN (
     SELECT ss.id FROM shift_slots ss
     JOIN shift_timeframes st ON ss.timeframe_id = st.id
-    WHERE st.company_id = auth.jwt() ->> 'company_id'
+    WHERE st.company_id::text = auth.jwt() ->> 'company_id'
   ));
 
 -- Create indexes for better performance
