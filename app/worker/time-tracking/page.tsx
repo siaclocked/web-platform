@@ -231,14 +231,15 @@ export default function WorkerTimeTrackingPage() {
                 <Select
                   value={selectedPlace}
                   onChange={(e) => setSelectedPlace(e.target.value)}
-                >
-                  <option value="">Select a place</option>
-                  {mockPlaces.map(place => (
-                    <option key={place.value} value={place.value}>
-                      {place.label}
-                    </option>
-                  ))}
-                </Select>
+                  placeholder="Select a place"
+                  options={[
+                    { value: '', label: 'Select a place' },
+                    ...mockPlaces.map(place => ({
+                      value: place.value,
+                      label: place.label
+                    }))
+                  ]}
+                />
               </div>
 
               <div>
@@ -249,14 +250,15 @@ export default function WorkerTimeTrackingPage() {
                 <Select
                   value={selectedSkill}
                   onChange={(e) => setSelectedSkill(e.target.value)}
-                >
-                  <option value="">Select a skill</option>
-                  {mockSkills.map(skill => (
-                    <option key={skill.value} value={skill.value}>
-                      {skill.label}
-                    </option>
-                  ))}
-                </Select>
+                  placeholder="Select a skill"
+                  options={[
+                    { value: '', label: 'Select a skill' },
+                    ...mockSkills.map(skill => ({
+                      value: skill.value,
+                      label: skill.label
+                    }))
+                  ]}
+                />
               </div>
 
               <Button

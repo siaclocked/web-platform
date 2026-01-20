@@ -263,7 +263,7 @@ export default function ManagerTimesheetsPage() {
                 {timesheet.status === 'pending' && (
                   <div className="flex gap-2 mt-4">
                     <Button
-                      variant="success"
+                      variant="primary"
                       size="sm"
                       onClick={() => handleApprove(timesheet.id)}
                     >
