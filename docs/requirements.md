@@ -273,7 +273,7 @@ Create/edit:
 ### 8.1 Generate Schedule for Interval
 
 - Manager selects `from` and `to` and clicks **Generate/Schedule**
-- Plan limit: `to` must be within `MAX_FUTURE_DAYS` (e.g., 14 or 30) from “today” (place timezone)
+- Plan limit: `to` must be within `MAX_FUTURE_DAYS` (e.g., 14 or 30) from "today" (place timezone)
 
 **Draft creation/update rule:**
 

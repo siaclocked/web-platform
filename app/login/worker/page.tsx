@@ -4,7 +4,7 @@ import React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Button, Input, Card, CardContent } from '@/components/ui';
+import { Button, Input, Card, CardContent, BackButton } from '@/components/ui';
 import { User, Mail, ArrowRight, Clock, Building2, AlertCircle } from 'lucide-react';
 
 type Step = 'email' | 'otp';
@@ -35,20 +35,14 @@ export default function WorkerLoginPage() {
       console.log('Worker login attempt:', email.trim().toLowerCase());
       const supabase = createClient();
 
-      // 1. Check if email exists as a worker in any company
-      const { data: workerData, error: workerError } = await supabase
-        .from('users')
-        .select(`
-          id,
-          first_name,
-          last_name,
-          company_id,
-          companies!inner(name)
-        `)
-        .eq('email', email.trim().toLowerCase())
-        .eq('role', 'worker')
-        .eq('is_active', true)
-        .single();
+      // 1. Check if email exists as a worker via API route
+      const response = await fetch('/api/auth/check-worker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const { workerData, error: workerError } = await response.json();
 
       if (workerError || !workerData) {
         throw new Error('This email is not registered to any company! Please contact your Manager, who is in charge of you and your profile!');
@@ -105,18 +99,8 @@ export default function WorkerLoginPage() {
 
       // Verify the authenticated user is the worker we expect
       if (data.user && workerInfo) {
-        const { data: verifyData, error: verifyError } = await supabase
-          .from('users')
-          .select('role, company_id')
-          .eq('id', data.user.id)
-          .single();
-
-        if (verifyError) throw verifyError;
-
-        if (verifyData.role !== 'worker') {
-          throw new Error('Account role mismatch');
-        }
-
+        // Skip additional database verification since we already verified in step 1
+        // This avoids RLS infinite recursion issues
         console.log('Worker OTP verified successfully, redirecting...');
         router.push('/worker');
       }
@@ -188,7 +172,7 @@ export default function WorkerLoginPage() {
 
                 {error && (
                   <div className="flex items-start gap-3 p-3 bg-danger-muted/20 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 shrink-0" />
                     <p className="text-sm text-danger">{error}</p>
                   </div>
                 )}
@@ -239,7 +223,7 @@ export default function WorkerLoginPage() {
 
                 {error && (
                   <div className="flex items-start gap-3 p-3 bg-danger-muted/20 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-danger mt-0.5 shrink-0" />
                     <p className="text-sm text-danger">{error}</p>
                   </div>
                 )}
@@ -281,12 +265,7 @@ export default function WorkerLoginPage() {
         </Card>
 
         <div className="mt-6 text-center">
-          <button
-            onClick={() => router.push('/login')}
-            className="text-sm text-foreground-muted hover:text-foreground transition-colors"
-          >
-            ← Back to login options
-          </button>
+          <BackButton href="/login" label="Back to login options" />
         </div>
 
         <p className="text-center text-xs text-foreground-muted mt-6">

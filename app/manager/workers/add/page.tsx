@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input } from '@/components/ui';
-import { ArrowLeft, Mail, User, Phone, Building2 } from 'lucide-react';
+import { Card, CardContent, Button, Input, Select, BackButton } from '@/components/ui';
+import { Mail, User, Phone, Building2, Briefcase, DollarSign } from 'lucide-react';
 
 export default function AddWorkerPage() {
   const router = useRouter();
@@ -14,10 +14,29 @@ export default function AddWorkerPage() {
     lastName: '',
     email: '',
     phone: '',
+    positionId: '',
+    hourlyRate: '',
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [positions, setPositions] = useState<Array<{id: string, name: string}>>([]);
+
+  useEffect(() => {
+    fetchPositions();
+  }, []);
+
+  const fetchPositions = async () => {
+    try {
+      const response = await fetch('/api/manager/positions');
+      if (response.ok) {
+        const data = await response.json();
+        setPositions(data.positions || []);
+      }
+    } catch (error) {
+      console.error('Error fetching positions:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +61,8 @@ export default function AddWorkerPage() {
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
           phone: formData.phone.trim() || null,
+          positionId: formData.positionId || null,
+          hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
           userId: user.id
         }),
       });
@@ -93,6 +114,8 @@ export default function AddWorkerPage() {
                   lastName: '',
                   email: '',
                   phone: '',
+                  positionId: '',
+                  hourlyRate: '',
                 });
               }}>
                 Add Another Worker
@@ -111,13 +134,7 @@ export default function AddWorkerPage() {
     >
       <Card className="max-w-md mx-auto">
         <CardContent className="pt-6">
-          <button
-            onClick={() => router.push('/manager/workers')}
-            className="flex items-center text-sm text-foreground-muted hover:text-foreground transition-colors mb-6"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back to Workers
-          </button>
+          <BackButton href="/manager/workers" label="Back to Workers" className="mb-6" />
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -154,6 +171,29 @@ export default function AddWorkerPage() {
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             />
 
+            <Select
+              label="Position"
+              value={formData.positionId}
+              onChange={(e) => setFormData({ ...formData, positionId: e.target.value })}
+              required
+            >
+              <option value="">Select a position</option>
+              {positions.map(position => (
+                <option key={position.id} value={position.id}>
+                  {position.name}
+                </option>
+              ))}
+            </Select>
+
+            <Input
+              type="number"
+              step="0.01"
+              label="Hourly Rate (Optional)"
+              placeholder="15.00"
+              value={formData.hourlyRate}
+              onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
+            />
+
             {error && (
               <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg">
                 <p className="text-sm text-danger">{error}</p>
@@ -164,7 +204,7 @@ export default function AddWorkerPage() {
               type="submit"
               className="w-full"
               isLoading={isLoading}
-              disabled={!formData.firstName || !formData.lastName || !formData.email || !isValidEmail(formData.email)}
+              disabled={!formData.firstName || !formData.lastName || !formData.email || !formData.positionId || !isValidEmail(formData.email)}
             >
               Create Worker Account
             </Button>

@@ -4,8 +4,8 @@ import React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Button, Input, Card, CardContent } from '@/components/ui';
-import { Users, Mail, ArrowRight, Clock, Building2, AlertCircle } from 'lucide-react';
+import { Button, Input, Card, CardContent, BackButton } from '@/components/ui';
+import { Users, Mail, Clock, Building2, AlertCircle, ArrowRight } from 'lucide-react';
 
 type Step = 'email' | 'otp';
 
@@ -271,12 +271,7 @@ export default function ManagerLoginPage() {
         </Card>
 
         <div className="mt-6 text-center">
-          <button
-            onClick={() => router.push('/login')}
-            className="text-sm text-foreground-muted hover:text-foreground transition-colors"
-          >
-            ← Back to login options
-          </button>
+          <BackButton href="/login" label="Back to login options" />
         </div>
 
         <p className="text-center text-xs text-foreground-muted mt-6">

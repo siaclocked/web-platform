@@ -1,13 +1,22 @@
 'use client';
 
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { Avatar } from '@/components/ui';
-import { ChevronDown, Bell } from 'lucide-react';
+import { Avatar, Button } from '@/components/ui';
+import { ChevronDown, Bell, LogOut } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export function Header() {
   const { user } = useAuthStore();
   const { selectedPlace, unreadCount } = useAppStore();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    const { createClient } = await import('@/lib/supabase/client');
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   if (!user) return null;
 
@@ -45,7 +54,7 @@ export function Header() {
 
         <div className="flex items-center gap-3">
           <Link
-            href="/notifications"
+            href={`/${user.role === 'admin' ? 'company' : user.role}/notifications`}
             className="relative p-2 rounded-lg hover:bg-background-tertiary transition-colors"
           >
             <Bell className="w-5 h-5 text-foreground-muted" />
@@ -56,13 +65,34 @@ export function Header() {
             )}
           </Link>
 
-          <Link href="/profile" className="flex items-center gap-2">
-            <Avatar name={displayName} src={user.avatar_url} size="sm" />
-            <div className="hidden sm:block text-right">
-              <p className="text-sm font-medium text-foreground">{displayName}</p>
-              <p className="text-xs text-foreground-muted">{roleLabel}</p>
-            </div>
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href={`/${user.role === 'admin' ? 'company' : user.role}/profile`} className="flex items-center gap-2">
+              <Avatar name={displayName} src={user.avatar_url} size="sm" />
+              <div className="hidden sm:block text-right">
+                <p className="text-sm font-medium text-foreground">{displayName}</p>
+                <p className="text-xs text-foreground-muted">{roleLabel}</p>
+              </div>
+            </Link>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="hidden sm:flex items-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="sm:hidden p-2"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </header>

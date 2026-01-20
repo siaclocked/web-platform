@@ -21,7 +21,7 @@ export default function WorkerDashboard() {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <Link href="/time-tracking">
+        <Link href="/worker/time-tracking">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center justify-center py-6">
               <div className="w-12 h-12 bg-success-muted rounded-full flex items-center justify-center mb-3">
@@ -32,7 +32,7 @@ export default function WorkerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/schedule">
+        <Link href="/worker/schedule">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center justify-center py-6">
               <div className="w-12 h-12 bg-primary-muted rounded-full flex items-center justify-center mb-3">
@@ -63,7 +63,7 @@ export default function WorkerDashboard() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-foreground">This Week</h3>
             <Link
-              href="/profile"
+              href="/worker/profile"
               className="text-sm text-primary hover:underline"
             >
               View all

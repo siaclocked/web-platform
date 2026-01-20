@@ -232,7 +232,7 @@ export default function CompanyOTPLoginPage() {
             onClick={() => router.push('/login')}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
-            ← Back to login options
+            Back to login options
           </button>
         </div>
 

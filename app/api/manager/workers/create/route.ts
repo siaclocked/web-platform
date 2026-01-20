@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { email, firstName, lastName, phone, userId } = await request.json();
+    const { email, firstName, lastName, phone, positionId, hourlyRate, userId } = await request.json();
 
     if (!email || !firstName || !lastName || !userId) {
       return NextResponse.json(
@@ -64,7 +64,10 @@ export async function POST(request: Request) {
         last_name: lastName.trim(),
         phone: phone?.trim() || null,
         role: 'worker',
-        is_active: true
+        is_active: true,
+        manager_id: userId, // Assign worker to this manager
+        position_id: positionId || null,
+        hourly_rate: hourlyRate || null
       });
 
     if (profileError) throw profileError;

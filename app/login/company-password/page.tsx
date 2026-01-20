@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Button, Input, Card, CardContent } from '@/components/ui';
-import { Mail, Lock, ArrowRight, Clock, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { Button, Input, Card, CardContent, BackButton } from '@/components/ui';
+import { Mail, Lock, Clock, CheckCircle, Eye, EyeOff, ArrowRight } from 'lucide-react';
 
 export default function CompanyPasswordLoginPage() {
   const router = useRouter();
@@ -184,12 +184,7 @@ export default function CompanyPasswordLoginPage() {
         </Card>
 
         <div className="mt-6 text-center">
-          <button
-            onClick={() => router.push('/login')}
-            className="text-sm text-foreground-muted hover:text-foreground transition-colors"
-          >
-            ← Back to login options
-          </button>
+          <BackButton href="/login" label="Back to login options" />
         </div>
 
         <p className="text-center text-xs text-foreground-muted mt-6">

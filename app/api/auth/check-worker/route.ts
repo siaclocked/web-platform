@@ -3,11 +3,11 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { userId } = await request.json();
+    const { email } = await request.json();
 
-    if (!userId) {
+    if (!email) {
       return NextResponse.json(
-        { error: 'User ID is required' },
+        { error: 'Email is required' },
         { status: 400 }
       );
     }
@@ -24,30 +24,42 @@ export async function POST(request: Request) {
       }
     );
 
-    // Get full user profile with company information
-    const { data: profile, error } = await supabase
+    // Check if worker exists
+    const { data: workerData, error } = await supabase
       .from('users')
       .select(`
-        *,
-        companies!inner(
-          id,
-          name
-        )
+        id,
+        first_name,
+        last_name,
+        company_id,
+        companies!inner(name)
       `)
-      .eq('id', userId)
+      .eq('email', email.trim().toLowerCase())
+      .eq('role', 'worker')
+      .eq('is_active', true)
       .single();
 
-    console.log('Profile fetch result:', { userId, profile, error });
+    console.log('Worker check result:', { email, workerData, error });
 
     if (error) {
       console.error('Database error:', error);
       return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
+        { error: 'Worker not found' },
+        { status: 404 }
       );
     }
 
-    return NextResponse.json({ profile, error: null });
+    if (!workerData) {
+      return NextResponse.json(
+        { error: 'Worker not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ 
+      workerData, 
+      error: null 
+    });
   } catch (err) {
     console.error('API error:', err);
     return NextResponse.json(

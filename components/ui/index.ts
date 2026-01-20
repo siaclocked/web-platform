@@ -7,3 +7,4 @@ export { Modal } from './modal';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
 export { Select } from './select';
 export { Toggle } from './toggle';
+export { BackButton } from './back-button';

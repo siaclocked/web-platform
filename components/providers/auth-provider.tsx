@@ -1,58 +1,105 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/lib/store';
 import type { User } from '@/lib/types/database';
-import { clearAuth } from '@/lib/auth-clear';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const { setUser } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
 
-  // Auto sign-out on tab close (not refresh)
-  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-    // Check if it's a tab close, not refresh
-    // Note: This is a best effort - browsers don't perfectly distinguish
-    // between refresh and close, but we'll use visibility API
-    if (document.visibilityState === 'visible') {
-      clearAuth();
-    }
-  };
-
-  // Handle page visibility change (for mobile app close)
-  const handleVisibilityChange = () => {
-    if (document.visibilityState === 'hidden') {
-      // Page is hidden (app closed or tab switched)
-      // Don't immediately sign out, give some time for tab switching
-      setTimeout(() => {
-        if (document.visibilityState === 'hidden') {
-          clearAuth();
-        }
-      }, 5000); // Wait 5 seconds before signing out
-    }
-  };
-
+  // Track if this is a page unload (tab close) vs navigation
   useEffect(() => {
+    let isUnloading = false;
+
+    const clearAuth = () => {
+      localStorage.removeItem('supabase.auth.token');
+      sessionStorage.clear();
+      supabase.auth.signOut({ scope: 'local' });
+    };
+
+    // Handle page visibility change (for tab close/app close)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Page is hidden - store timestamp
+        sessionStorage.setItem('pageHiddenAt', Date.now().toString());
+      } else if (document.visibilityState === 'visible') {
+        // Page is visible again - check if it was a long time (tab switch vs app close)
+        const hiddenAt = sessionStorage.getItem('pageHiddenAt');
+        if (hiddenAt) {
+          const timeHidden = Date.now() - parseInt(hiddenAt);
+          // If hidden for more than 5 seconds, likely app close/tab close
+          if (timeHidden > 5000) {
+            clearAuth();
+          }
+          sessionStorage.removeItem('pageHiddenAt');
+        }
+      }
+    };
+
+    // Handle beforeunload for tab close (best effort detection)
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Set a flag that we're unloading
+      sessionStorage.setItem('isUnloading', 'true');
+    };
+
+    // Check if we're returning from a tab close
+    const checkPageLoad = () => {
+      const wasUnloading = sessionStorage.getItem('isUnloading');
+      if (wasUnloading) {
+        // If we were unloading and now we're back, it was a refresh
+        sessionStorage.removeItem('isUnloading');
+      } else {
+        // Normal page load or new tab
+      }
+    };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Check on initial load
+    checkPageLoad();
 
-    const fetchUser = async () => {
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [supabase, setUser, router]);
+
+  // Don't handle route-based logout here - let middleware handle it
+  // This prevents logout on refresh
+
+  // Initial auth check
+  useEffect(() => {
+    const initAuth = async () => {
       try {
-        // Check for existing auth session without clearing
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
+        const { data: { user: authUser } } = await supabase.auth.getUser();
 
         if (authUser) {
-          // Create minimal profile from auth user
-          const profile = {
-            id: authUser.id,
-            email: authUser.email,
-            role: 'admin', // Default role, will be updated when needed
-          };
-          setUser(profile as User);
+          // Fetch full user profile using service role API
+          const response = await fetch('/api/auth/get-profile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId: authUser.id }),
+          });
+
+          if (response.ok) {
+            const { profile } = await response.json();
+            if (profile) {
+              setUser(profile);
+            } else {
+              setUser(null);
+            }
+          } else {
+            setUser(null);
+          }
         } else {
           setUser(null);
         }
@@ -64,16 +111,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    fetchUser();
+    initAuth();
 
-    // Disable auth state change listener to prevent infinite loops
-    // We'll handle auth state manually in login/logout functions
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+        } else if (event === 'SIGNED_IN' && session?.user) {
+          // Fetch full profile
+          const response = await fetch('/api/auth/get-profile', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId: session.user.id }),
+          });
+
+          if (response.ok) {
+            const { profile } = await response.json();
+            if (profile) {
+              setUser(profile);
+            }
+          }
+        }
+      }
+    );
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase, setUser]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return <>{children}</>;
 }

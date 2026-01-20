@@ -8,6 +8,7 @@ import {
   MapPin,
   ClipboardList,
   TrendingUp,
+  Briefcase,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -75,12 +76,12 @@ export default function ManagerDashboard() {
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 gap-3">
-        <Link href="/manager/schedule">
+        <Link href="/manager/positions">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center py-4">
-              <Calendar className="w-6 h-6 text-primary mb-2" />
+              <Briefcase className="w-6 h-6 text-info mb-2" />
               <span className="text-sm font-medium text-foreground">
-                Create Schedule
+                Positions
               </span>
             </CardContent>
           </Card>
@@ -97,7 +98,18 @@ export default function ManagerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/timesheets">
+        <Link href="/manager/schedule">
+          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+            <CardContent className="flex flex-col items-center py-4">
+              <Calendar className="w-6 h-6 text-primary mb-2" />
+              <span className="text-sm font-medium text-foreground">
+                Create Schedule
+              </span>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/manager/timesheets">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center py-4">
               <ClipboardList className="w-6 h-6 text-success mb-2" />
@@ -108,7 +120,7 @@ export default function ManagerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/reports">
+        <Link href="/manager/reports">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center py-4">
               <TrendingUp className="w-6 h-6 text-warning mb-2" />
