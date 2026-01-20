@@ -2,7 +2,7 @@
 
 **Document status:** Draft  
 **Language:** English (UI may be bilingual later)  
-**Key roles terminology:** Use **Menedžeris** for the manager role (capital E).
+**Key roles terminology:** Use **Manager** for the manager role.
 
 ---
 
@@ -50,16 +50,16 @@ Automation should:
 
 ### 2.1 In Scope (MVP)
 
-- Next.js PWA (Worker + Menedžeris UI)
-- Supabase: Auth (Phone OTP), Postgres (data), Storage (documents), Realtime (optional)
+- Next.js PWA (Worker + Manager UI)
+- Supabase: Auth (Email OTP for workers/managers; email+password for company admin), Postgres (data), Storage (documents), Realtime (optional)
 - Python CP-SAT solver service (Google OR-Tools) called via internal API
 - Place setup (skills per place, weekly coverage templates, scheduling settings)
-- Worker CRUD (by Menedžeris), Worker OTP login
+- Worker CRUD (by Manager), Worker Email OTP login
 - Schedule generation for an interval (draft), overlay compare, publish, history
 - Manual override with revalidation (locks)
 - Availability (full day, time range, vacation flag)
 - **Availability submission restricted to published schedule horizon**
-- Open shifts from unfilled coverage + worker interest + Menedžeris approval
+- Open shifts from unfilled coverage + worker interest + Manager approval
 - Time tracking (start/stop), “currently working”
 - Checklist per work session
 - Shift handoff notes with audience selection
@@ -83,14 +83,14 @@ Automation should:
 
 ### 3.1 Roles
 
-- **Company Admin (Your team):** Creates company + Menedžeris account(s)
-- **Menedžeris:** Configures places, skills, workers, schedules, approvals
+- **Company Admin (Your team):** Creates company + Manager account(s)
+- **Manager:** Configures places, skills, workers, schedules, approvals
 - **Worker:** Views schedule, sets availability (within published horizon), time tracking, docs, notes, checklist
 
 ### 3.2 Permissions (High Level)
 
-- Company Admin: create company, create Menedžeris accounts
-- Menedžeris:
+- Company Admin: create company, create Manager accounts
+- Manager:
   - CRUD: Places, Place settings, Place skills config, Coverage templates
   - CRUD: Workers, Worker skills/ratings, Worker place scope, Worker status
   - Generate/publish schedules, view history, revert via draft from history
@@ -99,7 +99,7 @@ Automation should:
   - View/edit/approve/export timesheets
   - Upload/replace/archive documents
 - Worker:
-  - OTP login
+  - Email OTP login
   - View published schedule
   - Submit availability (restricted to published horizon)
   - Start/stop time tracking + checklist + handoff note
@@ -143,7 +143,7 @@ A schedule snapshot for one place and a date interval:
 
 ### 4.6 Open Shift
 
-Representation of **unfilled coverage** (gaps). Workers can express interest; Menedžeris approves.
+Representation of **unfilled coverage** (gaps). Workers can express interest; Manager approves.
 
 ### 4.7 Vacation (Paid Leave)
 
@@ -157,10 +157,10 @@ Accrual formula is configurable later (placeholder in MVP).
 ### 5.1 Components
 
 - **Next.js PWA**
-  - UI (Worker + Menedžeris)
+  - UI (Worker + Manager)
   - Backend orchestration (API routes/server actions): validation, calling solver, writing schedules, notifications
 - **Supabase**
-  - Auth: Phone OTP
+  - Auth: Email OTP (MVP)
   - Postgres: all domain data with RLS
   - Storage: documents with signed URLs
   - Realtime: optional for live updates
@@ -194,7 +194,7 @@ Inputs:
 ### 6.1 Core Entities
 
 - Company
-- MenedžerisUser
+- ManagerUser
 - WorkerUser
 - Place
 - Skill (global catalog per company)
@@ -215,7 +215,7 @@ Inputs:
 
 ---
 
-## 7. Menedžeris Setup Flows
+## 7. Manager Setup Flows
 
 ### 7.1 Create Place
 
@@ -227,17 +227,17 @@ Fields:
 
 ### 7.2 Global Skills Catalog (Company-level)
 
-Menedžeris can create/edit skills (names).
+Manager can create/edit skills (names).
 
 ### 7.3 Place Skills Config (per Place)
 
-Menedžeris selects enabled skills for the place and configures per-skill thresholds:
+Manager selects enabled skills for the place and configures per-skill thresholds:
 
 - `minAvgRating` (nullable)
 
 ### 7.4 Weekly Coverage Template (per Place + Skill)
 
-Menedžeris defines weekly windows per skill:
+Manager defines weekly windows per skill:
 
 - dayOfWeek, startTime, endTime, minCount, maxCount
 - multiple windows/day supported (chunks)
@@ -259,7 +259,7 @@ Per place:
 
 Create/edit:
 
-- name, phone (E.164; unique)
+- name, email (unique)
 - status (INVITED/ACTIVE/DISABLED)
 - place scope: ALL or selected places
 - start date (solver eligibility begins on/after this date)
@@ -272,7 +272,7 @@ Create/edit:
 
 ### 8.1 Generate Schedule for Interval
 
-- Menedžeris selects `from` and `to` and clicks **Generate/Schedule**
+- Manager selects `from` and `to` and clicks **Generate/Schedule**
 - Plan limit: `to` must be within `MAX_FUTURE_DAYS` (e.g., 14 or 30) from “today” (place timezone)
 
 **Draft creation/update rule:**
@@ -295,7 +295,7 @@ Publishing a draft:
 
 ### 8.4 Manual Overrides (Assign/Unassign) + Locking
 
-Menedžeris can:
+Manager can:
 
 - assign worker to a window/block (creates locked assignment by default)
 - unassign worker (creates open coverage)
@@ -334,7 +334,7 @@ If solver returns INFEASIBLE:
 
 - draft marked INVALID
 - show “Unfilled Coverage Report” with day/time/skill/missing count
-- Menedžeris actions: adjust coverage, adjust thresholds, add workers, relax constraints, regenerate
+- Manager actions: adjust coverage, adjust thresholds, add workers, relax constraints, regenerate
 
 ---
 
@@ -366,9 +366,9 @@ For each coverage window + skill:
 
 ## 10. Worker App Flows
 
-### 10.1 Authentication (Phone OTP Every Time)
+### 10.1 Authentication (Email OTP Every Time — MVP)
 
-- Worker enters phone → receives OTP → verifies → logged in
+- Worker enters email → receives OTP → verifies → logged in
 - Rate limiting and OTP TTL enforced
 - First login may request minimal profile confirmation (optional)
 
@@ -397,7 +397,7 @@ Types:
 **Critical restriction (MVP):**
 
 - Worker cannot submit availability **after the end datetime of the currently PUBLISHED schedule** for that place.
-- For dates beyond the published schedule: worker must communicate manually with Menedžeris; Menedžeris updates schedule when extending/publishing horizon.
+- For dates beyond the published schedule: worker must communicate manually with Manager; Manager updates schedule when extending/publishing horizon.
 
 ### 10.6 Time Tracking (Start/Stop)
 
@@ -409,12 +409,12 @@ Types:
 **Optional (MVP configurable): location validation**
 
 - Place may require geolocation permission for start/stop (checked at button press)
-- If denied/outside radius: either block or allow but flag to Menedžeris (policy)
+- If denied/outside radius: either block or allow but flag to Manager (policy)
 
 ### 10.7 Checklist
 
 - Checklist is shown during a work session
-- Checklist comes from templates configured by Menedžeris (per place+skill)
+- Checklist comes from templates configured by Manager (per place+skill)
 - Each work session has its own checklist instance; resets each new session
 
 ### 10.8 Shift Handoff Notes
@@ -427,7 +427,7 @@ On stop, worker can leave a note with audience:
 
 ### 10.9 My Profile
 
-- Worker can edit limited personal details (exact fields defined by product; phone changes are Menedžeris-only)
+- Worker can edit limited personal details (exact fields defined by product; email changes are Manager-only)
 
 ### 10.10 My Hours + Salary Preview
 
@@ -448,7 +448,7 @@ Worker can see:
 
 ---
 
-## 11. Menedžeris Operations
+## 11. Manager Operations
 
 ### 11.1 Live “Who is Working”
 
@@ -456,7 +456,7 @@ Based on active work sessions (`endTime = null`), with safeguards for stuck sess
 
 ### 11.2 Timesheets (Review/Edit/Approve/Export)
 
-- Menedžeris can edit sessions with required reason + audit
+- Manager can edit sessions with required reason + audit
 - Approve a month (MVP) → locks period
 - Export CSV per worker and/or place summary
 
@@ -479,7 +479,7 @@ Push notifications optional later.
 - HANDOFF_NOTE_RECEIVED
 - DOCUMENT_UPLOADED
 - OPEN_SHIFT_AVAILABLE
-- OPEN_SHIFT_INTEREST_SUBMITTED (to Menedžeris)
+- OPEN_SHIFT_INTEREST_SUBMITTED (to Manager)
 - TIMESHEET_APPROVED
 - TIMESHEET_EDITED_BY_MANAGER
 
@@ -508,7 +508,7 @@ Open shift = unfilled coverage window/segment requiring staffing.
 - sees eligible open shifts (place + skill + no conflicts)
 - can submit interest (“I’m available”)
 
-### 13.3 Menedžeris
+### 13.3 Manager
 
 - reviews interests
 - approves worker(s) up to missingCount
@@ -557,12 +557,14 @@ Open shift = unfilled coverage window/segment requiring staffing.
 ### MVP
 
 - All features defined in this document
+- Auth: Email OTP for workers/managers; email+password for company admin
 - In-app notifications only
 - Expiration on-read
 - Simple hourly pay
 
 ### V1+
 
+- SMS/Phone OTP login option
 - Push notifications
 - Recurring availability
 - Advanced fairness optimization
@@ -574,16 +576,16 @@ Open shift = unfilled coverage window/segment requiring staffing.
 
 ## 17. Acceptance Criteria Checklist (High Level)
 
-- Menedžeris can configure place skills + weekly coverage + settings
-- Menedžeris can CRUD workers (phone OTP login), assign places, set skill ratings
+- Manager can configure place skills + weekly coverage + settings
+- Manager can CRUD workers (email OTP login), assign places, set skill ratings
 - Generate draft schedule for interval within plan horizon
 - Draft overlay compare; publish overwrites only within interval; history exists
 - Manual overrides create locks; draft revalidation blocks publish if invalid
 - Worker sees published schedule only
 - Worker can submit availability only within published horizon
 - Availability triggers repair (within horizon) with minimal changes + notify only impacted workers
-- Open shifts show gaps; worker can express interest; Menedžeris approves
-- Worker start/stop time tracking; Menedžeris can view “currently working”
+- Open shifts show gaps; worker can express interest; Manager approves
+- Worker start/stop time tracking; Manager can view “currently working”
 - Timesheets editable with audit; approval locks; CSV export works
 - Documents upload/download with signed URLs; expiration on-read
 - Notifications list + read/unread works
@@ -613,11 +615,11 @@ Output:
 ### A.2 App Endpoints (Conceptual)
 
 - Auth: request/verify OTP
-- Menedžeris: places, skills, place config, coverage template, settings
-- Menedžeris: workers CRUD
-- Menedžeris: generate/publish/repair schedules
+- Manager: places, skills, place config, coverage template, settings
+- Manager: workers CRUD
+- Manager: generate/publish/repair schedules
 - Worker: planning, availability, open shifts interest
 - Worker: start/stop sessions, checklist, notes
-- Menedžeris: timesheets approve/export
+- Manager: timesheets approve/export
 - Documents: list + signed download link
 - Notifications: list + mark read
