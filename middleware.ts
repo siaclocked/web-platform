@@ -36,6 +36,17 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
+  // Block direct access to (app) folder pages
+  // These are layout/base pages and should not be accessed directly
+  const appGroupPaths = ['/dashboard'];
+  const isAppGroupPath = appGroupPaths.some(path => pathname === path);
+
+  if (isAppGroupPath) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
+
   // Define public and protected paths
   const publicPaths = ['/login', '/select-role', '/signup', '/api/auth', '/api/test', '/api/signup'];
   const protectedPaths = ['/company', '/manager', '/worker', '/managers'];
