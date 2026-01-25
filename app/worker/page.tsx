@@ -88,7 +88,7 @@ export default function WorkerDashboard() {
 
       {/* Quick Links */}
       <div className="space-y-2">
-        <Link href="/availability">
+        <Link href="/worker/set-availability">
           <Card className="hover:bg-background-tertiary transition-colors">
             <CardContent className="flex items-center gap-3 py-3">
               <Calendar className="w-5 h-5 text-primary" />
@@ -98,7 +98,7 @@ export default function WorkerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/documents">
+        <Link href="/worker/my-documents">
           <Card className="hover:bg-background-tertiary transition-colors">
             <CardContent className="flex items-center gap-3 py-3">
               <FileText className="w-5 h-5 text-accent" />

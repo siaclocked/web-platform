@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input, Avatar, Badge } from '@/components/ui';
+import { Card, CardContent, Avatar, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { User, Mail, Phone, Clock, Edit2, Save, X, Calendar } from 'lucide-react';
+import { User, Mail, Phone, Clock, Calendar } from 'lucide-react';
 
 interface WorkerProfile {
   id: string;
@@ -39,15 +39,6 @@ export default function WorkerProfilePage() {
   const [profile, setProfile] = useState<WorkerProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<WorkSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({
-    first_name: '',
-    last_name: '',
-    phone: '',
-  });
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   useEffect(() => {
     fetchProfile();
@@ -64,29 +55,23 @@ export default function WorkerProfilePage() {
         return;
       }
 
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select(`
-          *,
-          companies:company_id (
-            id,
-            name
-          )
-        `)
-        .eq('id', user.id)
-        .single();
-
-      if (error) throw error;
-
-      setProfile(profile);
-      setEditForm({
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        phone: profile.phone || '',
+      // Use API endpoint to bypass RLS recursion
+      const response = await fetch('/api/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.id }),
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile');
+      }
+
+      const profile = await response.json();
+      setProfile(profile);
     } catch (error) {
       console.error('Error fetching profile:', error);
-      setError('Failed to load profile');
     } finally {
       setIsLoading(false);
     }
@@ -99,74 +84,25 @@ export default function WorkerProfilePage() {
       
       if (!user) return;
 
-      const { data: sessions, error } = await supabase
-        .from('work_sessions')
-        .select(`
-          *,
-          place:place_id (
-            name
-          )
-        `)
-        .eq('worker_id', user.id)
-        .order('start_time', { ascending: false })
-        .limit(5);
+      // Use API endpoint to get work sessions (bypasses RLS)
+      const response = await fetch('/api/profile/work-sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.id }),
+      });
 
-      if (error) throw error;
-
-      setRecentSessions(sessions || []);
+      if (response.ok) {
+        const sessions = await response.json();
+        setRecentSessions(sessions || []);
+      } else {
+        // Fallback to empty array if API fails
+        setRecentSessions([]);
+      }
     } catch (error) {
       console.error('Error fetching sessions:', error);
-    }
-  };
-
-  const handleEdit = () => {
-    setIsEditing(true);
-    setError('');
-    setSuccess('');
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    if (profile) {
-      setEditForm({
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        phone: profile.phone || '',
-      });
-    }
-    setError('');
-    setSuccess('');
-  };
-
-  const handleSave = async () => {
-    if (!profile) return;
-
-    setSaveLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const supabase = createClient();
-      
-      const { error } = await supabase
-        .from('users')
-        .update({
-          first_name: editForm.first_name,
-          last_name: editForm.last_name,
-          phone: editForm.phone || null,
-        })
-        .eq('id', profile.id);
-
-      if (error) throw error;
-
-      setSuccess('Profile updated successfully');
-      setIsEditing(false);
-      fetchProfile();
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      setError('Failed to update profile');
-    } finally {
-      setSaveLoading(false);
+      setRecentSessions([]);
     }
   };
 
@@ -221,23 +157,6 @@ export default function WorkerProfilePage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <BackButton href="/worker" />
-          {!isEditing ? (
-            <Button onClick={handleEdit} variant="secondary" size="sm">
-              <Edit2 className="w-4 h-4 mr-2" />
-              Edit Profile
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button onClick={handleCancel} variant="outline" size="sm">
-                <X className="w-4 h-4 mr-2" />
-                Cancel
-              </Button>
-              <Button onClick={handleSave} size="sm" isLoading={saveLoading}>
-                <Save className="w-4 h-4 mr-2" />
-                Save
-              </Button>
-            </div>
-          )}
         </div>
 
         {/* Profile Card */}
@@ -263,54 +182,26 @@ export default function WorkerProfilePage() {
               </div>
             </div>
 
-            {error && (
-              <div className="mb-4 p-3 bg-danger-muted/20 border border-danger/30 rounded-lg">
-                <p className="text-sm text-danger">{error}</p>
-              </div>
-            )}
-
-            {success && (
-              <div className="mb-4 p-3 bg-success-muted/20 border border-success/30 rounded-lg">
-                <p className="text-sm text-success">{success}</p>
-              </div>
-            )}
-
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
                     First Name
                   </label>
-                  {isEditing ? (
-                    <Input
-                      value={editForm.first_name}
-                      onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                      placeholder="First name"
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-foreground-muted" />
-                      <span>{profile.first_name}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-foreground-muted" />
+                    <span>{profile.first_name}</span>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
                     Last Name
                   </label>
-                  {isEditing ? (
-                    <Input
-                      value={editForm.last_name}
-                      onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                      placeholder="Last name"
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-foreground-muted" />
-                      <span>{profile.last_name}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-foreground-muted" />
+                    <span>{profile.last_name}</span>
+                  </div>
                 </div>
               </div>
 
@@ -328,18 +219,10 @@ export default function WorkerProfilePage() {
                 <label className="block text-sm font-medium text-foreground mb-1">
                   Phone
                 </label>
-                {isEditing ? (
-                  <Input
-                    value={editForm.phone}
-                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    placeholder="Phone number"
-                  />
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-foreground-muted" />
-                    <span>{profile.phone || 'Not provided'}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-foreground-muted" />
+                  <span>{profile.phone || 'Not provided'}</span>
+                </div>
               </div>
 
               {profile.hourly_rate && (

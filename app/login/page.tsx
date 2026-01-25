@@ -13,7 +13,10 @@ export default function LoginPage() {
       {/* Header */}
       <div className="border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center space-x-3">
+          <div 
+            className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => router.push('/')}
+          >
             <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
               <Clock className="w-6 h-6 text-white" />
             </div>
