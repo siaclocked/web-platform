@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { Calendar, Clock, MapPin, Users, Plus, Trash2, Save, Send, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, Plus, Trash2, Save, Send, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Edit, Trash } from 'lucide-react';
 
 interface ShiftTemplate {
   id: string;
@@ -35,11 +35,16 @@ interface Position {
 interface Timesheet {
   id: string;
   name: string;
-  startDate: string;
-  endDate: string;
+  place_id: string;
+  start_date: string;
+  end_date: string;
+  availability_deadline: string;
   status: 'draft' | 'published' | 'closed';
-  placeIds: string[];
-  createdAt: string;
+  company_id: string;
+  manager_id: string;
+  created_at: string;
+  updated_at?: string;
+  shifts?: ShiftTemplate[];
 }
 
 interface CalendarDay {
@@ -79,15 +84,26 @@ export default function ManagerTimesheetsPage() {
   const fetchTimesheets = async () => {
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!user) {
+      if (!session) {
         router.push('/login');
         return;
       }
 
-      // Replace with actual API call when ready
-      setTimesheets([]);
+      const response = await fetch('/api/manager/schedule-templates', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token || ''}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setTimesheets(data.templates || []);
+      } else {
+        console.error('Failed to fetch schedule templates');
+        setTimesheets([]);
+      }
     } catch (error) {
       console.error('Error fetching timesheets:', error);
       setTimesheets([]);
@@ -98,8 +114,29 @@ export default function ManagerTimesheetsPage() {
 
   const fetchPlaces = async () => {
     try {
-      // Replace with actual API call when ready
-      setPlaces([]);
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        console.log('No session found for fetchPlaces');
+        setPlaces([]);
+        return;
+      }
+
+      const response = await fetch('/api/manager/places', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token || ''}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Places fetched:', data.places);
+        setPlaces(data.places || []);
+      } else {
+        console.error('Failed to fetch places');
+        setPlaces([]);
+      }
     } catch (error) {
       console.error('Error fetching places:', error);
       setPlaces([]);
@@ -197,12 +234,15 @@ export default function ManagerTimesheetsPage() {
   const startNewTimesheet = () => {
     const newTimesheet: Timesheet = {
       id: 'new',
-      name: 'New Timesheet',
-      startDate: '',
-      endDate: '',
+      name: '',
+      place_id: '',
+      start_date: '',
+      end_date: '',
+      availability_deadline: '',
       status: 'draft',
-      placeIds: [],
-      createdAt: new Date().toISOString()
+      company_id: '',
+      manager_id: '',
+      created_at: new Date().toISOString()
     };
 
     setEditingTimesheet(newTimesheet);
@@ -212,14 +252,14 @@ export default function ManagerTimesheetsPage() {
   };
 
   const handleDateRangeChange = () => {
-    if (!editingTimesheet?.startDate || !editingTimesheet?.endDate) {
+    if (!editingTimesheet?.start_date || !editingTimesheet?.end_date) {
       setDateRange({ start: null, end: null });
       setShiftTemplates([]);
       return;
     }
 
-    const startDate = new Date(editingTimesheet.startDate);
-    const endDate = new Date(editingTimesheet.endDate);
+    const startDate = new Date(editingTimesheet.start_date);
+    const endDate = new Date(editingTimesheet.end_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Set to start of today for fair comparison
     
@@ -227,7 +267,7 @@ export default function ManagerTimesheetsPage() {
     if (startDate < today) {
       alert('Start date cannot be in the past. Please select a date that is today or in the future.');
       // Clear the invalid start date
-      setEditingTimesheet(prev => prev ? {...prev, startDate: ''} : null);
+      setEditingTimesheet(prev => prev ? {...prev, start_date: ''} : null);
       setDateRange({ start: null, end: null });
       setShiftTemplates([]);
       return;
@@ -237,7 +277,7 @@ export default function ManagerTimesheetsPage() {
     if (endDate < startDate) {
       alert('End date must be after or equal to the start date.');
       // Clear the invalid end date
-      setEditingTimesheet(prev => prev ? {...prev, endDate: ''} : null);
+      setEditingTimesheet(prev => prev ? {...prev, end_date: ''} : null);
       setDateRange({ start: null, end: null });
       setShiftTemplates([]);
       return;
@@ -351,35 +391,143 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
       return;
     }
 
+    if (!editingTimesheet.name?.trim()) {
+      alert('Please enter a name for the schedule template');
+      return;
+    }
+
+    if (!editingTimesheet.place_id) {
+      alert('Please select a place for the schedule template');
+      return;
+    }
+
+    if (!editingTimesheet.availability_deadline) {
+      alert('Please set an availability deadline for the schedule template');
+      return;
+    }
+
     try {
-      // Update the timesheet with the selected date range
-      const updatedTimesheet = {
-        ...editingTimesheet,
-        name: `Timesheet ${dateRange.start.toLocaleDateString()} - ${dateRange.end.toLocaleDateString()}`,
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        alert('You must be logged in to save schedule templates');
+        return;
+      }
+
+      // Prepare the schedule template data
+      const templateData = {
+        name: editingTimesheet.name.trim(),
+        placeId: editingTimesheet.place_id,
         startDate: dateRange.start.toISOString().split('T')[0],
-        endDate: dateRange.end.toISOString().split('T')[0]
+        endDate: dateRange.end.toISOString().split('T')[0],
+        availabilityDeadline: editingTimesheet.availability_deadline,
+        status: 'draft',
+        shifts: shiftTemplates.map(template => ({
+          date: template.date,
+          dayType: template.dayType,
+          shifts: template.shifts
+        }))
       };
 
-      // Mock save - replace with actual API call
-      console.log('Saving timesheet:', updatedTimesheet);
-      console.log('Shift templates:', shiftTemplates);
-      
-      // Add to list if new
-      if (editingTimesheet.id === 'new') {
-        const savedTimesheet = {
-          ...updatedTimesheet,
-          id: `timesheet-${Date.now()}`,
-          createdAt: new Date().toISOString()
-        };
-        setTimesheets(prev => [savedTimesheet, ...prev]);
+      let response;
+      const isNew = editingTimesheet.id === 'new';
+
+      if (isNew) {
+        // Create new schedule template
+        response = await fetch('/api/manager/schedule-templates', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token || ''}`,
+          },
+          body: JSON.stringify(templateData),
+        });
+      } else {
+        // Update existing schedule template
+        response = await fetch('/api/manager/schedule-templates', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token || ''}`,
+          },
+          body: JSON.stringify({
+            id: editingTimesheet.id,
+            ...templateData
+          }),
+        });
       }
-      
-      setCreatingNew(false);
-      setEditingTimesheet(null);
-      setShiftTemplates([]);
-      setDateRange({ start: null, end: null });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.success) {
+          // Refresh the timesheets list
+          await fetchTimesheets();
+          
+          // Close the editor
+          setCreatingNew(false);
+          setEditingTimesheet(null);
+          setShiftTemplates([]);
+          setDateRange({ start: null, end: null });
+          
+          alert(`Schedule template "${templateData.name}" ${isNew ? 'created' : 'updated'} successfully!`);
+        } else {
+          alert(`Failed to ${isNew ? 'create' : 'update'} schedule template`);
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('Save error:', errorData);
+        alert(errorData.error || `Failed to ${isNew ? 'create' : 'update'} schedule template`);
+      }
     } catch (error) {
       console.error('Error saving timesheet:', error);
+      alert('An error occurred while saving the schedule template');
+    }
+  };
+
+  const deleteTimesheet = async (timesheetId: string, timesheetName: string) => {
+    if (!confirm(`Are you sure you want to delete "${timesheetName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        alert('You must be logged in to delete schedule templates');
+        return;
+      }
+
+      const response = await fetch('/api/manager/schedule-templates', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token || ''}`,
+        },
+        body: JSON.stringify({ id: timesheetId }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.success) {
+          // Refresh the timesheets list
+          await fetchTimesheets();
+          
+          alert(`Schedule template "${timesheetName}" deleted successfully!`);
+        } else {
+          alert('Failed to delete schedule template');
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('Delete error:', errorData);
+        alert(errorData.error || 'Failed to delete schedule template');
+      }
+    } catch (error) {
+      console.error('Error deleting timesheet:', error);
+      alert('An error occurred while deleting the schedule template');
     }
   };
 
@@ -394,13 +542,9 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'published': return 'success';
-      case 'closed': return 'danger';
-      case 'draft': return 'warning';
-      default: return 'default';
-    }
+  const cancelCopyMode = () => {
+    setCopySourceDay(null);
+    setSelectedTargetDays(new Set());
   };
 
   const formatDate = (dateString: string) => {
@@ -436,9 +580,38 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
     }
   };
 
-  const cancelCopyMode = () => {
-    setCopySourceDay(null);
-    setSelectedTargetDays(new Set());
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'published': return 'success';
+      case 'closed': return 'danger';
+      case 'draft': return 'warning';
+      default: return 'default';
+    }
+  };
+
+  const formatTimeForInput = (timeString: string) => {
+    // Convert 24-hour format to HH:MM format for display
+    if (!timeString) return '';
+    return timeString.slice(0, 5); // Assumes format is "HH:MM:SS" or "HH:MM"
+  };
+
+  const parseTimeInput = (timeString: string) => {
+    // Validate and format time input to HH:MM format
+    if (!timeString) return '';
+    
+    // Remove any non-digit characters except colon
+    const cleanTime = timeString.replace(/[^\d:]/g, '');
+    
+    // Parse hours and minutes
+    const parts = cleanTime.split(':');
+    let hours = parseInt(parts[0]) || 0;
+    let minutesVal = parseInt(parts[1]) || 0;
+    
+    // Validate hours (0-23) and minutes (0-59)
+    if (hours > 23) hours = 23;
+    if (minutesVal > 59) minutesVal = 59;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutesVal.toString().padStart(2, '0')}`;
   };
 
   const toggleTargetDay = (dayId: string) => {
@@ -454,6 +627,35 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
         return newSet;
       });
     }
+  };
+
+  const copyToAllDays = () => {
+    // Find the first work day with shifts
+    const sourceTemplate = shiftTemplates.find(t => t.dayType === 'work' && t.shifts.length > 0);
+    
+    if (!sourceTemplate) {
+      alert('Please create a work day with shifts first to copy from.');
+      return;
+    }
+
+    const confirmCopy = confirm(`Copy shifts from ${formatDate(sourceTemplate.date)} to ALL work days in this timeframe? This will replace any existing shifts on other work days.`);
+    if (!confirmCopy) return;
+
+    // Apply to all work days
+    setShiftTemplates(prev => prev.map(template => {
+      if (template.dayType === 'work' && template.id !== sourceTemplate.id) {
+        return {
+          ...template,
+          shifts: sourceTemplate.shifts.map(shift => ({
+            ...shift,
+            id: `shift-${Date.now()}-${Math.random()}` // Unique ID for each copied shift
+          }))
+        };
+      }
+      return template;
+    }));
+
+    alert(`Shifts copied to all work days!`);
   };
 
   const applyCopiedShifts = () => {
@@ -510,70 +712,123 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
           <Card>
             <CardContent className="p-6">
               <h2 className="text-lg font-semibold text-foreground mb-4">
-                {editingTimesheet?.name || 'New Timesheet'}
+                {editingTimesheet?.id === 'new' ? 'New Schedule Template' : 'Edit Schedule Template'}
               </h2>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    Start Date
+                    Template Name *
                   </label>
                   <input
-                    type="date"
-                    value={editingTimesheet?.startDate || ''}
-                    min={new Date().toISOString().split('T')[0]} // Prevent selecting past dates
-                    onChange={(e) => {
-                      const newStartDate = e.target.value;
-                      const newEndDate = editingTimesheet?.endDate || '';
-                      
-                      setEditingTimesheet(prev => prev ? {...prev, startDate: newStartDate} : null);
-                      
-                      // Check if we have both dates after this update
-                      if (newStartDate && newEndDate) {
-                        const startDate = new Date(newStartDate);
-                        const endDate = new Date(newEndDate);
-                        
-                        setDateRange({ start: startDate, end: endDate });
-                        setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
-                        generateShiftTemplatesFromRange(startDate, endDate);
-                      } else if (newStartDate && !newEndDate) {
-                        // Only start date selected, clear range
-                        setDateRange({ start: null, end: null });
-                        setShiftTemplates([]);
-                      }
-                    }}
+                    type="text"
+                    value={editingTimesheet?.name || ''}
+                    onChange={(e) => setEditingTimesheet(prev => prev ? {...prev, name: e.target.value} : null)}
+                    placeholder="e.g., Summer Schedule 2025, Weekend Shifts"
                     className="w-full p-2 border border-border rounded-lg"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
-                    End Date
+                    Place *
+                  </label>
+                  <select
+                    value={editingTimesheet?.place_id || ''}
+                    onChange={(e) => setEditingTimesheet(prev => prev ? {...prev, place_id: e.target.value} : null)}
+                    className="w-full p-2 border border-border rounded-lg"
+                  >
+                    <option value="">Select a place</option>
+                    {places.length === 0 ? (
+                      <option value="" disabled>No places available</option>
+                    ) : (
+                      places.map(place => (
+                        <option key={place.id} value={place.id}>{place.name}</option>
+                      ))
+                    )}
+                  </select>
+                  {places.length === 0 && (
+                    <p className="text-xs text-foreground-muted mt-1">
+                      No places found. Please create places first.
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editingTimesheet?.start_date || ''}
+                      min={new Date().toISOString().split('T')[0]} // Prevent selecting past dates
+                      onChange={(e) => {
+                        const newStartDate = e.target.value;
+                        const newEndDate = editingTimesheet?.end_date || '';
+                        
+                        setEditingTimesheet(prev => prev ? {...prev, start_date: newStartDate} : null);
+                        
+                        // Check if we have both dates after this update
+                        if (newStartDate && newEndDate) {
+                          const startDate = new Date(newStartDate);
+                          const endDate = new Date(newEndDate);
+                          
+                          setDateRange({ start: startDate, end: endDate });
+                          setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
+                          generateShiftTemplatesFromRange(startDate, endDate);
+                        } else if (newStartDate && !newEndDate) {
+                          // Only start date selected, clear range
+                          setDateRange({ start: null, end: null });
+                          setShiftTemplates([]);
+                        }
+                      }}
+                      className="w-full p-2 border border-border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={editingTimesheet?.end_date || ''}
+                      min={editingTimesheet?.start_date || new Date().toISOString().split('T')[0]} // Prevent selecting before start date
+                      onChange={(e) => {
+                        const newEndDate = e.target.value;
+                        const newStartDate = editingTimesheet?.start_date || '';
+                        
+                        setEditingTimesheet(prev => prev ? {...prev, end_date: newEndDate} : null);
+                        
+                        // Check if we have both dates after this update
+                        if (newStartDate && newEndDate) {
+                          const startDate = new Date(newStartDate);
+                          const endDate = new Date(newEndDate);
+                          
+                          setDateRange({ start: startDate, end: endDate });
+                          setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
+                          generateShiftTemplatesFromRange(startDate, endDate);
+                        } else if (!newStartDate && newEndDate) {
+                          // Only end date selected, clear range
+                          setDateRange({ start: null, end: null });
+                          setShiftTemplates([]);
+                        }
+                      }}
+                      className="w-full p-2 border border-border rounded-lg"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Availability Deadline *
                   </label>
                   <input
-                    type="date"
-                    value={editingTimesheet?.endDate || ''}
-                    min={editingTimesheet?.startDate || new Date().toISOString().split('T')[0]} // Prevent selecting before start date
-                    onChange={(e) => {
-                      const newEndDate = e.target.value;
-                      const newStartDate = editingTimesheet?.startDate || '';
-                      
-                      setEditingTimesheet(prev => prev ? {...prev, endDate: newEndDate} : null);
-                      
-                      // Check if we have both dates after this update
-                      if (newStartDate && newEndDate) {
-                        const startDate = new Date(newStartDate);
-                        const endDate = new Date(newEndDate);
-                        
-                        setDateRange({ start: startDate, end: endDate });
-                        setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
-                        generateShiftTemplatesFromRange(startDate, endDate);
-                      } else if (!newStartDate && newEndDate) {
-                        // Only end date selected, clear range
-                        setDateRange({ start: null, end: null });
-                        setShiftTemplates([]);
-                      }
-                    }}
+                    type="datetime-local"
+                    value={editingTimesheet?.availability_deadline || ''}
+                    onChange={(e) => setEditingTimesheet(prev => prev ? {...prev, availability_deadline: e.target.value} : null)}
+                    min={new Date().toISOString().slice(0, 16)} // Prevent selecting past dates
                     className="w-full p-2 border border-border rounded-lg"
                   />
+                  <p className="text-xs text-foreground-muted mt-1">
+                    Workers must set their availability before this deadline (24-hour format)
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -701,11 +956,21 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">Shift Templates</h3>
-              {copySourceDay && (
-                <div className="text-sm text-info">
-                  <strong>Copy Mode:</strong> Click work days to select as targets, then click "Apply" to copy shifts
-                </div>
-              )}
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={copyToAllDays}
+                  className="text-xs"
+                >
+                  Copy to All
+                </Button>
+                {copySourceDay && (
+                  <div className="text-sm text-info">
+                    <strong>Copy Mode:</strong> Click work days to select as targets, then click "Apply" to copy shifts
+                  </div>
+                )}
+              </div>
             </div>
             {positions.length === 0 ? (
               <Card>
@@ -810,18 +1075,21 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                             <div className="flex items-center gap-2">
                               <Clock className="w-4 h-4 text-foreground-muted" />
                               <input
-                                type="time"
-                                value={shift.startTime}
-                                onChange={(e) => updateShift(template.id, shift.id, 'startTime', e.target.value)}
-                                className="px-2 py-1 border border-border rounded text-sm"
+                                type="text"
+                                value={formatTimeForInput(shift.startTime)}
+                                onChange={(e) => updateShift(template.id, shift.id, 'startTime', parseTimeInput(e.target.value))}
+                                placeholder="09:00"
+                                className="w-20 px-2 py-1 border border-border rounded text-sm"
                               />
                               <span className="text-foreground-muted text-sm">to</span>
                               <input
-                                type="time"
-                                value={shift.endTime}
-                                onChange={(e) => updateShift(template.id, shift.id, 'endTime', e.target.value)}
-                                className="px-2 py-1 border border-border rounded text-sm"
+                                type="text"
+                                value={formatTimeForInput(shift.endTime)}
+                                onChange={(e) => updateShift(template.id, shift.id, 'endTime', parseTimeInput(e.target.value))}
+                                placeholder="17:00"
+                                className="w-20 px-2 py-1 border border-border rounded text-sm"
                               />
+                              <span className="text-xs text-foreground-muted">24h</span>
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                               <select
@@ -951,9 +1219,21 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                       <h3 className="font-medium text-foreground">
                         {timesheet.name}
                       </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {formatDate(timesheet.startDate)} - {formatDate(timesheet.endDate)}
+                      <div className="flex items-center gap-2 mt-1">
+                        <MapPin className="w-4 h-4 text-foreground-muted" />
+                        <span className="text-sm text-muted-foreground">
+                          {places.find(p => p.id === timesheet.place_id)?.name || 'Unknown Place'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {formatDate(timesheet.start_date)} - {formatDate(timesheet.end_date)}
                       </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Clock className="w-4 h-4 text-foreground-muted" />
+                        <span className="text-sm text-muted-foreground">
+                          Deadline: {new Date(timesheet.availability_deadline).toLocaleString()}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={getStatusColor(timesheet.status)}>
@@ -973,15 +1253,55 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                   </div>
 
                   <div className="flex gap-2">
-                    {timesheet.placeIds.map(placeId => {
-                      const place = places.find(p => p.id === placeId);
-                      return place ? (
-                        <Badge key={placeId} variant="default" className="text-xs">
-                          <MapPin className="w-3 h-3 mr-1" />
-                          {place.name}
-                        </Badge>
-                      ) : null;
-                    })}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const template = {
+                          ...timesheet,
+                          start_date: timesheet.start_date,
+                          end_date: timesheet.end_date,
+                          place_id: timesheet.place_id,
+                          availability_deadline: timesheet.availability_deadline
+                        };
+                        setEditingTimesheet(template);
+                        setCreatingNew(false);
+                        
+                        // Load shift templates if they exist
+                        if (timesheet.shifts) {
+                          setShiftTemplates(timesheet.shifts);
+                        } else {
+                          setShiftTemplates([]);
+                        }
+                        
+                        // Set date range
+                        const startDate = new Date(timesheet.start_date);
+                        const endDate = new Date(timesheet.end_date);
+                        setDateRange({ start: startDate, end: endDate });
+                        setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
+                        generateShiftTemplatesFromRange(startDate, endDate);
+                      }}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => publishTimesheet(timesheet.id)}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Publish
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => deleteTimesheet(timesheet.id, timesheet.name)}
+                    >
+                      <Trash className="w-4 h-4 mr-2" />
+                      Delete
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
