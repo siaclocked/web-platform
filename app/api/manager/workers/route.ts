@@ -61,7 +61,8 @@ export async function GET(request: Request) {
         phone,
         is_active,
         position_id,
-        hourly_rate
+        hourly_rate,
+        place_id
       `)
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)
@@ -77,7 +78,10 @@ export async function GET(request: Request) {
 
     // Get position names separately
     let positionNames: { [key: string]: string } = {};
+    let placeNames: { [key: string]: string } = {};
+    
     if (workers && workers.length > 0) {
+      // Get position names
       const positionIds = workers
         .filter(w => w.position_id)
         .map(w => w.position_id!)
@@ -94,12 +98,31 @@ export async function GET(request: Request) {
           return acc;
         }, {} as { [key: string]: string });
       }
+
+      // Get place names
+      const placeIds = workers
+        .filter(w => w.place_id)
+        .map(w => w.place_id!)
+        .filter((id, index, arr) => arr.indexOf(id) === index); // Unique IDs
+      
+      if (placeIds.length > 0) {
+        const { data: places } = await supabase
+          .from('places')
+          .select('id, name')
+          .in('id', placeIds);
+        
+        placeNames = (places || []).reduce((acc, place) => {
+          acc[place.id] = place.name;
+          return acc;
+        }, {} as { [key: string]: string });
+      }
     }
 
-    // Format the response with position names
+    // Format the response with position and place names
     const formattedWorkers = (workers || []).map(worker => ({
       ...worker,
-      position_name: worker.position_id ? positionNames[worker.position_id] || null : null
+      position_name: worker.position_id ? positionNames[worker.position_id] || null : null,
+      place_name: worker.place_id ? placeNames[worker.place_id] || null : null
     }));
 
     return NextResponse.json({ workers: formattedWorkers });

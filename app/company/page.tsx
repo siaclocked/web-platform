@@ -5,6 +5,7 @@ import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { Building2, Users, Calendar, FileText, Plus, TrendingUp, MapPin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
 export default function CompanyPage() {
@@ -103,60 +104,39 @@ export default function CompanyPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Managers</h3>
-                <Button onClick={() => router.push('/company/managers')}>
-                  View All
-                </Button>
-              </div>
-              <p className="text-muted-foreground mb-4">
-                Manage your team managers
-              </p>
-              <Button className="w-full" onClick={() => router.push('/company/managers/add')}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Manager
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="grid md:grid-cols-3 gap-3">
+          <Link href="/company/managers">
+            <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+              <CardContent className="flex flex-col items-center py-6">
+                <Users className="w-6 h-6 text-primary mb-2" />
+                <span className="text-sm font-medium text-foreground">
+                  Managers
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Places</h3>
-                <Button onClick={() => router.push('/company/places')}>
-                  View All
-                </Button>
-              </div>
-              <p className="text-muted-foreground mb-4">
-                View work locations across all managers
-              </p>
-              <Button className="w-full" onClick={() => router.push('/company/places')}>
-                <MapPin className="w-4 h-4 mr-2" />
-                View Places
-              </Button>
-            </CardContent>
-          </Card>
+          <Link href="/company/places">
+            <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+              <CardContent className="flex flex-col items-center py-6">
+                <MapPin className="w-6 h-6 text-green-500 mb-2" />
+                <span className="text-sm font-medium text-foreground">
+                  Places
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Documents</h3>
-                <Button onClick={() => router.push('/company/documents')}>
-                  View All
-                </Button>
-              </div>
-              <p className="text-muted-foreground mb-4">
-                Manage company documents
-              </p>
-              <Button className="w-full" onClick={() => router.push('/company/documents')}>
-                <FileText className="w-4 h-4 mr-2" />
-                View Documents
-              </Button>
-            </CardContent>
-          </Card>
+          <Link href="/company/documents">
+            <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+              <CardContent className="flex flex-col items-center py-6">
+                <FileText className="w-6 h-6 text-orange-500 mb-2" />
+                <span className="text-sm font-medium text-foreground">
+                  Documents
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       </div>
     </PageContainer>

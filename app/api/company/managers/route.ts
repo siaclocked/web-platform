@@ -50,8 +50,12 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get all managers for this company
-    const { data: managers, error } = await supabase
+    // Parse limit parameter
+    const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get('limit') || '10');
+
+    // Get managers for this company
+    let query = supabase
       .from('users')
       .select(`
         id,
@@ -66,6 +70,13 @@ export async function GET(request: Request) {
       .eq('company_id', userData.company_id)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
+
+    // Apply limit if specified
+    if (limit > 0) {
+      query = query.limit(limit);
+    }
+
+    const { data: managers, error } = await query;
 
     if (error) {
       console.error('Database error:', error);

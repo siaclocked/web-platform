@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input, Select } from '@/components/ui';
-import { Users, Plus, Edit2, Trash2, Mail, Phone, Search } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Mail, Phone, Search, MapPin } from 'lucide-react';
 
 interface Worker {
   id: string;
@@ -377,9 +377,10 @@ export default function ManagerWorkersPage() {
                               </span>
                             )}
                             {worker.place_name && (
-                              <span className="text-xs bg-info/10 text-info px-2 py-1 rounded">
-                                📍 {worker.place_name}
-                              </span>
+                              <div className="flex items-center gap-1 text-xs bg-info text-white px-2 py-1 rounded border border-info">
+                                <MapPin className="w-3 h-3" />
+                                {worker.place_name}
+                              </div>
                             )}
                             {worker.hourly_rate && (
                               <span className="text-xs bg-success/10 text-success px-2 py-1 rounded">

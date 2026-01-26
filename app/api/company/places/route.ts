@@ -50,92 +50,33 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get all managers in the company
-    const { data: managers, error: managersError } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, email')
-      .eq('company_id', userData.company_id)
-      .eq('role', 'manager')
-      .eq('is_active', true);
+    // Parse limit parameter
+    const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get('limit') || '10');
 
-    if (managersError) {
-      console.error('Error fetching managers:', managersError);
+    // Get all places for this company
+    let query = supabase
+      .from('places')
+      .select('*')
+      .eq('company_id', userData.company_id)
+      .order('created_at', { ascending: false });
+
+    // Apply limit if specified
+    if (limit > 0) {
+      query = query.limit(limit);
+    }
+
+    const { data: places, error } = await query;
+
+    if (error) {
+      console.error('Database error:', error);
       return NextResponse.json(
-        { error: 'Failed to fetch managers' },
+        { error: error.message },
         { status: 500 }
       );
     }
 
-    // Get places with worker counts for each manager
-    const managersWithPlaces = await Promise.all(
-      (managers || []).map(async (manager) => {
-        try {
-          // Get places for this manager
-          const { data: places, error: placesError } = await supabase
-            .from('places')
-            .select('*')
-            .eq('manager_id', manager.id)
-            .eq('company_id', userData.company_id)
-            .order('created_at', { ascending: false });
-
-          if (placesError) {
-            console.error('Error fetching places for manager:', manager.id, placesError);
-            return {
-              ...manager,
-              places: [],
-              total_places: 0,
-              total_workers: 0,
-            };
-          }
-
-          // Get worker counts for each place
-          const placesWithCounts = await Promise.all(
-            (places || []).map(async (place) => {
-              try {
-                const { count } = await supabase
-                  .from('users')
-                  .select('*', { count: 'exact', head: true })
-                  .eq('place_id', place.id)
-                  .eq('company_id', userData.company_id);
-
-                return {
-                  ...place,
-                  worker_count: count || 0,
-                };
-              } catch (countError) {
-                console.error('Error getting worker count for place:', place.id, countError);
-                return {
-                  ...place,
-                  worker_count: 0,
-                };
-              }
-            })
-          );
-
-          const totalWorkers = placesWithCounts.reduce((sum, place) => sum + (place.worker_count || 0), 0);
-
-          return {
-            ...manager,
-            places: placesWithCounts,
-            total_places: placesWithCounts.length,
-            total_workers: totalWorkers,
-          };
-        } catch (error) {
-          console.error('Error processing manager places:', manager.id, error);
-          return {
-            ...manager,
-            places: [],
-            total_places: 0,
-            total_workers: 0,
-          };
-        }
-      })
-    );
-
-    return NextResponse.json({ 
-      managers: managersWithPlaces 
-    });
-
+    return NextResponse.json({ places: places || [] });
   } catch (err) {
     console.error('API error:', err);
     return NextResponse.json(

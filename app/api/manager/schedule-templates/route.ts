@@ -76,22 +76,50 @@ export async function GET(request: Request) {
     // Get shift templates for each schedule template
     const templatesWithShifts = await Promise.all(
       (templates || []).map(async (template) => {
+        console.log('Fetching shifts for template:', template.id);
+        
         const { data: shifts, error: shiftsError } = await supabase
           .from('shift_templates')
           .select('*')
           .eq('schedule_template_id', template.id)
           .order('date', { ascending: true });
 
+        console.log('Shifts query result for template', template.id, { shifts, shiftsError });
+
         if (shiftsError) {
           console.error('Error fetching shifts for template:', template.id, shiftsError);
           return {
             ...template,
+            availability_deadline: template.availability_deadline ? 
+              new Date(template.availability_deadline).toLocaleString('en-CA', { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit', 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+              }).replace(',', '') : '',
             shifts: []
           };
         }
 
+        console.log('Returning template with shifts:', {
+          templateId: template.id,
+          shiftsCount: shifts?.length || 0,
+          shifts: shifts
+        });
+
         return {
           ...template,
+          availability_deadline: template.availability_deadline ? 
+            new Date(template.availability_deadline).toLocaleString('en-CA', { 
+              year: 'numeric', 
+              month: '2-digit', 
+              day: '2-digit', 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: false 
+            }).replace(',', '') : '',
           shifts: shifts || []
         };
       })
@@ -184,7 +212,7 @@ export async function POST(request: Request) {
         name: name.trim(),
         start_date: startDate,
         end_date: endDate,
-        availability_deadline: availabilityDeadline,
+        availability_deadline: availabilityDeadline ? new Date(availabilityDeadline).toISOString() : null,
         status: status || 'draft',
       })
       .select()
@@ -207,6 +235,9 @@ export async function POST(request: Request) {
 
     // Create shift templates if provided
     if (shifts && shifts.length > 0) {
+      console.log('Creating shift templates:', shifts);
+      console.log('Shift data structure being saved:', JSON.stringify(shifts, null, 2));
+      
       const shiftData = shifts.map((shift: any) => ({
         schedule_template_id: template.id,
         date: shift.date,
@@ -214,17 +245,20 @@ export async function POST(request: Request) {
         shifts: shift.shifts || []
       }));
 
+      console.log('Final shift data for database:', JSON.stringify(shiftData, null, 2));
+
       const { error: shiftsError } = await supabase
         .from('shift_templates')
         .insert(shiftData);
 
       if (shiftsError) {
         console.error('Error creating shift templates:', shiftsError);
-        // Don't fail the whole operation, just log the error
+      } else {
+        console.log('Shift templates created successfully');
       }
+    } else {
+      console.log('No shifts provided or shifts array is empty');
     }
-
-    console.log('Schedule template created successfully:', { templateId: template.id, managerId: user.id });
 
     return NextResponse.json({ 
       success: true, 
@@ -301,7 +335,7 @@ export async function PUT(request: Request) {
         place_id: placeId,
         start_date: startDate,
         end_date: endDate,
-        availability_deadline: availabilityDeadline,
+        availability_deadline: availabilityDeadline ? new Date(availabilityDeadline).toISOString() : null,
         status: status || 'draft',
         updated_at: new Date().toISOString()
       })

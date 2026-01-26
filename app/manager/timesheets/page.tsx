@@ -82,12 +82,14 @@ export default function ManagerTimesheetsPage() {
   }, []);
 
   const fetchTimesheets = async () => {
+    setIsLoading(true);
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
-        router.push('/login');
+        console.log('No session found for fetchTimesheets');
+        setTimesheets([]);
         return;
       }
 
@@ -99,9 +101,10 @@ export default function ManagerTimesheetsPage() {
       
       if (response.ok) {
         const data = await response.json();
+        console.log('Fetched timesheets:', data);
         setTimesheets(data.templates || []);
       } else {
-        console.error('Failed to fetch schedule templates');
+        console.error('Failed to fetch timesheets');
         setTimesheets([]);
       }
     } catch (error) {
@@ -406,6 +409,30 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
       return;
     }
 
+    // Validate deadline format and future date
+    if (!validateDateTimeFormat(editingTimesheet.availability_deadline)) {
+      alert('Deadline format must be YYYY-MM-DD HH:MM (e.g., 2025-06-01 17:30)');
+      return;
+    }
+
+    if (!isDateTimeInFuture(editingTimesheet.availability_deadline)) {
+      alert('Availability deadline must be in the future');
+      return;
+    }
+
+    // Validate all shift times
+    for (const template of shiftTemplates) {
+      if (template.dayType === 'work') {
+        for (const shift of template.shifts) {
+          const validation = validateShiftTime(shift.startTime, shift.endTime);
+          if (!validation.valid) {
+            alert(`Invalid shift time for ${formatDate(template.date)}: ${validation.error}`);
+            return;
+          }
+        }
+      }
+    }
+
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -429,6 +456,10 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
           shifts: template.shifts
         }))
       };
+
+      console.log('Sending template data:', templateData);
+      console.log('Shift templates being sent:', shiftTemplates);
+      console.log('Shift data structure:', JSON.stringify(shiftTemplates, null, 2));
 
       let response;
       const isNew = editingTimesheet.id === 'new';
@@ -460,6 +491,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
 
       if (response.ok) {
         const result = await response.json();
+        console.log('API response:', result);
         
         if (result.success) {
           // Refresh the timesheets list
@@ -473,6 +505,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
           
           alert(`Schedule template "${templateData.name}" ${isNew ? 'created' : 'updated'} successfully!`);
         } else {
+          console.error('API returned failure:', result);
           alert(`Failed to ${isNew ? 'create' : 'update'} schedule template`);
         }
       } else {
@@ -612,6 +645,78 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
     if (minutesVal > 59) minutesVal = 59;
     
     return `${hours.toString().padStart(2, '0')}:${minutesVal.toString().padStart(2, '0')}`;
+  };
+
+  const formatDateTime24 = (dateTimeString: string) => {
+    if (!dateTimeString) return '';
+    
+    const date = new Date(dateTimeString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false // 24-hour format
+    });
+  };
+
+  const formatDateTimeLocal = (dateTimeString: string) => {
+    if (!dateTimeString) return '';
+    
+    const date = new Date(dateTimeString);
+    // Format as YYYY-MM-DDTHH:MM for datetime-local input
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const validateTimeFormat = (timeString: string) => {
+    // Check if time is in HH:MM format (24-hour)
+    const timeRegex = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    return timeRegex.test(timeString);
+  };
+
+  const validateDateTimeFormat = (dateTimeString: string) => {
+    // Check if datetime is in YYYY-MM-DD HH:MM format
+    const dateTimeRegex = /^(\d{4})-(\d{2})-(\d{2}) ([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+    return dateTimeRegex.test(dateTimeString);
+  };
+
+  const isDateTimeInFuture = (dateTimeString: string) => {
+    if (!dateTimeString) return false;
+    
+    try {
+      const inputDate = new Date(dateTimeString);
+      const now = new Date();
+      return inputDate > now;
+    } catch {
+      return false;
+    }
+  };
+
+  const validateShiftTime = (startTime: string, endTime: string) => {
+    // Check if both times are valid format
+    if (!validateTimeFormat(startTime) || !validateTimeFormat(endTime)) {
+      return { valid: false, error: 'Time format must be HH:MM (24-hour format)' };
+    }
+    
+    // Check if end time is after start time
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
+    
+    const startMinutes = startHour * 60 + startMin;
+    const endMinutes = endHour * 60 + endMin;
+    
+    if (endMinutes <= startMinutes) {
+      return { valid: false, error: 'End time must be after start time' };
+    }
+    
+    return { valid: true, error: null };
   };
 
   const toggleTargetDay = (dayId: string) => {
@@ -819,15 +924,42 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                   <label className="block text-sm font-medium text-foreground mb-1">
                     Availability Deadline *
                   </label>
-                  <input
-                    type="datetime-local"
-                    value={editingTimesheet?.availability_deadline || ''}
-                    onChange={(e) => setEditingTimesheet(prev => prev ? {...prev, availability_deadline: e.target.value} : null)}
-                    min={new Date().toISOString().slice(0, 16)} // Prevent selecting past dates
-                    className="w-full p-2 border border-border rounded-lg"
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-foreground-muted mb-1">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={editingTimesheet?.availability_deadline?.split(' ')[0] || ''}
+                        onChange={(e) => {
+                          const currentDate = e.target.value;
+                          const currentTime = editingTimesheet?.availability_deadline?.split(' ')[1] || '17:00';
+                          setEditingTimesheet(prev => prev ? {...prev, availability_deadline: `${currentDate} ${currentTime}`} : null);
+                        }}
+                        min={new Date().toISOString().split('T')[0]} // Prevent selecting past dates
+                        className="w-full p-2 border border-border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-foreground-muted mb-1">
+                        Time (24h)
+                      </label>
+                      <input
+                        type="text"
+                        value={editingTimesheet?.availability_deadline?.split(' ')[1] || ''}
+                        onChange={(e) => {
+                          const currentDate = editingTimesheet?.availability_deadline?.split(' ')[0] || new Date().toISOString().split('T')[0];
+                          const newTime = e.target.value;
+                          setEditingTimesheet(prev => prev ? {...prev, availability_deadline: `${currentDate} ${newTime}`} : null);
+                        }}
+                        placeholder="17:30"
+                        className="w-full p-2 border border-border rounded-lg"
+                      />
+                    </div>
+                  </div>
                   <p className="text-xs text-foreground-muted mt-1">
-                    Workers must set their availability before this deadline (24-hour format)
+                    Select date and time in 24-hour format (e.g., 17:30)
                   </p>
                 </div>
               </div>
@@ -1076,20 +1208,19 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                               <Clock className="w-4 h-4 text-foreground-muted" />
                               <input
                                 type="text"
-                                value={formatTimeForInput(shift.startTime)}
-                                onChange={(e) => updateShift(template.id, shift.id, 'startTime', parseTimeInput(e.target.value))}
+                                value={shift.startTime}
+                                onChange={(e) => updateShift(template.id, shift.id, 'startTime', e.target.value)}
                                 placeholder="09:00"
                                 className="w-20 px-2 py-1 border border-border rounded text-sm"
                               />
                               <span className="text-foreground-muted text-sm">to</span>
                               <input
                                 type="text"
-                                value={formatTimeForInput(shift.endTime)}
-                                onChange={(e) => updateShift(template.id, shift.id, 'endTime', parseTimeInput(e.target.value))}
+                                value={shift.endTime}
+                                onChange={(e) => updateShift(template.id, shift.id, 'endTime', e.target.value)}
                                 placeholder="17:00"
                                 className="w-20 px-2 py-1 border border-border rounded text-sm"
                               />
-                              <span className="text-xs text-foreground-muted">24h</span>
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                               <select
@@ -1231,7 +1362,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                       <div className="flex items-center gap-2 mt-1">
                         <Clock className="w-4 h-4 text-foreground-muted" />
                         <span className="text-sm text-muted-foreground">
-                          Deadline: {new Date(timesheet.availability_deadline).toLocaleString()}
+                          Deadline: {formatDateTime24(timesheet.availability_deadline)}
                         </span>
                       </div>
                     </div>
@@ -1268,10 +1399,40 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                         setCreatingNew(false);
                         
                         // Load shift templates if they exist
-                        if (timesheet.shifts) {
-                          setShiftTemplates(timesheet.shifts);
+                        console.log('Timesheet shifts data:', timesheet.shifts);
+                        console.log('Full timesheet data:', timesheet);
+                        console.log('Expected shift structure:', {
+                          id: 'string',
+                          date: 'string', 
+                          dayType: 'work|off',
+                          shifts: 'array'
+                        });
+                        
+                        if (timesheet.shifts && timesheet.shifts.length > 0) {
+                          console.log('Setting shift templates:', timesheet.shifts);
+                          console.log('First shift template structure:', JSON.stringify(timesheet.shifts[0], null, 2));
+                          
+                          // Transform database data to frontend format
+                          const transformedShifts = timesheet.shifts.map((shift: any) => ({
+                            id: shift.id,
+                            date: shift.date,
+                            dayType: shift.day_type || shift.dayType, // Handle both formats
+                            shifts: shift.shifts || []
+                          }));
+                          
+                          console.log('Transformed shift templates:', transformedShifts);
+                          setShiftTemplates(transformedShifts);
+                          
+                          // Check what gets set after a brief delay
+                          setTimeout(() => {
+                            console.log('shiftTemplates state after setting:', shiftTemplates);
+                          }, 100);
                         } else {
-                          setShiftTemplates([]);
+                          console.log('No shifts found, generating empty templates');
+                          // Only generate empty templates if no shifts exist
+                          const startDate = new Date(timesheet.start_date);
+                          const endDate = new Date(timesheet.end_date);
+                          generateShiftTemplatesFromRange(startDate, endDate);
                         }
                         
                         // Set date range
@@ -1279,7 +1440,6 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                         const endDate = new Date(timesheet.end_date);
                         setDateRange({ start: startDate, end: endDate });
                         setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
-                        generateShiftTemplatesFromRange(startDate, endDate);
                       }}
                     >
                       <Edit className="w-4 h-4 mr-2" />
