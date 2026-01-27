@@ -3,19 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 
 export async function PUT(request: Request) {
   try {
-    const { workerId, position_id, hourly_rate, place_id } = await request.json();
-
-    console.log('Update worker request (new route):', { workerId, position_id, hourly_rate, place_id });
+    const { workerId, positionIds, placeIds, hourly_rate } = await request.json();
 
     if (!workerId) {
-      console.error('Worker ID is missing from request body');
       return NextResponse.json(
         { error: 'Worker ID is required' },
         { status: 400 }
       );
     }
 
-    // Create service role client to bypass RLS
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -27,7 +23,6 @@ export async function PUT(request: Request) {
       }
     );
 
-    // Get auth token from header
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
@@ -40,14 +35,12 @@ export async function PUT(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
-      console.error('Auth error:', authError);
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
 
-    // Get manager's company
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('company_id')
@@ -61,41 +54,97 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Update worker
-    const { data, error } = await supabase
+    // Verify worker belongs to same company
+    const { data: workerData } = await supabase
       .from('users')
-      .update({
-        position_id: position_id || null,
-        hourly_rate: hourly_rate || null,
-        place_id: place_id || null,
-        updated_at: new Date().toISOString(),
-      })
+      .select('id')
       .eq('id', workerId)
-      .eq('company_id', userData.company_id) // Ensure worker belongs to same company
-      .select()
+      .eq('company_id', userData.company_id)
       .single();
 
-    if (error) {
-      console.error('Database error:', error);
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
-
-    if (!data) {
+    if (!workerData) {
       return NextResponse.json(
         { error: 'Worker not found or access denied' },
         { status: 404 }
       );
     }
 
-    console.log('Worker updated successfully:', { workerId, managerId: user.id });
+    // Update worker hourly rate
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        hourly_rate: hourly_rate || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', workerId);
 
-    return NextResponse.json({ 
-      success: true, 
-      worker: data 
+    if (updateError) {
+      console.error('Error updating worker:', updateError);
+      return NextResponse.json(
+        { error: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    // Update worker positions (skills)
+    if (positionIds !== undefined) {
+      // Delete existing skills
+      await supabase
+        .from('worker_skills')
+        .delete()
+        .eq('worker_id', workerId);
+
+      // Insert new skills
+      if (positionIds && positionIds.length > 0) {
+        const skillInserts = positionIds.map((positionId: string) => ({
+          worker_id: workerId,
+          skill_id: positionId,
+          rating: 3
+        }));
+        
+        const { error: skillsError } = await supabase
+          .from('worker_skills')
+          .insert(skillInserts);
+        
+        if (skillsError) {
+          console.error('Error updating worker skills:', skillsError);
+        }
+      }
+    }
+
+    // Update worker places
+    if (placeIds !== undefined) {
+      // Delete existing places
+      await supabase
+        .from('worker_places')
+        .delete()
+        .eq('worker_id', workerId);
+
+      // Insert new places
+      if (placeIds && placeIds.length > 0) {
+        const placeInserts = placeIds.map((placeId: string) => ({
+          worker_id: workerId,
+          place_id: placeId,
+          is_active: true
+        }));
+        
+        const { error: placesError } = await supabase
+          .from('worker_places')
+          .insert(placeInserts);
+        
+        if (placesError) {
+          console.error('Error updating worker places:', placesError);
+        }
+      }
+    }
+
+    console.log('Worker updated successfully:', { 
+      workerId, 
+      positions: positionIds?.length || 0,
+      places: placeIds?.length || 0
     });
+
+    return NextResponse.json({ success: true });
   } catch (err) {
     console.error('API error:', err);
     return NextResponse.json(

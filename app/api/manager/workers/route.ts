@@ -60,9 +60,7 @@ export async function GET(request: Request) {
         email,
         phone,
         is_active,
-        position_id,
-        hourly_rate,
-        place_id
+        hourly_rate
       `)
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)
@@ -76,53 +74,77 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get position names separately
-    let positionNames: { [key: string]: string } = {};
-    let placeNames: { [key: string]: string } = {};
+    // Get all skills (positions) and places for lookup
+    // Note: worker_skills references the skills table, not positions table
+    const { data: allSkills } = await supabase
+      .from('skills')
+      .select('id, name')
+      .eq('company_id', userData.company_id);
     
-    if (workers && workers.length > 0) {
-      // Get position names
-      const positionIds = workers
-        .filter(w => w.position_id)
-        .map(w => w.position_id!)
-        .filter((id, index, arr) => arr.indexOf(id) === index); // Unique IDs
-      
-      if (positionIds.length > 0) {
-        const { data: positions } = await supabase
-          .from('positions')
-          .select('id, name')
-          .in('id', positionIds);
-        
-        positionNames = (positions || []).reduce((acc, pos) => {
-          acc[pos.id] = pos.name;
-          return acc;
-        }, {} as { [key: string]: string });
-      }
+    const { data: allPlaces } = await supabase
+      .from('places')
+      .select('id, name')
+      .eq('company_id', userData.company_id);
 
-      // Get place names
-      const placeIds = workers
-        .filter(w => w.place_id)
-        .map(w => w.place_id!)
-        .filter((id, index, arr) => arr.indexOf(id) === index); // Unique IDs
+    const positionMap = (allSkills || []).reduce((acc: { [key: string]: string }, skill: { id: string; name: string }) => {
+      acc[skill.id] = skill.name;
+      return acc;
+    }, {} as { [key: string]: string });
+
+    const placeMap = (allPlaces || []).reduce((acc, place) => {
+      acc[place.id] = place.name;
+      return acc;
+    }, {} as { [key: string]: string });
+
+    // Get worker skills (positions) and places for all workers
+    const workerIds = (workers || []).map(w => w.id);
+    
+    let workerSkillsMap: { [key: string]: Array<{ id: string; name: string }> } = {};
+    let workerPlacesMap: { [key: string]: Array<{ id: string; name: string }> } = {};
+
+    if (workerIds.length > 0) {
+      // Get worker skills
+      const { data: workerSkills } = await supabase
+        .from('worker_skills')
+        .select('worker_id, skill_id')
+        .in('worker_id', workerIds);
       
-      if (placeIds.length > 0) {
-        const { data: places } = await supabase
-          .from('places')
-          .select('id, name')
-          .in('id', placeIds);
-        
-        placeNames = (places || []).reduce((acc, place) => {
-          acc[place.id] = place.name;
-          return acc;
-        }, {} as { [key: string]: string });
-      }
+      (workerSkills || []).forEach(ws => {
+        if (!workerSkillsMap[ws.worker_id]) {
+          workerSkillsMap[ws.worker_id] = [];
+        }
+        if (positionMap[ws.skill_id]) {
+          workerSkillsMap[ws.worker_id].push({
+            id: ws.skill_id,
+            name: positionMap[ws.skill_id]
+          });
+        }
+      });
+
+      // Get worker places
+      const { data: workerPlaces } = await supabase
+        .from('worker_places')
+        .select('worker_id, place_id')
+        .in('worker_id', workerIds);
+      
+      (workerPlaces || []).forEach(wp => {
+        if (!workerPlacesMap[wp.worker_id]) {
+          workerPlacesMap[wp.worker_id] = [];
+        }
+        if (placeMap[wp.place_id]) {
+          workerPlacesMap[wp.worker_id].push({
+            id: wp.place_id,
+            name: placeMap[wp.place_id]
+          });
+        }
+      });
     }
 
-    // Format the response with position and place names
+    // Format the response with positions and places arrays
     const formattedWorkers = (workers || []).map(worker => ({
       ...worker,
-      position_name: worker.position_id ? positionNames[worker.position_id] || null : null,
-      place_name: worker.place_id ? placeNames[worker.place_id] || null : null
+      positions: workerSkillsMap[worker.id] || [],
+      places: workerPlacesMap[worker.id] || []
     }));
 
     return NextResponse.json({ workers: formattedWorkers });

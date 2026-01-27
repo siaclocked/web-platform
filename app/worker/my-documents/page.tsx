@@ -32,60 +32,43 @@ export default function MyDocumentsPage() {
   const fetchDocuments = async () => {
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!user) {
+      if (!session) {
         router.push('/login');
         return;
       }
 
-      // Mock documents for demonstration
-      const mockDocuments: Document[] = [
-        {
-          id: '1',
-          name: 'Employment Contract',
-          type: 'PDF',
-          uploadedAt: '2024-01-15T10:00:00Z',
-          expiresAt: '2025-01-15T23:59:59Z',
-          status: 'ACTIVE',
-          downloadUrl: '#',
-          hasRead: false
+      const response = await fetch('/api/documents', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
         },
-        {
-          id: '2',
-          name: 'Employee Handbook',
-          type: 'PDF',
-          uploadedAt: '2024-01-10T14:30:00Z',
-          expiresAt: null,
-          status: 'ACTIVE',
-          downloadUrl: '#',
-          hasRead: true
-        },
-        {
-          id: '3',
-          name: 'Safety Training Certificate',
-          type: 'PDF',
-          uploadedAt: '2023-12-01T09:15:00Z',
-          expiresAt: '2024-12-01T23:59:59Z',
-          status: 'EXPIRED',
-          downloadUrl: '#',
-          hasRead: true
-        },
-        {
-          id: '4',
-          name: 'Tax Forms 2024',
-          type: 'PDF',
-          uploadedAt: '2024-01-20T16:45:00Z',
-          expiresAt: '2025-04-15T23:59:59Z',
-          status: 'ACTIVE',
-          downloadUrl: '#',
-          hasRead: false
-        }
-      ];
+      });
 
-      setDocuments(mockDocuments);
+      if (response.ok) {
+        const data = await response.json();
+        // Transform API response to match our interface
+        const transformedDocs: Document[] = (data.documents || []).map((doc: any) => {
+          const isExpiredDoc = doc.expires_at && new Date(doc.expires_at) < new Date();
+          return {
+            id: doc.id,
+            name: doc.name,
+            type: doc.file_type?.split('/')[1]?.toUpperCase() || 'FILE',
+            uploadedAt: doc.created_at,
+            expiresAt: doc.expires_at,
+            status: doc.is_archived ? 'ARCHIVED' : (isExpiredDoc ? 'EXPIRED' : 'ACTIVE'),
+            downloadUrl: doc.file_path,
+            hasRead: true // We'll implement read tracking later
+          };
+        });
+        setDocuments(transformedDocs);
+      } else {
+        console.error('Failed to fetch documents');
+        setDocuments([]);
+      }
     } catch (error) {
       console.error('Error fetching documents:', error);
+      setDocuments([]);
     } finally {
       setIsLoading(false);
     }

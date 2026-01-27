@@ -565,13 +565,93 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
   };
 
   const publishTimesheet = async (timesheetId: string) => {
+    const timesheet = timesheets.find(t => t.id === timesheetId);
+    if (!timesheet) return;
+
+    const confirmPublish = confirm(
+      `Are you sure you want to publish "${timesheet.name}"?\n\n` +
+      `This will notify all workers at the selected place to set their availability before the deadline.`
+    );
+    if (!confirmPublish) return;
+
     try {
-      // Mock publish - replace with actual API call
-      setTimesheets(prev => prev.map(t => 
-        t.id === timesheetId ? { ...t, status: 'published' as const } : t
-      ));
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        alert('You must be logged in to publish timesheets');
+        return;
+      }
+
+      const response = await fetch('/api/manager/schedule-templates/publish', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ id: timesheetId }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        // Update local state
+        setTimesheets(prev => prev.map(t => 
+          t.id === timesheetId ? { ...t, status: 'published' as const } : t
+        ));
+        alert(`Timesheet "${timesheet.name}" published successfully!\n${result.notifications_sent} workers have been notified.`);
+      } else {
+        alert(result.error || 'Failed to publish timesheet');
+      }
     } catch (error) {
       console.error('Error publishing timesheet:', error);
+      alert('An error occurred while publishing the timesheet');
+    }
+  };
+
+  const processDeadline = async (timesheetId: string) => {
+    const timesheet = timesheets.find(t => t.id === timesheetId);
+    if (!timesheet) return;
+
+    const confirmProcess = confirm(
+      `Are you sure you want to close "${timesheet.name}" and generate the schedule?\n\n` +
+      `This will close the timesheet for availability submissions and send it to the solver.`
+    );
+    if (!confirmProcess) return;
+
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        alert('You must be logged in');
+        return;
+      }
+
+      const response = await fetch('/api/manager/schedule-templates/process-deadline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ schedule_template_id: timesheetId }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        await fetchTimesheets();
+        if (result.is_feasible) {
+          alert(`Schedule generated successfully with ${result.result?.assignments?.length || 0} assignments!`);
+        } else {
+          alert(`Schedule generation completed but with ${result.result?.coverage_gaps?.length || 0} coverage gaps. Check notifications for details.`);
+        }
+      } else {
+        alert(result.error || 'Failed to process timesheet');
+      }
+    } catch (error) {
+      console.error('Error processing deadline:', error);
+      alert('An error occurred while processing the timesheet');
     }
   };
 
@@ -1366,11 +1446,51 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={getStatusColor(timesheet.status)}>
-                        {timesheet.status}
-                      </Badge>
-                      {timesheet.status === 'draft' && (
+                    <Badge variant={getStatusColor(timesheet.status)}>
+                      {timesheet.status}
+                    </Badge>
+                  </div>
+
+                  <div className="flex gap-2 flex-wrap">
+                    {timesheet.status === 'draft' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const template = {
+                              ...timesheet,
+                              start_date: timesheet.start_date,
+                              end_date: timesheet.end_date,
+                              place_id: timesheet.place_id,
+                              availability_deadline: timesheet.availability_deadline
+                            };
+                            setEditingTimesheet(template);
+                            setCreatingNew(false);
+                            
+                            if (timesheet.shifts && timesheet.shifts.length > 0) {
+                              const transformedShifts = timesheet.shifts.map((shift: any) => ({
+                                id: shift.id,
+                                date: shift.date,
+                                dayType: shift.day_type || shift.dayType,
+                                shifts: shift.shifts || []
+                              }));
+                              setShiftTemplates(transformedShifts);
+                            } else {
+                              const startDate = new Date(timesheet.start_date);
+                              const endDate = new Date(timesheet.end_date);
+                              generateShiftTemplatesFromRange(startDate, endDate);
+                            }
+                            
+                            const startDate = new Date(timesheet.start_date);
+                            const endDate = new Date(timesheet.end_date);
+                            setDateRange({ start: startDate, end: endDate });
+                            setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
+                          }}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
@@ -1379,89 +1499,30 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                           <Send className="w-4 h-4 mr-2" />
                           Publish
                         </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const template = {
-                          ...timesheet,
-                          start_date: timesheet.start_date,
-                          end_date: timesheet.end_date,
-                          place_id: timesheet.place_id,
-                          availability_deadline: timesheet.availability_deadline
-                        };
-                        setEditingTimesheet(template);
-                        setCreatingNew(false);
-                        
-                        // Load shift templates if they exist
-                        console.log('Timesheet shifts data:', timesheet.shifts);
-                        console.log('Full timesheet data:', timesheet);
-                        console.log('Expected shift structure:', {
-                          id: 'string',
-                          date: 'string', 
-                          dayType: 'work|off',
-                          shifts: 'array'
-                        });
-                        
-                        if (timesheet.shifts && timesheet.shifts.length > 0) {
-                          console.log('Setting shift templates:', timesheet.shifts);
-                          console.log('First shift template structure:', JSON.stringify(timesheet.shifts[0], null, 2));
-                          
-                          // Transform database data to frontend format
-                          const transformedShifts = timesheet.shifts.map((shift: any) => ({
-                            id: shift.id,
-                            date: shift.date,
-                            dayType: shift.day_type || shift.dayType, // Handle both formats
-                            shifts: shift.shifts || []
-                          }));
-                          
-                          console.log('Transformed shift templates:', transformedShifts);
-                          setShiftTemplates(transformedShifts);
-                          
-                          // Check what gets set after a brief delay
-                          setTimeout(() => {
-                            console.log('shiftTemplates state after setting:', shiftTemplates);
-                          }, 100);
-                        } else {
-                          console.log('No shifts found, generating empty templates');
-                          // Only generate empty templates if no shifts exist
-                          const startDate = new Date(timesheet.start_date);
-                          const endDate = new Date(timesheet.end_date);
-                          generateShiftTemplatesFromRange(startDate, endDate);
-                        }
-                        
-                        // Set date range
-                        const startDate = new Date(timesheet.start_date);
-                        const endDate = new Date(timesheet.end_date);
-                        setDateRange({ start: startDate, end: endDate });
-                        setCurrentMonth(new Date(startDate.getFullYear(), startDate.getMonth(), 1));
-                      }}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => publishTimesheet(timesheet.id)}
-                    >
-                      <Send className="w-4 h-4 mr-2" />
-                      Publish
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => deleteTimesheet(timesheet.id, timesheet.name)}
-                    >
-                      <Trash className="w-4 h-4 mr-2" />
-                      Delete
-                    </Button>
+                      </>
+                    )}
+                    {timesheet.status === 'published' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-primary"
+                        onClick={() => processDeadline(timesheet.id)}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Close & Generate
+                      </Button>
+                    )}
+                    {timesheet.status !== 'closed' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => deleteTimesheet(timesheet.id, timesheet.name)}
+                      >
+                        <Trash className="w-4 h-4 mr-2" />
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

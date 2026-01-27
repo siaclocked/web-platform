@@ -1,22 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { Bell, CheckCircle, Clock, Users, FileText, AlertCircle } from 'lucide-react';
+import { Bell, CheckCircle, Clock, Users, FileText, AlertCircle, Calendar, XCircle } from 'lucide-react';
 
 interface Notification {
   id: string;
-  type: 'schedule_changed' | 'handoff_note' | 'document_uploaded' | 'open_shift' | 'timesheet_approved';
+  type: string;
   title: string;
   message: string;
   is_read: boolean;
   created_at: string;
-  data?: any;
+  metadata?: any;
 }
 
 export default function ManagerNotificationsPage() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -26,26 +29,24 @@ export default function ManagerNotificationsPage() {
 
   const fetchNotifications = async () => {
     try {
-      // Mock data for now - replace with actual API call
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          type: 'open_shift',
-          title: 'Open Shift Available',
-          message: 'Morning shift needs coverage',
-          is_read: false,
-          created_at: new Date().toISOString(),
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+
+      const response = await fetch('/api/notifications', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
         },
-        {
-          id: '2',
-          type: 'handoff_note',
-          title: 'Shift Handoff',
-          message: 'Previous shift notes available',
-          is_read: true,
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-        },
-      ];
-      setNotifications(mockNotifications);
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data.notifications || []);
+      }
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
@@ -54,27 +55,76 @@ export default function ManagerNotificationsPage() {
   };
 
   const markAsRead = async (notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
-    );
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) return;
+
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ notification_id: notificationId }),
+      });
+
+      setNotifications(prev => 
+        prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
+      );
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   const markAllAsRead = async () => {
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) return;
+
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ mark_all_read: true }),
+      });
+
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
   };
 
   const getIcon = (type: string) => {
     switch (type) {
+      case 'SCHEDULE_CHANGED_FOR_WORKER':
       case 'schedule_changed':
         return <Clock className="w-5 h-5" />;
+      case 'HANDOFF_NOTE_RECEIVED':
       case 'handoff_note':
         return <Users className="w-5 h-5" />;
+      case 'DOCUMENT_UPLOADED':
       case 'document_uploaded':
         return <FileText className="w-5 h-5" />;
+      case 'OPEN_SHIFT_AVAILABLE':
+      case 'OPEN_SHIFT_INTEREST_SUBMITTED':
       case 'open_shift':
         return <AlertCircle className="w-5 h-5" />;
+      case 'TIMESHEET_APPROVED':
+      case 'TIMESHEET_EDITED_BY_MANAGER':
       case 'timesheet_approved':
         return <CheckCircle className="w-5 h-5" />;
+      case 'SCHEDULE_CREATED':
+        return <Calendar className="w-5 h-5" />;
+      case 'SCHEDULE_INFEASIBLE':
+        return <XCircle className="w-5 h-5" />;
+      case 'TIMESHEET_PUBLISHED':
+        return <Calendar className="w-5 h-5" />;
       default:
         return <Bell className="w-5 h-5" />;
     }
@@ -82,16 +132,29 @@ export default function ManagerNotificationsPage() {
 
   const getIconColor = (type: string) => {
     switch (type) {
+      case 'SCHEDULE_CHANGED_FOR_WORKER':
       case 'schedule_changed':
         return 'text-primary';
+      case 'HANDOFF_NOTE_RECEIVED':
       case 'handoff_note':
         return 'text-info';
+      case 'DOCUMENT_UPLOADED':
       case 'document_uploaded':
         return 'text-warning';
+      case 'OPEN_SHIFT_AVAILABLE':
+      case 'OPEN_SHIFT_INTEREST_SUBMITTED':
       case 'open_shift':
-        return 'text-danger';
+        return 'text-warning';
+      case 'TIMESHEET_APPROVED':
+      case 'TIMESHEET_EDITED_BY_MANAGER':
       case 'timesheet_approved':
         return 'text-success';
+      case 'SCHEDULE_CREATED':
+        return 'text-success';
+      case 'SCHEDULE_INFEASIBLE':
+        return 'text-danger';
+      case 'TIMESHEET_PUBLISHED':
+        return 'text-primary';
       default:
         return 'text-muted-foreground';
     }

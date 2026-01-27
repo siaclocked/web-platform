@@ -35,6 +35,7 @@ const managerNavItems = [
 
 const adminNavItems = [
   { href: '/company', icon: Home, label: 'Home' },
+  { href: '/admin/places', icon: MapPin, label: 'Places' },
   { href: '/company/settings', icon: Settings, label: 'Company' },
   { href: '/managers', icon: Users, label: 'Managers' },
 ];

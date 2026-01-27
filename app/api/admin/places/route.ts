@@ -1,56 +1,39 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    // Create service role client to bypass RLS for data access
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
-
-    // Get user from session token in request
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    const supabase = await createClient();
     
-    if (!token) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: 'Authentication required' },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      console.error('Auth error:', authError);
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    // Get company user's company
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userDataError } = await supabase
       .from('users')
-      .select('company_id, role')
+      .select('role, company_id')
       .eq('id', user.id)
       .single();
 
-    if (userError || !userData) {
+    if (userDataError || !userData) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    // Get all places for this company with manager info
+    if (userData.role !== 'manager') {
+      return NextResponse.json(
+        { error: 'Only company admins can access this endpoint' },
+        { status: 403 }
+      );
+    }
+
     const { data: places, error: placesError } = await supabase
       .from('places')
       .select(`
@@ -70,14 +53,13 @@ export async function GET(request: Request) {
       .order('name', { ascending: true });
 
     if (placesError) {
-      console.error('Database error:', placesError);
+      console.error('Error fetching places:', placesError);
       return NextResponse.json(
-        { error: placesError.message },
+        { error: 'Failed to fetch places' },
         { status: 500 }
       );
     }
 
-    // Get worker counts and schedule counts for each place
     const placesWithCounts = await Promise.all(
       (places || []).map(async (place) => {
         const { count: workerCount } = await supabase
@@ -90,7 +72,7 @@ export async function GET(request: Request) {
           .from('schedule_templates')
           .select('*', { count: 'exact', head: true })
           .eq('place_id', place.id)
-          .in('status', ['draft', 'published']);
+          .eq('status', 'published');
 
         return {
           ...place,
@@ -100,9 +82,9 @@ export async function GET(request: Request) {
       })
     );
 
-    return NextResponse.json({ places: placesWithCounts || [] });
-  } catch (err) {
-    console.error('API error:', err);
+    return NextResponse.json({ places: placesWithCounts });
+  } catch (error) {
+    console.error('Error in admin places endpoint:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

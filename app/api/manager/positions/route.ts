@@ -50,18 +50,42 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get positions - simplified query without complex join
-    const { data: positions, error } = await supabase
-      .from('positions')
+    let { data: skills, error } = await supabase
+      .from('skills')
       .select('*')
-      .eq('manager_id', user.id)
       .eq('company_id', userData.company_id);
+
+    const { data: legacyPositions, error: legacyError } = await supabase
+      .from('positions')
+      .select('company_id, name')
+      .eq('company_id', userData.company_id);
+
+    if (!legacyError && legacyPositions && legacyPositions.length > 0) {
+      const { error: migrateError } = await supabase
+        .from('skills')
+        .upsert(
+          legacyPositions.map((p) => ({
+            company_id: p.company_id,
+            name: p.name,
+            color: '#3b82f6'
+          })),
+          { onConflict: 'company_id,name', ignoreDuplicates: true }
+        );
+
+      if (!migrateError) {
+        const refetch = await supabase
+          .from('skills')
+          .select('*')
+          .eq('company_id', userData.company_id);
+        skills = refetch.data;
+        error = refetch.error;
+      }
+    }
 
     if (error) {
       console.error('Database error:', error);
-      // If table doesn't exist, return empty array
       if (error.message.includes('does not exist') || error.code === '42P01') {
-        console.log('Positions table does not exist yet');
+        console.log('Skills table does not exist yet');
         return NextResponse.json({ 
           positions: [] 
         });
@@ -72,50 +96,33 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get worker counts for each position (only if positions exist)
-    let positionsWithCounts = positions || [];
+    // Get worker counts for each skill/position
+    let positionsWithCounts = (skills || []).map(skill => ({
+      id: skill.id,
+      name: skill.name,
+      color: skill.color,
+      created_at: skill.created_at,
+      worker_count: 0
+    }));
+
     if (positionsWithCounts.length > 0) {
       try {
-        positionsWithCounts = await Promise.all(
-          positionsWithCounts.map(async (position) => {
-            try {
-              // First, get all workers for this position to debug
-              const { data: allWorkers, error: allError } = await supabase
-                .from('users')
-                .select('id, first_name, last_name, manager_id, position_id')
-                .eq('position_id', position.id);
+        // Get all worker_skills to count workers per skill
+        const { data: workerSkills } = await supabase
+          .from('worker_skills')
+          .select('skill_id, worker_id');
+        
+        const skillCounts: { [key: string]: number } = {};
+        (workerSkills || []).forEach(ws => {
+          skillCounts[ws.skill_id] = (skillCounts[ws.skill_id] || 0) + 1;
+        });
 
-              if (allError) {
-                console.error('Error fetching all workers for position:', position.id, allError);
-              } else {
-                console.log(`All workers for position ${position.name} (${position.id}):`, allWorkers);
-              }
-
-              // Then get count for current manager
-              const { count } = await supabase
-                .from('users')
-                .select('*', { count: 'exact', head: true })
-                .eq('position_id', position.id)
-                .eq('manager_id', user.id);
-
-              console.log(`Position ${position.name} (${position.id}): ${count} workers for manager ${user.id}`);
-
-              return {
-                ...position,
-                worker_count: count || 0,
-              };
-            } catch (countError) {
-              console.error('Error getting worker count for position:', position.id, countError);
-              return {
-                ...position,
-                worker_count: 0,
-              };
-            }
-          })
-        );
-      } catch (aggregateError) {
-        console.error('Error aggregating worker counts:', aggregateError);
-        // Continue without worker counts
+        positionsWithCounts = positionsWithCounts.map(pos => ({
+          ...pos,
+          worker_count: skillCounts[pos.id] || 0
+        }));
+      } catch (countError) {
+        console.error('Error getting worker counts:', countError);
       }
     }
 
@@ -196,24 +203,29 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create position
+    // Create skill (position) in the skills table
     const { data, error } = await supabase
-      .from('positions')
+      .from('skills')
       .insert({
         company_id: userData.company_id,
-        manager_id: user.id,
         name: name.trim(),
-        description: description?.trim() || null,
+        color: '#3b82f6', // Default blue color
       })
       .select()
       .single();
 
     if (error) {
       console.error('Database error:', error);
-      // If table doesn't exist, provide a helpful error
       if (error.message.includes('does not exist') || error.code === '42P01') {
         return NextResponse.json(
-          { error: 'Positions table not found. Please run the database migration first.' },
+          { error: 'Skills table not found. Please run the database migration first.' },
+          { status: 400 }
+        );
+      }
+      // Handle duplicate name
+      if (error.code === '23505') {
+        return NextResponse.json(
+          { error: 'A position with this name already exists' },
           { status: 400 }
         );
       }
@@ -223,7 +235,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('Position created successfully:', { positionId: data.id, managerId: user.id });
+    console.log('Position/skill created successfully:', { skillId: data.id });
 
     return NextResponse.json({ 
       success: true, 

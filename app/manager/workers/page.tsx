@@ -7,6 +7,16 @@ import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input, Select } from '@/components/ui';
 import { Users, Plus, Edit2, Trash2, Mail, Phone, Search, MapPin } from 'lucide-react';
 
+interface PositionItem {
+  id: string;
+  name: string;
+}
+
+interface PlaceItem {
+  id: string;
+  name: string;
+}
+
 interface Worker {
   id: string;
   first_name: string;
@@ -14,11 +24,9 @@ interface Worker {
   email: string;
   phone?: string;
   is_active: boolean;
-  position_id?: string;
   hourly_rate?: number;
-  position_name?: string;
-  place_id?: string;
-  place_name?: string;
+  positions: PositionItem[];
+  places: PlaceItem[];
 }
 
 interface Position {
@@ -39,10 +47,10 @@ export default function ManagerWorkersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [editForm, setEditForm] = useState({
-    position_id: '',
     hourly_rate: '',
-    place_id: '',
   });
+  const [editPositions, setEditPositions] = useState<string[]>([]);
+  const [editPlaces, setEditPlaces] = useState<string[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -170,12 +178,28 @@ export default function ManagerWorkersPage() {
   const handleEditWorker = (worker: Worker) => {
     setEditingWorker(worker);
     setEditForm({
-      position_id: worker.position_id || '',
       hourly_rate: worker.hourly_rate ? worker.hourly_rate.toString() : '',
-      place_id: worker.place_id || '',
     });
+    setEditPositions(worker.positions.map(p => p.id));
+    setEditPlaces(worker.places.map(p => p.id));
     setError('');
     setSuccess('');
+  };
+
+  const toggleEditPosition = (positionId: string) => {
+    setEditPositions(prev => 
+      prev.includes(positionId) 
+        ? prev.filter(id => id !== positionId)
+        : [...prev, positionId]
+    );
+  };
+
+  const toggleEditPlace = (placeId: string) => {
+    setEditPlaces(prev => 
+      prev.includes(placeId) 
+        ? prev.filter(id => id !== placeId)
+        : [...prev, placeId]
+    );
   };
 
   const handleUpdateWorker = async () => {
@@ -191,9 +215,9 @@ export default function ManagerWorkersPage() {
       
       const updateData = {
         workerId: editingWorker.id,
-        position_id: editForm.position_id && editForm.position_id !== '' ? editForm.position_id : null,
+        positionIds: editPositions,
+        placeIds: editPlaces,
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
-        place_id: editForm.place_id && editForm.place_id !== '' ? editForm.place_id : null,
       };
       
       const response = await fetch('/api/manager/workers/update', {
@@ -207,7 +231,7 @@ export default function ManagerWorkersPage() {
 
       if (response.ok) {
         setSuccess('Worker updated successfully!');
-        fetchWorkers(); // Refresh the list
+        fetchWorkers();
         setTimeout(() => {
           setEditingWorker(null);
           setSuccess('');
@@ -225,7 +249,9 @@ export default function ManagerWorkersPage() {
 
   const handleCancelEdit = () => {
     setEditingWorker(null);
-    setEditForm({ position_id: '', hourly_rate: '', place_id: '' });
+    setEditForm({ hourly_rate: '' });
+    setEditPositions([]);
+    setEditPlaces([]);
     setError('');
     setSuccess('');
   };
@@ -306,37 +332,76 @@ export default function ManagerWorkersPage() {
                         {/* Inline Edit Section */}
                         {editingWorker?.id === worker.id ? (
                           <div className="mt-3 space-y-3 border-t pt-3">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              <Select
-                                value={editForm.position_id}
-                                onChange={(e) => setEditForm({ ...editForm, position_id: e.target.value })}
-                                placeholder="Position"
-                                options={[
-                                  { value: '', label: '-- No Position --' },
-                                  ...positions.map(position => ({
-                                    value: position.id,
-                                    label: position.name
-                                  }))
-                                ]}
-                              />
-                              <Select
-                                value={editForm.place_id}
-                                onChange={(e) => setEditForm({ ...editForm, place_id: e.target.value })}
-                                placeholder="Place"
-                                options={[
-                                  { value: '', label: '-- No Place --' },
-                                  ...places.map(place => ({
-                                    value: place.id,
-                                    label: place.name
-                                  }))
-                                ]}
-                              />
+                            {/* Positions Dropdown Multi-Select */}
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Positions</label>
+                              <div className="border rounded-lg p-2 bg-background max-h-32 overflow-y-auto">
+                                {positions.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">No positions available</p>
+                                ) : (
+                                  positions.map(position => (
+                                    <label
+                                      key={position.id}
+                                      className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={editPositions.includes(position.id)}
+                                        onChange={() => toggleEditPosition(position.id)}
+                                        className="rounded border-gray-300"
+                                      />
+                                      <span className="text-sm">{position.name}</span>
+                                    </label>
+                                  ))
+                                )}
+                              </div>
+                              {editPositions.length > 0 && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {editPositions.length} selected
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Places Dropdown Multi-Select */}
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Work Locations</label>
+                              <div className="border rounded-lg p-2 bg-background max-h-32 overflow-y-auto">
+                                {places.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">No places available</p>
+                                ) : (
+                                  places.map(place => (
+                                    <label
+                                      key={place.id}
+                                      className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={editPlaces.includes(place.id)}
+                                        onChange={() => toggleEditPlace(place.id)}
+                                        className="rounded border-gray-300"
+                                      />
+                                      <MapPin className="w-3 h-3 text-info" />
+                                      <span className="text-sm">{place.name}</span>
+                                    </label>
+                                  ))
+                                )}
+                              </div>
+                              {editPlaces.length > 0 && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {editPlaces.length} selected
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-medium mb-1">Hourly Rate</label>
                               <Input
                                 type="number"
                                 step="0.01"
-                                placeholder="Hourly Rate"
+                                placeholder="15.00"
                                 value={editForm.hourly_rate}
                                 onChange={(e) => setEditForm({ ...editForm, hourly_rate: e.target.value })}
+                                className="max-w-[150px]"
                               />
                             </div>
                             
@@ -370,18 +435,18 @@ export default function ManagerWorkersPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-3 mt-1">
-                            {worker.position_name && (
-                              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                                {worker.position_name}
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            {worker.positions.map(pos => (
+                              <span key={pos.id} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                                {pos.name}
                               </span>
-                            )}
-                            {worker.place_name && (
-                              <div className="flex items-center gap-1 text-xs bg-info text-white px-2 py-1 rounded border border-info">
+                            ))}
+                            {worker.places.map(place => (
+                              <div key={place.id} className="flex items-center gap-1 text-xs bg-info text-white px-2 py-1 rounded border border-info">
                                 <MapPin className="w-3 h-3" />
-                                {worker.place_name}
+                                {place.name}
                               </div>
-                            )}
+                            ))}
                             {worker.hourly_rate && (
                               <span className="text-xs bg-success/10 text-success px-2 py-1 rounded">
                                 ${worker.hourly_rate}/hr

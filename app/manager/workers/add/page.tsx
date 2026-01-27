@@ -5,7 +5,17 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Select, BackButton } from '@/components/ui';
-import { Mail, User, Phone, Building2, Briefcase, DollarSign } from 'lucide-react';
+import { Mail, User, Phone, Building2, Briefcase, DollarSign, MapPin, X, Plus } from 'lucide-react';
+
+interface Position {
+  id: string;
+  name: string;
+}
+
+interface Place {
+  id: string;
+  name: string;
+}
 
 export default function AddWorkerPage() {
   const router = useRouter();
@@ -14,31 +24,26 @@ export default function AddWorkerPage() {
     lastName: '',
     email: '',
     phone: '',
-    positionId: '',
     hourlyRate: '',
   });
+  const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
+  const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [positions, setPositions] = useState<Array<{id: string, name: string}>>([]);
-  const [isLoadingPositions, setIsLoadingPositions] = useState(true);
-
-  // Debug: Log positions state changes
-  useEffect(() => {
-    console.log('Positions state changed:', positions);
-  }, [positions]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   useEffect(() => {
     fetchPositions();
+    fetchPlaces();
   }, []);
 
   const fetchPositions = async () => {
-    console.log('Fetching positions...');
     try {
-      // Get auth token
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      console.log('Session:', session ? 'exists' : 'none');
       
       const response = await fetch('/api/manager/positions', {
         headers: {
@@ -46,22 +51,57 @@ export default function AddWorkerPage() {
         },
       });
       
-      console.log('Response status:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('Response data:', data);
         setPositions(data.positions || []);
       } else {
-        console.error('Failed to fetch positions:', response.status);
-        setPositions([]); // Set empty array on error
+        setPositions([]);
       }
     } catch (error) {
       console.error('Error fetching positions:', error);
-      setPositions([]); // Set empty array on error
-    } finally {
-      setIsLoadingPositions(false);
+      setPositions([]);
     }
+  };
+
+  const fetchPlaces = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch('/api/manager/places', {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPlaces(data.places || []);
+      } else {
+        setPlaces([]);
+      }
+    } catch (error) {
+      console.error('Error fetching places:', error);
+      setPlaces([]);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const togglePosition = (positionId: string) => {
+    setSelectedPositions(prev => 
+      prev.includes(positionId) 
+        ? prev.filter(id => id !== positionId)
+        : [...prev, positionId]
+    );
+  };
+
+  const togglePlace = (placeId: string) => {
+    setSelectedPlaces(prev => 
+      prev.includes(placeId) 
+        ? prev.filter(id => id !== placeId)
+        : [...prev, placeId]
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,32 +111,31 @@ export default function AddWorkerPage() {
 
     try {
       const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
       
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!session) throw new Error('Not authenticated');
 
-      // Create worker using API route
       const response = await fetch('/api/manager/workers/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           email: formData.email.trim(),
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
           phone: formData.phone.trim() || null,
-          positionId: formData.positionId || null,
+          positionIds: selectedPositions,
+          placeIds: selectedPlaces,
           hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
-          userId: user.id
         }),
       });
 
-      const { success, error: createError } = await response.json();
+      const result = await response.json();
 
-      if (!success || createError) {
-        throw new Error(createError || 'Failed to create worker account');
+      if (!result.success || result.error) {
+        throw new Error(result.error || 'Failed to create worker account');
       }
 
       setSuccess(true);
@@ -110,6 +149,17 @@ export default function AddWorkerPage() {
 
   const isValidEmail = (email: string) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
+  const isFormValid = () => {
+    return (
+      formData.firstName.trim() &&
+      formData.lastName.trim() &&
+      formData.email.trim() &&
+      isValidEmail(formData.email) &&
+      selectedPositions.length > 0 &&
+      selectedPlaces.length > 0
+    );
   };
 
   if (success) {
@@ -140,9 +190,10 @@ export default function AddWorkerPage() {
                   lastName: '',
                   email: '',
                   phone: '',
-                  positionId: '',
                   hourlyRate: '',
                 });
+                setSelectedPositions([]);
+                setSelectedPlaces([]);
               }}>
                 Add Another Worker
               </Button>
@@ -197,22 +248,75 @@ export default function AddWorkerPage() {
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             />
 
-            <Select
-              label="Position"
-              value={formData.positionId}
-              onChange={(e) => setFormData({ ...formData, positionId: e.target.value })}
-              required
-              disabled={isLoadingPositions}
-              placeholder={isLoadingPositions ? 'Loading positions...' : 'Select a position'}
-              options={isLoadingPositions ? [] : 
-                positions.length === 0 ? 
-                [{ value: '', label: 'No positions available. Please add positions first.' }] :
-                (positions || []).map(position => ({
-                  value: position.id,
-                  label: position.name
-                }))
-              }
-            />
+            {/* Positions Multi-Select */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Positions <span className="text-danger">*</span>
+              </label>
+              {isLoadingData ? (
+                <p className="text-sm text-muted-foreground">Loading positions...</p>
+              ) : positions.length === 0 ? (
+                <p className="text-sm text-warning">No positions available. Please add positions first.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {positions.map(position => (
+                    <button
+                      key={position.id}
+                      type="button"
+                      onClick={() => togglePosition(position.id)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        selectedPositions.includes(position.id)
+                          ? 'bg-primary text-white'
+                          : 'bg-muted text-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      <Briefcase className="w-3 h-3 inline mr-1" />
+                      {position.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedPositions.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedPositions.length} position(s) selected
+                </p>
+              )}
+            </div>
+
+            {/* Places Multi-Select */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Work Locations <span className="text-danger">*</span>
+              </label>
+              {isLoadingData ? (
+                <p className="text-sm text-muted-foreground">Loading places...</p>
+              ) : places.length === 0 ? (
+                <p className="text-sm text-warning">No places available. Please add places first.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {places.map(place => (
+                    <button
+                      key={place.id}
+                      type="button"
+                      onClick={() => togglePlace(place.id)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        selectedPlaces.includes(place.id)
+                          ? 'bg-info text-white'
+                          : 'bg-muted text-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      <MapPin className="w-3 h-3 inline mr-1" />
+                      {place.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedPlaces.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedPlaces.length} location(s) selected
+                </p>
+              )}
+            </div>
 
             <Input
               type="number"
@@ -233,7 +337,7 @@ export default function AddWorkerPage() {
               type="submit"
               className="w-full"
               isLoading={isLoading}
-              disabled={!formData.firstName || !formData.lastName || !formData.email || !formData.positionId || !isValidEmail(formData.email)}
+              disabled={!isFormValid()}
             >
               Create Worker Account
             </Button>

@@ -6,7 +6,19 @@ import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Avatar, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { User, Mail, Phone, Clock, Calendar } from 'lucide-react';
+import { User, Mail, Phone, Clock, Calendar, MapPin, Briefcase } from 'lucide-react';
+
+interface Position {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface Place {
+  id: string;
+  name: string;
+  address?: string;
+}
 
 interface WorkerProfile {
   id: string;
@@ -21,6 +33,8 @@ interface WorkerProfile {
     id: string;
     name: string;
   };
+  positions: Position[];
+  places: Place[];
   created_at: string;
 }
 
@@ -236,6 +250,55 @@ export default function WorkerProfilePage() {
                   </div>
                 </div>
               )}
+
+              {/* Positions/Skills */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Positions
+                </label>
+                <div className="flex items-start gap-2">
+                  <Briefcase className="w-4 h-4 text-foreground-muted mt-1" />
+                  {profile.positions && profile.positions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {profile.positions.map((pos) => (
+                        <span
+                          key={pos.id}
+                          className="px-2 py-1 text-sm rounded-md text-white"
+                          style={{ backgroundColor: pos.color || '#3b82f6' }}
+                        >
+                          {pos.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-foreground-muted">No positions assigned</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Work Locations */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Work Locations
+                </label>
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-foreground-muted mt-1" />
+                  {profile.places && profile.places.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {profile.places.map((place) => (
+                        <span
+                          key={place.id}
+                          className="px-2 py-1 text-sm bg-info/20 text-info rounded-md"
+                        >
+                          {place.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-foreground-muted">No locations assigned</span>
+                  )}
+                </div>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">

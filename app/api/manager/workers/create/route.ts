@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
   try {
-    const { email, firstName, lastName, phone, positionId, hourlyRate, userId } = await request.json();
+    const { email, firstName, lastName, phone, positionIds, placeIds, hourlyRate } = await request.json();
 
-    if (!email || !firstName || !lastName || !userId) {
+    if (!email || !firstName || !lastName) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -24,11 +24,30 @@ export async function POST(request: Request) {
       }
     );
 
+    // Get auth token from header
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.split(' ')[1];
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     // Get manager's company
     const { data: manager } = await supabase
       .from('users')
       .select('company_id')
-      .eq('id', userId)
+      .eq('id', user.id)
       .single();
 
     if (!manager || !manager.company_id) {
@@ -39,7 +58,7 @@ export async function POST(request: Request) {
     }
 
     // Create worker account with email (no password - they'll use OTP)
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const { data: authData, error: createAuthError } = await supabase.auth.admin.createUser({
       email: email.trim().toLowerCase(),
       email_confirm: true,
       user_metadata: {
@@ -49,11 +68,11 @@ export async function POST(request: Request) {
       }
     });
 
-    if (authError) throw authError;
+    if (createAuthError) throw createAuthError;
 
     if (!authData.user) throw new Error('Failed to create worker account');
 
-    // Create user profile
+    // Create user profile (without position_id since we use worker_skills)
     const { error: profileError } = await supabase
       .from('users')
       .insert({
@@ -65,17 +84,52 @@ export async function POST(request: Request) {
         phone: phone?.trim() || null,
         role: 'worker',
         is_active: true,
-        manager_id: userId, // Assign worker to this manager
-        position_id: positionId || null,
+        manager_id: user.id,
         hourly_rate: hourlyRate || null
       });
 
     if (profileError) throw profileError;
 
+    // Add worker positions (using worker_skills table - positions are stored as skills)
+    if (positionIds && positionIds.length > 0) {
+      const skillInserts = positionIds.map((positionId: string) => ({
+        worker_id: authData.user.id,
+        skill_id: positionId,
+        rating: 3
+      }));
+      
+      const { error: skillsError } = await supabase
+        .from('worker_skills')
+        .insert(skillInserts);
+      
+      if (skillsError) {
+        console.error('Error adding worker skills:', skillsError);
+      }
+    }
+
+    // Add worker places
+    if (placeIds && placeIds.length > 0) {
+      const placeInserts = placeIds.map((placeId: string) => ({
+        worker_id: authData.user.id,
+        place_id: placeId,
+        is_active: true
+      }));
+      
+      const { error: placesError } = await supabase
+        .from('worker_places')
+        .insert(placeInserts);
+      
+      if (placesError) {
+        console.error('Error adding worker places:', placesError);
+      }
+    }
+
     console.log('Worker created successfully:', { 
       userId: authData.user.id, 
       email,
-      companyId: manager.company_id 
+      companyId: manager.company_id,
+      positions: positionIds?.length || 0,
+      places: placeIds?.length || 0
     });
 
     return NextResponse.json({ 

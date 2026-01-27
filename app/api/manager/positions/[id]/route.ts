@@ -56,16 +56,26 @@ export async function PUT(
       );
     }
 
-    // Update position
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('company_id')
+      .eq('id', user.id)
+      .single();
+
+    if (userError || !userData) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
     const { data, error } = await supabase
-      .from('positions')
+      .from('skills')
       .update({
         name: name.trim(),
-        description: description?.trim() || null,
-        updated_at: new Date().toISOString(),
       })
       .eq('id', positionId)
-      .eq('manager_id', user.id) // Ensure manager owns this position
+      .eq('company_id', userData.company_id)
       .select()
       .single();
 
@@ -88,7 +98,10 @@ export async function PUT(
 
     return NextResponse.json({ 
       success: true, 
-      position: data 
+      position: {
+        ...data,
+        description: description?.trim() || null
+      } 
     });
   } catch (err) {
     console.error('API error:', err);
@@ -146,12 +159,23 @@ export async function DELETE(
       );
     }
 
-    // Check if position has workers assigned
-    const { count, error: countError } = await supabase
+    const { data: userData, error: userError } = await supabase
       .from('users')
+      .select('company_id')
+      .eq('id', user.id)
+      .single();
+
+    if (userError || !userData) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    const { count, error: countError } = await supabase
+      .from('worker_skills')
       .select('*', { count: 'exact', head: true })
-      .eq('position_id', positionId)
-      .eq('manager_id', user.id);
+      .eq('skill_id', positionId);
 
     if (countError) {
       console.error('Database error:', countError);
@@ -168,12 +192,11 @@ export async function DELETE(
       );
     }
 
-    // Delete position
     const { error } = await supabase
-      .from('positions')
+      .from('skills')
       .delete()
       .eq('id', positionId)
-      .eq('manager_id', user.id); // Ensure manager owns this position
+      .eq('company_id', userData.company_id);
 
     if (error) {
       console.error('Database error:', error);

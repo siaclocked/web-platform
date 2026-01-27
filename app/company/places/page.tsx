@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { MapPin, Users, ArrowRight } from 'lucide-react';
+import { MapPin, Users, Calendar, Building2, User, ChevronRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Manager {
@@ -13,42 +13,29 @@ interface Manager {
   first_name: string;
   last_name: string;
   email: string;
-  places: Place[];
-  total_places: number;
-  total_workers: number;
 }
 
 interface Place {
   id: string;
   name: string;
   address?: string;
-  description?: string;
   created_at: string;
+  manager_id?: string;
+  manager?: Manager;
   worker_count: number;
+  active_schedule_count: number;
 }
 
 export default function CompanyPlacesPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [managers, setManagers] = useState<Manager[]>([]);
+  const [places, setPlaces] = useState<Place[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
 
   useEffect(() => {
-    fetchManagers();
+    fetchPlaces();
   }, []);
 
-  useEffect(() => {
-    const managerId = searchParams.get('manager');
-    if (managerId && managers.length > 0) {
-      const manager = managers.find(m => m.id === managerId);
-      if (manager) {
-        setSelectedManager(manager);
-      }
-    }
-  }, [searchParams, managers]);
-
-  const fetchManagers = async () => {
+  const fetchPlaces = async () => {
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -61,26 +48,17 @@ export default function CompanyPlacesPage() {
       
       if (response.ok) {
         const data = await response.json();
-        setManagers(data.managers || []);
+        setPlaces(data.places || []);
       }
     } catch (error) {
-      console.error('Error fetching managers:', error);
+      console.error('Error fetching places:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleManagerClick = (manager: Manager) => {
-    setSelectedManager(manager);
-  };
-
   const handlePlaceClick = (placeId: string) => {
-    if (!selectedManager) return;
-    router.push(`/company/places/${placeId}?manager=${selectedManager.id}`);
-  };
-
-  const handleBack = () => {
-    setSelectedManager(null);
+    router.push(`/company/places/${placeId}`);
   };
 
   if (isLoading) {
@@ -93,149 +71,62 @@ export default function CompanyPlacesPage() {
     );
   }
 
-  if (selectedManager) {
-    return (
-      <PageContainer>
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6">
-            <Button variant="outline" onClick={handleBack} className="mb-4">
-          ← Back to Managers
-        </Button>
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  {selectedManager.first_name} {selectedManager.last_name}'s Places
-                </h1>
-                <p className="text-foreground-muted">
-                  {selectedManager.email}
-                </p>
-              </div>
-              <div className="flex gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-foreground">{selectedManager.total_places}</div>
-                  <div className="text-sm text-muted-foreground">Places</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-foreground">{selectedManager.total_workers}</div>
-                  <div className="text-sm text-muted-foreground">Workers</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {selectedManager.places.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-8">
-                  <MapPin className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-medium mb-2">No places yet</h3>
-                  <p className="text-muted-foreground">
-                    This manager hasn't created any work locations
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              selectedManager.places.map((place) => (
-                <Card key={place.id} className="cursor-pointer hover:bg-background-tertiary transition-colors">
-                  <CardContent className="p-4" onClick={() => handlePlaceClick(place.id)}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-foreground mb-1">
-                          {place.name}
-                        </h3>
-                        {place.address && (
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {place.address}
-                          </p>
-                        )}
-                        {place.description && (
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {place.description}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Users className="w-4 h-4" />
-                            <span>{place.worker_count || 0} workers</span>
-                          </div>
-                          <span>
-                            Created {new Date(place.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm">
-                          View Workers
-                          <ArrowRight className="w-4 h-4 ml-1" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </div>
-      </PageContainer>
-    );
-  }
-
   return (
     <PageContainer>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <div className="mb-6">
           <BackButton href="/company" label="Back to Dashboard" className="mb-4" />
-          <h1 className="text-2xl font-bold text-foreground">Places</h1>
+          <h1 className="text-2xl font-bold text-foreground">All Places</h1>
           <p className="text-foreground-muted">
-            View all work locations managed by your team
+            View all work locations with their managers, workers, and schedules
           </p>
         </div>
 
-        <div className="space-y-4">
-          {managers.length === 0 ? (
-            <Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {places.length === 0 ? (
+            <Card className="col-span-full">
               <CardContent className="text-center py-8">
-                <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">No managers yet</h3>
+                <Building2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-medium mb-2">No places yet</h3>
                 <p className="text-muted-foreground mb-4">
-                  Add managers to see their work locations
+                  Managers haven't created any work locations yet
                 </p>
-                <Button onClick={() => router.push('/company/managers/add')}>
-                  Add Manager
-                </Button>
               </CardContent>
             </Card>
           ) : (
-            managers.map((manager) => (
-              <Card key={manager.id} className="cursor-pointer hover:bg-background-tertiary transition-colors">
-                <CardContent className="p-4" onClick={() => handleManagerClick(manager)}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-medium text-foreground mb-1">
-                        {manager.first_name} {manager.last_name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        {manager.email}
-                      </p>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="w-4 h-4" />
-                          <span>{manager.total_places} places</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Users className="w-4 h-4" />
-                          <span>{manager.total_workers} workers</span>
-                        </div>
-                      </div>
-                    </div>
+            places.map((place) => (
+              <Card key={place.id} className="cursor-pointer hover:shadow-md transition-all" onClick={() => handlePlaceClick(place.id)}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Badge variant={manager.total_places > 0 ? 'success' : 'warning'}>
-                        {manager.total_places > 0 ? 'Active' : 'No Places'}
-                      </Badge>
-                      <Button variant="outline" size="sm">
-                        View Places
-                        <ArrowRight className="w-4 h-4 ml-1" />
-                      </Button>
+                      <Building2 className="w-5 h-5 text-primary" />
+                      <h3 className="font-semibold text-foreground">{place.name}</h3>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-foreground-muted shrink-0" />
+                  </div>
+                  
+                  {place.address && (
+                    <div className="flex items-center gap-1 text-sm text-foreground-muted mb-2">
+                      <MapPin className="w-4 h-4" />
+                      <span className="truncate">{place.address}</span>
+                    </div>
+                  )}
+                  
+                  {place.manager && (
+                    <div className="flex items-center gap-1 text-sm text-foreground-muted mb-3">
+                      <User className="w-4 h-4" />
+                      <span>{place.manager.first_name} {place.manager.last_name}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-4 text-sm pt-3 border-t border-border">
+                    <div className="flex items-center gap-1 text-foreground-muted">
+                      <Users className="w-4 h-4" />
+                      <span>{place.worker_count}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-foreground-muted">
+                      <Calendar className="w-4 h-4" />
+                      <span>{place.active_schedule_count}</span>
                     </div>
                   </div>
                 </CardContent>
