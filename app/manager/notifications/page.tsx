@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { Bell, CheckCircle, Clock, Users, FileText, AlertCircle, Calendar, XCircle } from 'lucide-react';
+import { Bell, CheckCircle, Clock, Users, AlertCircle, Calendar, XCircle } from 'lucide-react';
 
 interface Notification {
   id: string;
@@ -108,9 +108,6 @@ export default function ManagerNotificationsPage() {
       case 'HANDOFF_NOTE_RECEIVED':
       case 'handoff_note':
         return <Users className="w-5 h-5" />;
-      case 'DOCUMENT_UPLOADED':
-      case 'document_uploaded':
-        return <FileText className="w-5 h-5" />;
       case 'OPEN_SHIFT_AVAILABLE':
       case 'OPEN_SHIFT_INTEREST_SUBMITTED':
       case 'open_shift':
@@ -138,9 +135,6 @@ export default function ManagerNotificationsPage() {
       case 'HANDOFF_NOTE_RECEIVED':
       case 'handoff_note':
         return 'text-info';
-      case 'DOCUMENT_UPLOADED':
-      case 'document_uploaded':
-        return 'text-warning';
       case 'OPEN_SHIFT_AVAILABLE':
       case 'OPEN_SHIFT_INTEREST_SUBMITTED':
       case 'open_shift':

@@ -7,7 +7,6 @@ import {
   Bell,
   Calendar,
   Clock,
-  FileText,
   MessageSquare,
   Check,
   CheckCheck,
@@ -15,7 +14,7 @@ import {
 
 interface Notification {
   id: string;
-  type: 'schedule' | 'timesheet' | 'document' | 'handoff' | 'general';
+  type: 'schedule' | 'timesheet' | 'handoff' | 'general';
   title: string;
   message: string;
   createdAt: string;
@@ -40,14 +39,6 @@ const mockNotifications: Notification[] = [
     isRead: false,
   },
   {
-    id: '3',
-    type: 'document',
-    title: 'New Document',
-    message: 'A new document "Safety Training Certificate" has been shared with you',
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    isRead: true,
-  },
-  {
     id: '4',
     type: 'timesheet',
     title: 'Hours Approved',
@@ -63,8 +54,6 @@ const getNotificationIcon = (type: Notification['type']) => {
       return Calendar;
     case 'timesheet':
       return Clock;
-    case 'document':
-      return FileText;
     case 'handoff':
       return MessageSquare;
     default:

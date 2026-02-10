@@ -6,7 +6,6 @@ import { Card, CardContent, Badge, Button } from '@/components/ui';
 import {
   Calendar,
   Clock,
-  FileText,
   Users,
   MapPin,
   ClipboardList,
@@ -111,16 +110,6 @@ function WorkerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/documents">
-          <Card className="hover:bg-background-tertiary transition-colors">
-            <CardContent className="flex items-center gap-3 py-3">
-              <FileText className="w-5 h-5 text-accent" />
-              <span className="flex-1 text-foreground">My Documents</span>
-              <Badge variant="warning">1 new</Badge>
-              <ChevronRight className="w-5 h-5 text-foreground-muted" />
-            </CardContent>
-          </Card>
-        </Link>
       </div>
     </PageContainer>
   );

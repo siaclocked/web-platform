@@ -5,7 +5,6 @@ import { Card, CardContent, Badge } from '@/components/ui';
 import {
   Calendar,
   Clock,
-  FileText,
   Play,
   ChevronRight,
 } from 'lucide-react';
@@ -32,18 +31,7 @@ export default function WorkerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/worker/my-documents">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-accent-muted rounded-full flex items-center justify-center mb-3">
-                <FileText className="w-6 h-6 text-accent" />
-              </div>
-              <span className="font-medium text-foreground">My Documents</span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <div className="col-span-2">
+        <div className="col-span-1">
           <Link href="/worker/set-availability">
             <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
               <CardContent className="flex flex-col items-center justify-center py-6">

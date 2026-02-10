@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { Building2, Users, Calendar, FileText, Plus, TrendingUp, MapPin } from 'lucide-react';
+import { Building2, Users, Calendar, Plus, TrendingUp, MapPin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -127,16 +127,6 @@ export default function CompanyPage() {
             </Card>
           </Link>
 
-          <Link href="/company/documents">
-            <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-              <CardContent className="flex flex-col items-center py-6">
-                <FileText className="w-6 h-6 text-orange-500 mb-2" />
-                <span className="text-sm font-medium text-foreground">
-                  Documents
-                </span>
-              </CardContent>
-            </Card>
-          </Link>
         </div>
       </div>
     </PageContainer>

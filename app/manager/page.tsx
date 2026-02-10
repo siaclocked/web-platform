@@ -163,7 +163,7 @@ export default function ManagerDashboard() {
             <CardContent className="flex flex-col items-center py-4">
               <Calendar className="w-6 h-6 text-primary mb-2" />
               <span className="text-sm font-medium text-foreground">
-                Create Schedule
+                Schedules
               </span>
             </CardContent>
           </Card>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Clock, Calendar, Users, FileText, Shield, Zap } from "lucide-react";
+import { Clock, Calendar, Users, Shield, Zap } from "lucide-react";
 
 export default function Home() {
   return (
@@ -57,11 +57,6 @@ export default function Home() {
             icon={<Users className="w-6 h-6" />}
             title="Team Management"
             description="Manage workers, skills, and multiple locations. Assign shifts based on availability and qualifications."
-          />
-          <FeatureCard
-            icon={<FileText className="w-6 h-6" />}
-            title="Document Center"
-            description="Centralize employee documents with secure storage. Share contracts, certificates, and more."
           />
           <FeatureCard
             icon={<Shield className="w-6 h-6" />}

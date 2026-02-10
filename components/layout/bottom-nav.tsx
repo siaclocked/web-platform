@@ -5,7 +5,6 @@ import {
   Home,
   Calendar,
   Clock,
-  FileText,
   User,
   Users,
   MapPin,
@@ -21,7 +20,6 @@ const workerNavItems = [
   { href: '/worker', icon: Home, label: 'Home' },
   { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
   { href: '/worker/time-tracking', icon: Clock, label: 'Clock In' },
-  { href: '/worker/documents', icon: FileText, label: 'Documents' },
   { href: '/worker/profile', icon: User, label: 'Profile' },
 ];
 

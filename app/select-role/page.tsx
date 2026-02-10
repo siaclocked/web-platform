@@ -29,7 +29,7 @@ export default function SelectRolePage() {
       features: [
         'Email & password authentication',
         'Add and remove Managers',
-        'View all schedules and documents',
+        'View all schedules',
         'Intervene in schedules when needed',
         'Full company oversight'
       ]
@@ -57,7 +57,7 @@ export default function SelectRolePage() {
         'View assigned schedules',
         'Fill open shifts',
         'Request schedule changes',
-        'View pay and documents',
+        'View pay stubs',
         'Receive notifications'
       ]
     }

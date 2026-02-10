@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { Bell, CheckCircle, Clock, Users, FileText, AlertCircle } from 'lucide-react';
+import { Bell, CheckCircle, Clock, Users, AlertCircle } from 'lucide-react';
 
 interface Notification {
   id: string;
-  type: 'schedule_changed' | 'handoff_note' | 'document_uploaded' | 'open_shift' | 'timesheet_approved';
+  type: 'schedule_changed' | 'handoff_note' | 'open_shift' | 'timesheet_approved';
   title: string;
   message: string;
   is_read: boolean;
@@ -36,14 +36,6 @@ export default function CompanyNotificationsPage() {
           is_read: false,
           created_at: new Date().toISOString(),
         },
-        {
-          id: '2',
-          type: 'document_uploaded',
-          title: 'New Document',
-          message: 'Employee handbook updated',
-          is_read: true,
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-        },
       ];
       setNotifications(mockNotifications);
     } catch (error) {
@@ -69,8 +61,6 @@ export default function CompanyNotificationsPage() {
         return <Clock className="w-5 h-5" />;
       case 'handoff_note':
         return <Users className="w-5 h-5" />;
-      case 'document_uploaded':
-        return <FileText className="w-5 h-5" />;
       case 'open_shift':
         return <AlertCircle className="w-5 h-5" />;
       case 'timesheet_approved':
@@ -86,8 +76,6 @@ export default function CompanyNotificationsPage() {
         return 'text-primary';
       case 'handoff_note':
         return 'text-info';
-      case 'document_uploaded':
-        return 'text-warning';
       case 'open_shift':
         return 'text-danger';
       case 'timesheet_approved':

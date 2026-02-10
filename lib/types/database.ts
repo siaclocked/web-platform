@@ -167,20 +167,6 @@ export interface TimesheetEdit {
   created_at: string;
 }
 
-export interface Document {
-  id: string;
-  worker_id: string;
-  uploaded_by: string;
-  name: string;
-  file_path: string;
-  file_type: string;
-  file_size: number;
-  expires_at?: string;
-  is_archived: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface Notification {
   id: string;
   user_id: string;
