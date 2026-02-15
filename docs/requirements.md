@@ -68,7 +68,18 @@ Automation should:
 - Timesheet review/edit/approve/export (CSV)
 - Documents list + download via signed URLs (expiration evaluated on-read)
 
-### 2.2 Out of Scope (MVP)
+### 2.2 On Hold (Deferred from MVP)
+
+The following features are defined in this document but are **on hold** and will not be developed in the current iteration:
+
+- **Documents feature** (§10.11, §11.3, §14) — On hold due to potential legal liability concerns. May be revisited in a future version.
+- **Open Shifts** (§13) — Worker interest + Manager approval for unfilled coverage gaps.
+- **Draft Overlay / Layer Toggle** (§8.2) — Diff comparison between published and draft schedules.
+- **Manual Overrides + Locking** (§8.4) — Assign/unassign with lock/unlock and revalidation.
+- **CSV Export** (§11.2) — Timesheet export functionality.
+- **Audit Log** (§15.1) — Detailed audit trail for sensitive actions.
+
+### 2.3 Out of Scope (MVP)
 
 - Native mobile app stores
 - Guaranteed background geofencing / always-on lockscreen timer (platform-limited in PWA)

@@ -1,25 +1,25 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { Button, Input, Card, CardContent } from '@/components/ui';
-import { Mail, ArrowRight, Clock, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Button, Input, Card, CardContent } from "@/components/ui";
+import { Mail, ArrowRight, Clock, CheckCircle } from "lucide-react";
 
-type Step = 'email' | 'otp';
+type Step = "email" | "otp";
 
 export default function CompanyOTPLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
+  const [step, setStep] = useState<Step>("email");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const msg = searchParams.get('message');
+    const msg = searchParams.get("message");
     if (msg) {
       setMessage(msg);
     }
@@ -27,11 +27,12 @@ export default function CompanyOTPLoginPage() {
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    if (!isValidEmail(email)) return;
+    setError("");
     setIsLoading(true);
 
     try {
-      console.log('Sending OTP to:', email.trim().toLowerCase());
+      console.log("Sending OTP to:", email.trim().toLowerCase());
       const supabase = createClient();
 
       const { data, error } = await supabase.auth.signInWithOtp({
@@ -41,14 +42,14 @@ export default function CompanyOTPLoginPage() {
         },
       });
 
-      console.log('OTP response:', { data, error });
+      console.log("OTP response:", { data, error });
 
       if (error) throw error;
 
-      setStep('otp');
+      setStep("otp");
     } catch (err) {
-      console.error('Send OTP error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send OTP');
+      console.error("Send OTP error:", err);
+      setError(err instanceof Error ? err.message : "Failed to send OTP");
     } finally {
       setIsLoading(false);
     }
@@ -56,41 +57,42 @@ export default function CompanyOTPLoginPage() {
 
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    if (otp.length < 6) return;
+    setError("");
     setIsLoading(true);
 
     try {
-      console.log('Verifying OTP:', otp);
+      console.log("Verifying OTP:", otp);
       const supabase = createClient();
 
       const { data, error } = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
         token: otp,
-        type: 'email',
+        type: "email",
       });
 
-      console.log('Verify OTP response:', { data, error });
+      console.log("Verify OTP response:", { data, error });
 
       if (error) throw error;
 
-      console.log('OTP verified successfully, checking user role...');
-      
+      console.log("OTP verified successfully, checking user role...");
+
       // Check if user is a company admin
       const { data: userData } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', data.user?.id)
+        .from("users")
+        .select("role")
+        .eq("id", data.user?.id)
         .single();
 
-      if (userData?.role === 'admin') {
-        console.log('User is admin, redirecting to company dashboard...');
-        router.push('/dashboard/company');
+      if (userData?.role === "admin") {
+        console.log("User is admin, redirecting to company dashboard...");
+        router.push("/dashboard/company");
       } else {
-        setError('This login is for company administrators only');
+        setError("This login is for company administrators only");
       }
     } catch (err) {
-      console.error('Verify OTP error:', err);
-      setError(err instanceof Error ? err.message : 'Invalid OTP');
+      console.error("Verify OTP error:", err);
+      setError(err instanceof Error ? err.message : "Invalid OTP");
     } finally {
       setIsLoading(false);
     }
@@ -124,7 +126,7 @@ export default function CompanyOTPLoginPage() {
 
         <Card>
           <CardContent className="pt-6">
-            {step === 'email' ? (
+            {step === "email" ? (
               <form onSubmit={handleSendOTP} className="space-y-4">
                 <div>
                   <h2 className="text-lg font-semibold text-foreground mb-1">
@@ -155,9 +157,8 @@ export default function CompanyOTPLoginPage() {
 
                 <Button
                   type="submit"
-                  className="w-full"
+                  className={`w-full ${!isValidEmail(email) ? "opacity-50 cursor-not-allowed" : ""}`}
                   isLoading={isLoading}
-                  disabled={!isValidEmail(email)}
                 >
                   Continue
                   <ArrowRight className="w-4 h-4 ml-2" />
@@ -170,7 +171,7 @@ export default function CompanyOTPLoginPage() {
                     Check your email
                   </h2>
                   <p className="text-sm text-foreground-muted">
-                    We sent a verification code to{' '}
+                    We sent a verification code to{" "}
                     <span className="text-foreground">{email}</span>
                   </p>
                 </div>
@@ -179,7 +180,9 @@ export default function CompanyOTPLoginPage() {
                   type="text"
                   placeholder="123456"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  onChange={(e) =>
+                    setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))
+                  }
                   className="text-center text-2xl tracking-widest"
                   maxLength={8}
                   required
@@ -194,9 +197,8 @@ export default function CompanyOTPLoginPage() {
 
                 <Button
                   type="submit"
-                  className="w-full"
+                  className={`w-full ${otp.length < 6 ? "opacity-50 cursor-not-allowed" : ""}`}
                   isLoading={isLoading}
-                  disabled={otp.length < 6}
                 >
                   Verify
                 </Button>
@@ -213,9 +215,9 @@ export default function CompanyOTPLoginPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setStep('email');
-                      setOtp('');
-                      setError('');
+                      setStep("email");
+                      setOtp("");
+                      setError("");
                     }}
                     className="w-full text-sm text-foreground-muted hover:text-foreground transition-colors"
                   >
@@ -229,7 +231,7 @@ export default function CompanyOTPLoginPage() {
 
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/login')}
+            onClick={() => router.push("/login")}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
             Back to login options

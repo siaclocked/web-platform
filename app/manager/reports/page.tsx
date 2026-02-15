@@ -1,134 +1,82 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
-import { TrendingUp, Download, Calendar, Users, FileText, CheckCircle, Clock } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { PageContainer } from "@/components/layout";
+import { Card, CardContent, Button, Badge } from "@/components/ui";
+import { BackButton } from "@/components/ui";
+import { TrendingUp, Clock, Users, DollarSign } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
-interface Report {
+interface WorkerHours {
   id: string;
-  title: string;
-  type: 'timesheet_summary' | 'attendance' | 'productivity' | 'scheduling';
+  worker_name: string;
+  worker_id: string;
+  total_hours: number;
+  approved_hours: number;
   period: string;
-  status: 'ready' | 'generating' | 'completed';
-  created_at: string;
-  data?: any;
+  status: string;
 }
 
+type PeriodFilter = "current" | "previous" | "all";
+
 export default function ManagerReportsPage() {
-  const [reports, setReports] = useState<Report[]>([]);
+  const router = useRouter();
+  const [workerHours, setWorkerHours] = useState<WorkerHours[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [period, setPeriod] = useState<PeriodFilter>("current");
 
   useEffect(() => {
-    fetchReports();
-  }, []);
+    fetchHours();
+  }, [period]);
 
-  const fetchReports = async () => {
+  const fetchHours = async () => {
+    setIsLoading(true);
     try {
-      // Mock data for now - replace with actual API call
-      const mockReports: Report[] = [
-        {
-          id: '1',
-          title: 'January Timesheet Summary',
-          type: 'timesheet_summary',
-          period: '2024-01',
-          status: 'completed',
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          title: 'Attendance Report',
-          type: 'attendance',
-          period: '2024-01',
-          status: 'ready',
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-        },
-        {
-          id: '3',
-          title: 'Productivity Analysis',
-          type: 'productivity',
-          period: '2024-01',
-          status: 'generating',
-          created_at: new Date(Date.now() - 345600000).toISOString(),
-        },
-      ];
-      setReports(mockReports);
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      const response = await fetch("/api/timesheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ managerId: user.id, period }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setWorkerHours(Array.isArray(data) ? data : []);
+      }
     } catch (error) {
-      console.error('Error fetching reports:', error);
+      console.error("Error fetching hours:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleGenerate = async (reportId: string) => {
-    try {
-      // Mock generation - replace with actual API call
-      setReports(prev => 
-        prev.map(r => 
-          r.id === reportId ? { ...r, status: 'generating' as const } : r
-        )
-      );
-      
-      // Simulate completion after 3 seconds
-      setTimeout(() => {
-        setReports(prev => 
-          prev.map(r => 
-            r.id === reportId ? { ...r, status: 'completed' as const } : r
-          )
-        );
-      }, 3000);
-    } catch (error) {
-      console.error('Error generating report:', error);
-    }
-  };
+  const totalHours = workerHours.reduce((sum, w) => sum + w.total_hours, 0);
 
-  const handleDownload = async (reportId: string) => {
-    try {
-      // Mock download - replace with actual API call
-      console.log('Downloading report:', reportId);
-    } catch (error) {
-      console.error('Error downloading report:', error);
+  const getPeriodLabel = () => {
+    const now = new Date();
+    if (period === "current") {
+      return now.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      });
+    } else if (period === "previous") {
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1);
+      return prev.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      });
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ready':
-        return 'success';
-      case 'generating':
-        return 'warning';
-      case 'completed':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'ready':
-        return <CheckCircle className="w-4 h-4" />;
-      case 'generating':
-        return <Clock className="w-4 h-4" />;
-      case 'completed':
-        return <CheckCircle className="w-4 h-4" />;
-      default:
-        return null;
-    }
-  };
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'timesheet_summary':
-        return <FileText className="w-5 h-5" />;
-      case 'attendance':
-        return <Users className="w-5 h-5" />;
-      case 'productivity':
-        return <TrendingUp className="w-5 h-5" />;
-      default:
-        return <FileText className="w-5 h-5" />;
-    }
+    return "All Time";
   };
 
   if (isLoading) {
@@ -145,65 +93,125 @@ export default function ManagerReportsPage() {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
-          <h1 className="text-2xl font-bold text-foreground">Reports</h1>
+          <BackButton
+            href="/manager"
+            label="Back to Dashboard"
+            className="mb-4"
+          />
+          <h1 className="text-2xl font-bold text-foreground">
+            Hours & Reports
+          </h1>
           <p className="text-foreground-muted">
-            View and download various reports
+            Review worked hours by employee
           </p>
         </div>
 
-        {/* Reports List */}
-        <div className="space-y-4">
-          {reports.map((report) => (
-            <Card key={report.id}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    {getTypeIcon(report.type)}
-                    <div>
-                      <h3 className="font-medium text-foreground">
-                        {report.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {report.period}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={getStatusColor(report.status)}>
-                      {report.status}
-                    </Badge>
-                    {getStatusIcon(report.status)}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(report.created_at).toLocaleString()}
-                  </p>
-                  <div className="flex gap-2">
-                    {report.status === 'ready' && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => handleGenerate(report.id)}
-                      >
-                        Generate
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDownload(report.id)}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        {/* Period Filter */}
+        <div className="flex gap-2 mb-6">
+          {(["current", "previous", "all"] as PeriodFilter[]).map((p) => (
+            <Button
+              key={p}
+              variant={period === p ? "primary" : "outline"}
+              size="sm"
+              onClick={() => setPeriod(p)}
+            >
+              {p === "current"
+                ? "This Month"
+                : p === "previous"
+                  ? "Last Month"
+                  : "All Time"}
+            </Button>
           ))}
         </div>
+
+        {/* Summary Card */}
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="flex items-center justify-center mb-2">
+                  <Users className="w-5 h-5 text-primary" />
+                </div>
+                <p className="text-2xl font-bold text-foreground">
+                  {workerHours.length}
+                </p>
+                <p className="text-xs text-foreground-muted">
+                  Workers with hours
+                </p>
+              </div>
+              <div>
+                <div className="flex items-center justify-center mb-2">
+                  <Clock className="w-5 h-5 text-info" />
+                </div>
+                <p className="text-2xl font-bold text-foreground">
+                  {totalHours.toFixed(1)}
+                </p>
+                <p className="text-xs text-foreground-muted">Total hours</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-center mb-2">
+                  <TrendingUp className="w-5 h-5 text-success" />
+                </div>
+                <p className="text-2xl font-bold text-foreground">
+                  {getPeriodLabel()}
+                </p>
+                <p className="text-xs text-foreground-muted">Period</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Worker Hours List */}
+        {workerHours.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-8">
+              <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-medium mb-2">No hours recorded</h3>
+              <p className="text-muted-foreground">
+                No workers have logged hours for this period yet.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {workerHours
+              .sort((a, b) => b.total_hours - a.total_hours)
+              .map((worker) => (
+                <Card key={worker.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
+                          <span className="text-white font-medium text-sm">
+                            {worker.worker_name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")}
+                          </span>
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-foreground">
+                            {worker.worker_name}
+                          </h4>
+                          <p className="text-xs text-foreground-muted">
+                            {worker.period}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-foreground">
+                          {worker.total_hours.toFixed(1)}h
+                        </p>
+                        <Badge variant="warning" className="text-xs">
+                          Pending
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+          </div>
+        )}
       </div>
     </PageContainer>
   );

@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
-import { Briefcase, Plus, Edit2, Trash2, Users } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { useState, useEffect } from "react";
+import { PageContainer } from "@/components/layout";
+import { Card, CardContent, Button, Input, Badge } from "@/components/ui";
+import { BackButton } from "@/components/ui";
+import { Briefcase, Plus, Edit2, Trash2, Users } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 interface Position {
   id: string;
@@ -21,11 +21,11 @@ export default function ManagerPositionsPage() {
   const [isAddingPosition, setIsAddingPosition] = useState(false);
   const [editingPosition, setEditingPosition] = useState<Position | null>(null);
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
+    name: "",
+    description: "",
   });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     fetchPositions();
@@ -35,68 +35,76 @@ export default function ManagerPositionsPage() {
     try {
       // Get auth token
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/positions', {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const response = await fetch("/api/manager/positions", {
         headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setPositions(data.positions || []);
       }
     } catch (error) {
-      console.error('Error fetching positions:', error);
+      console.error("Error fetching positions:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     if (!formData.name.trim()) {
-      setError('Position name is required');
+      setError("Position name is required");
       return;
     }
 
     try {
       // Get auth token
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const url = editingPosition 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const url = editingPosition
         ? `/api/manager/positions/${editingPosition.id}`
-        : '/api/manager/positions';
-      
-      const method = editingPosition ? 'PUT' : 'POST';
-      
+        : "/api/manager/positions";
+
+      const method = editingPosition ? "PUT" : "POST";
+
       const response = await fetch(url, {
         method,
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify(formData),
       });
 
       if (response.ok) {
-        setSuccess(editingPosition ? 'Position updated successfully!' : 'Position added successfully!');
-        setFormData({ name: '', description: '' });
+        setFormData({ name: "", description: "" });
         setIsAddingPosition(false);
         setEditingPosition(null);
-        fetchPositions();
+        await fetchPositions();
+        setSuccess(
+          editingPosition
+            ? "Position updated successfully!"
+            : "Position added successfully!",
+        );
+        setTimeout(() => setSuccess(""), 3000);
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save position');
+        throw new Error(errorData.error || "Failed to save position");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save position');
+      setError(err instanceof Error ? err.message : "Failed to save position");
     }
   };
 
@@ -104,46 +112,50 @@ export default function ManagerPositionsPage() {
     setEditingPosition(position);
     setFormData({
       name: position.name,
-      description: position.description || '',
+      description: position.description || "",
     });
     setIsAddingPosition(true);
   };
 
   const handleDelete = async (positionId: string) => {
-    if (!confirm('Are you sure you want to delete this position?')) {
+    if (!confirm("Are you sure you want to delete this position?")) {
       return;
     }
 
     try {
       // Get auth token
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       const response = await fetch(`/api/manager/positions/${positionId}`, {
-        method: 'DELETE',
+        method: "DELETE",
         headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
       });
 
       if (response.ok) {
-        setSuccess('Position deleted successfully!');
+        setSuccess("Position deleted successfully!");
         fetchPositions();
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete position');
+        throw new Error(errorData.error || "Failed to delete position");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete position');
+      setError(
+        err instanceof Error ? err.message : "Failed to delete position",
+      );
     }
   };
 
   const handleCancel = () => {
     setIsAddingPosition(false);
     setEditingPosition(null);
-    setFormData({ name: '', description: '' });
-    setError('');
-    setSuccess('');
+    setFormData({ name: "", description: "" });
+    setError("");
+    setSuccess("");
   };
 
   if (isLoading) {
@@ -160,7 +172,11 @@ export default function ManagerPositionsPage() {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
+          <BackButton
+            href="/manager"
+            label="Back to Dashboard"
+            className="mb-4"
+          />
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-foreground">Positions</h1>
             <Button
@@ -181,7 +197,7 @@ export default function ManagerPositionsPage() {
           <Card className="mb-6">
             <CardContent className="p-6">
               <h3 className="text-lg font-semibold mb-4">
-                {editingPosition ? 'Edit Position' : 'Add New Position'}
+                {editingPosition ? "Edit Position" : "Add New Position"}
               </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -190,7 +206,9 @@ export default function ManagerPositionsPage() {
                   </label>
                   <Input
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
                     placeholder="e.g., Waiter, Cook, Security"
                     required
                   />
@@ -201,7 +219,9 @@ export default function ManagerPositionsPage() {
                   </label>
                   <Input
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
                     placeholder="Optional description of the position"
                   />
                 </div>
@@ -212,23 +232,28 @@ export default function ManagerPositionsPage() {
                   </div>
                 )}
 
-                {success && (
-                  <div className="p-3 bg-success-muted/20 border border-success/30 rounded-lg">
-                    <p className="text-sm text-success">{success}</p>
-                  </div>
-                )}
-
                 <div className="flex gap-3">
                   <Button type="submit" isLoading={false}>
-                    {editingPosition ? 'Update Position' : 'Add Position'}
+                    {editingPosition ? "Update Position" : "Add Position"}
                   </Button>
-                  <Button type="button" variant="outline" onClick={handleCancel}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancel}
+                  >
                     Cancel
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
+        )}
+
+        {/* Success / Error banners */}
+        {success && (
+          <div className="p-3 mb-4 bg-success-muted/20 border border-success/30 rounded-lg">
+            <p className="text-sm text-success">{success}</p>
+          </div>
         )}
 
         {/* Positions List */}
@@ -267,7 +292,8 @@ export default function ManagerPositionsPage() {
                           <span>{position.worker_count || 0} workers</span>
                         </div>
                         <span>
-                          Created {new Date(position.created_at).toLocaleDateString()}
+                          Created{" "}
+                          {new Date(position.created_at).toLocaleDateString()}
                         </span>
                       </div>
                     </div>

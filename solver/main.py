@@ -156,11 +156,14 @@ async def solve_schedule(request: SolveRequest):
         workers = request.workers
         coverage = request.coverage_windows
         
+        # Compute start weekday for correct day-of-week mapping
+        start_weekday = start.weekday()
+        
         # Create variables for each possible shift
         for w_idx, worker in enumerate(workers):
             for day in range(num_days):
                 for cov in coverage:
-                    if cov.day != (day % 7):
+                    if cov.day != (start_weekday + day) % 7:
                         continue
                     if cov.skill_id not in worker.skill_ids:
                         continue
@@ -183,7 +186,7 @@ async def solve_schedule(request: SolveRequest):
             if not cov:
                 continue
             
-            day_of_week = day % 7
+            day_of_week = (start_weekday + day) % 7
             unavails = unavail_lookup.get((worker.id, day_of_week), [])
             
             for ua in unavails:
@@ -209,7 +212,7 @@ async def solve_schedule(request: SolveRequest):
         coverage_slack = {}
         for day in range(num_days):
             for cov in coverage:
-                if cov.day != (day % 7):
+                if cov.day != (start_weekday + day) % 7:
                     continue
                 
                 assigned_workers = [
@@ -239,7 +242,7 @@ async def solve_schedule(request: SolveRequest):
             if not cov:
                 continue
             
-            day_of_week = day % 7
+            day_of_week = (start_weekday + day) % 7
             locked = locked_lookup.get((worker.id, day_of_week))
             
             if locked:
@@ -285,7 +288,7 @@ async def solve_schedule(request: SolveRequest):
                 if not cov:
                     continue
                 
-                day_of_week = day % 7
+                day_of_week = (start_weekday + day) % 7
                 was_assigned = existing_lookup.get((worker.id, day_of_week, cov.skill_id), False)
                 
                 if was_assigned:
@@ -333,7 +336,7 @@ async def solve_schedule(request: SolveRequest):
         gaps = []
         for day in range(num_days):
             for cov in coverage:
-                if cov.day != (day % 7):
+                if cov.day != (start_weekday + day) % 7:
                     continue
                 
                 assigned_count = sum(
