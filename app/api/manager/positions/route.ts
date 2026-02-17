@@ -50,37 +50,10 @@ export async function GET(request: Request) {
       );
     }
 
-    let { data: skills, error } = await supabase
+    const { data: skills, error } = await supabase
       .from('skills')
       .select('*')
       .eq('company_id', userData.company_id);
-
-    const { data: legacyPositions, error: legacyError } = await supabase
-      .from('positions')
-      .select('company_id, name')
-      .eq('company_id', userData.company_id);
-
-    if (!legacyError && legacyPositions && legacyPositions.length > 0) {
-      const { error: migrateError } = await supabase
-        .from('skills')
-        .upsert(
-          legacyPositions.map((p) => ({
-            company_id: p.company_id,
-            name: p.name,
-            color: '#3b82f6'
-          })),
-          { onConflict: 'company_id,name', ignoreDuplicates: true }
-        );
-
-      if (!migrateError) {
-        const refetch = await supabase
-          .from('skills')
-          .select('*')
-          .eq('company_id', userData.company_id);
-        skills = refetch.data;
-        error = refetch.error;
-      }
-    }
 
     if (error) {
       console.error('Database error:', error);

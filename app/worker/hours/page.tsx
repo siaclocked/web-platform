@@ -131,9 +131,9 @@ export default function WorkerHoursPage() {
         {(!data?.sessions || data.sessions.length === 0) ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <Clock className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">No sessions yet</h3>
-              <p className="text-muted-foreground">
+              <p className="text-foreground-muted">
                 Clock in from the Time Tracking page to start logging hours.
               </p>
             </CardContent>

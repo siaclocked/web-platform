@@ -86,9 +86,9 @@ export default function CompanyPlacesPage() {
           {places.length === 0 ? (
             <Card className="col-span-full">
               <CardContent className="text-center py-8">
-                <Building2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <Building2 className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
                 <h3 className="text-lg font-medium mb-2">No places yet</h3>
-                <p className="text-muted-foreground mb-4">
+                <p className="text-foreground-muted mb-4">
                   Managers haven't created any work locations yet
                 </p>
               </CardContent>

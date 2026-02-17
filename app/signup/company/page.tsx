@@ -107,9 +107,9 @@ export default function CompanySignupPage() {
     <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-background">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Building2 className="w-8 h-8 text-white" />
-          </div>
+          <span className="text-2xl font-black tracking-tight text-foreground block mb-4" style={{ fontFamily: "'Georgia', serif" }}>
+            CLOCKED
+          </span>
           <h1 className="text-3xl font-bold text-foreground">Create Company</h1>
           <p className="text-foreground-muted mt-2">
             Set up your organization and start managing your team

@@ -141,7 +141,7 @@ export default function ManagerReportsPage() {
               </div>
               <div>
                 <div className="flex items-center justify-center mb-2">
-                  <Clock className="w-5 h-5 text-info" />
+                  <Clock className="w-5 h-5 text-accent" />
                 </div>
                 <p className="text-2xl font-bold text-foreground">
                   {totalHours.toFixed(1)}
@@ -165,9 +165,9 @@ export default function ManagerReportsPage() {
         {workerHours.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Clock className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <Clock className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">No hours recorded</h3>
-              <p className="text-muted-foreground">
+              <p className="text-foreground-muted">
                 No workers have logged hours for this period yet.
               </p>
             </CardContent>

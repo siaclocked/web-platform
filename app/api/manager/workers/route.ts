@@ -60,7 +60,9 @@ export async function GET(request: Request) {
         email,
         phone,
         is_active,
-        hourly_rate
+        hourly_rate,
+        status,
+        start_date
       `)
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)

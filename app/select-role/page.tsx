@@ -89,11 +89,10 @@ export default function SelectRolePage() {
       <div className="border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                <Clock className="w-6 h-6 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold text-foreground">Clocked</h1>
+            <div>
+              <span className="text-2xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
+                CLOCKED
+              </span>
             </div>
             <Button
               variant="ghost"
@@ -149,7 +148,7 @@ export default function SelectRolePage() {
                 <div className="space-y-2 mb-6">
                   {role.features.map((feature, index) => (
                     <div key={index} className="flex items-start space-x-2">
-                      <div className="w-1.5 h-1.5 bg-primary rounded-full mt-2 flex-shrink-0" />
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full mt-2 shrink-0" />
                       <p className="text-sm text-foreground-muted">{feature}</p>
                     </div>
                   ))}

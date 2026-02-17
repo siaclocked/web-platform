@@ -114,7 +114,7 @@ export default function CompanyManagersPage() {
 
         {/* Search Bar */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
           <Input
             type="text"
             placeholder="Search managers by name or email..."
@@ -129,11 +129,11 @@ export default function CompanyManagersPage() {
         ) : filteredManagers.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <Users className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">
                 {searchTerm ? 'No managers found' : 'No managers yet'}
               </h3>
-              <p className="text-muted-foreground mb-4">
+              <p className="text-foreground-muted mb-4">
                 {searchTerm 
                   ? 'Try adjusting your search terms'
                   : 'Add your first manager to help manage the company'
@@ -163,17 +163,17 @@ export default function CompanyManagersPage() {
                         <h4 className="font-medium">
                           {manager.first_name} {manager.last_name}
                         </h4>
-                        <p className="text-sm text-muted-foreground flex items-center">
+                        <p className="text-sm text-foreground-muted flex items-center">
                           <Mail className="w-4 h-4 mr-1" />
                           {manager.email}
                         </p>
                         {manager.phone && (
-                          <p className="text-sm text-muted-foreground flex items-center">
+                          <p className="text-sm text-foreground-muted flex items-center">
                             <Phone className="w-4 h-4 mr-1" />
                             {manager.phone}
                           </p>
                         )}
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-foreground-muted">
                           {manager.companies.name}
                         </p>
                       </div>

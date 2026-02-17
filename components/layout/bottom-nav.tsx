@@ -28,7 +28,7 @@ const managerNavItems = [
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/workers', icon: Users, label: 'Workers' },
   { href: '/manager/schedule', icon: Calendar, label: 'Schedules' },
-  { href: '/manager/timesheets', icon: ClipboardList, label: 'Timesheets' },
+  { href: '/manager/timesheets', icon: ClipboardList, label: 'Create' },
 ];
 
 const adminNavItems = [
@@ -74,10 +74,10 @@ export function BottomNav() {
           );
         })}
         <Link
-          href="/notifications"
+          href={`/${user?.role === 'admin' ? 'company' : user?.role || 'worker'}/notifications`}
           className={cn(
             'flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[64px] relative',
-            pathname === '/notifications'
+            pathname?.includes('/notifications')
               ? 'text-primary'
               : 'text-foreground-muted hover:text-foreground'
           )}

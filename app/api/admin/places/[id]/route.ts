@@ -3,9 +3,10 @@ import { NextResponse } from 'next/server';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: placeIdParam } = await params;
     const supabase = await createClient();
     
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -37,7 +38,7 @@ export async function GET(
       );
     }
 
-    const placeId = params.id;
+    const placeId = placeIdParam;
 
     // Get place details
     const { data: place, error: placeError } = await supabase

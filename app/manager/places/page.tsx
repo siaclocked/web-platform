@@ -4,13 +4,32 @@ import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { MapPin, Plus, Edit2, Trash2, Users } from 'lucide-react';
+import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+
+interface PlaceSettings {
+  max_hours_per_day: number;
+  min_hours_per_block: number;
+  max_hours_per_block: number;
+  min_rest_between_shifts: number;
+  schedule_granularity_minutes: number;
+  grace_period_minutes: number;
+}
+
+const DEFAULT_SETTINGS: PlaceSettings = {
+  max_hours_per_day: 12,
+  min_hours_per_block: 2,
+  max_hours_per_block: 10,
+  min_rest_between_shifts: 8,
+  schedule_granularity_minutes: 15,
+  grace_period_minutes: 15,
+};
 
 interface Place {
   id: string;
   name: string;
   address?: string;
+  settings?: PlaceSettings;
   created_at: string;
   worker_count?: number;
 }
@@ -26,6 +45,9 @@ export default function ManagerPlacesPage() {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [settingsForm, setSettingsForm] = useState<PlaceSettings>(DEFAULT_SETTINGS);
+  const [expandedSettings, setExpandedSettings] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     fetchPlaces();
@@ -109,6 +131,52 @@ export default function ManagerPlacesPage() {
       address: place.address || '',
     });
     setIsAddingPlace(true);
+  };
+
+  const toggleSettings = (placeId: string) => {
+    if (expandedSettings === placeId) {
+      setExpandedSettings(null);
+    } else {
+      const place = places.find(p => p.id === placeId);
+      setSettingsForm({ ...DEFAULT_SETTINGS, ...(place?.settings || {}) });
+      setExpandedSettings(placeId);
+    }
+  };
+
+  const saveSettings = async (placeId: string) => {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const place = places.find(p => p.id === placeId);
+      if (!place) return;
+
+      const response = await fetch(`/api/manager/places/${placeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({
+          name: place.name,
+          address: place.address || null,
+          settings: settingsForm,
+        }),
+      });
+
+      if (response.ok) {
+        setSuccess('Settings saved!');
+        fetchPlaces();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save settings');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const handleDelete = async (placeId: string) => {
@@ -238,9 +306,9 @@ export default function ManagerPlacesPage() {
           {places.length === 0 ? (
             <Card>
               <CardContent className="text-center py-8">
-                <MapPin className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <MapPin className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
                 <h3 className="text-lg font-medium mb-2">No places yet</h3>
-                <p className="text-muted-foreground mb-4">
+                <p className="text-foreground-muted mb-4">
                   Add your first work location to get started
                 </p>
                 <Button onClick={() => setIsAddingPlace(true)}>
@@ -259,11 +327,11 @@ export default function ManagerPlacesPage() {
                         {place.name}
                       </h3>
                       {place.address && (
-                        <p className="text-sm text-muted-foreground mb-2">
+                        <p className="text-sm text-foreground-muted mb-2">
                           {place.address}
                         </p>
                       )}
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-4 text-sm text-foreground-muted">
                         <div className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
                           <span>{place.worker_count || 0} workers</span>
@@ -274,6 +342,14 @@ export default function ManagerPlacesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleSettings(place.id)}
+                        title="Scheduling Settings"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -290,6 +366,108 @@ export default function ManagerPlacesPage() {
                       </Button>
                     </div>
                   </div>
+
+                  {expandedSettings === place.id && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                        <Settings className="w-4 h-4" />
+                        Scheduling Settings
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-muted mb-1">
+                            Max Hours Per Day
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="24"
+                            value={settingsForm.max_hours_per_day}
+                            onChange={(e) => setSettingsForm(s => ({ ...s, max_hours_per_day: Number(e.target.value) }))}
+                            className="w-full p-2 border border-border rounded-lg text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-muted mb-1">
+                            Min Hours Per Shift
+                          </label>
+                          <input
+                            type="number"
+                            min="0.5"
+                            max="12"
+                            step="0.5"
+                            value={settingsForm.min_hours_per_block}
+                            onChange={(e) => setSettingsForm(s => ({ ...s, min_hours_per_block: Number(e.target.value) }))}
+                            className="w-full p-2 border border-border rounded-lg text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-muted mb-1">
+                            Max Hours Per Shift
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="16"
+                            step="0.5"
+                            value={settingsForm.max_hours_per_block}
+                            onChange={(e) => setSettingsForm(s => ({ ...s, max_hours_per_block: Number(e.target.value) }))}
+                            className="w-full p-2 border border-border rounded-lg text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-muted mb-1">
+                            Min Rest Between Shifts (hrs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="24"
+                            value={settingsForm.min_rest_between_shifts}
+                            onChange={(e) => setSettingsForm(s => ({ ...s, min_rest_between_shifts: Number(e.target.value) }))}
+                            className="w-full p-2 border border-border rounded-lg text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-muted mb-1">
+                            Schedule Granularity (min)
+                          </label>
+                          <select
+                            value={settingsForm.schedule_granularity_minutes}
+                            onChange={(e) => setSettingsForm(s => ({ ...s, schedule_granularity_minutes: Number(e.target.value) }))}
+                            className="w-full p-2 border border-border rounded-lg text-sm"
+                          >
+                            <option value={5}>5 minutes</option>
+                            <option value={10}>10 minutes</option>
+                            <option value={15}>15 minutes</option>
+                            <option value={30}>30 minutes</option>
+                            <option value={60}>60 minutes</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-muted mb-1">
+                            Clock-In Grace Period (min)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="60"
+                            value={settingsForm.grace_period_minutes}
+                            onChange={(e) => setSettingsForm(s => ({ ...s, grace_period_minutes: Number(e.target.value) }))}
+                            className="w-full p-2 border border-border rounded-lg text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-4 flex gap-2">
+                        <Button size="sm" onClick={() => saveSettings(place.id)} isLoading={savingSettings}>
+                          Save Settings
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setExpandedSettings(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))

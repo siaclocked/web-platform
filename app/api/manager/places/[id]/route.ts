@@ -6,7 +6,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { name, address } = await request.json();
+    const { name, address, settings } = await request.json();
     const { id: placeId } = await params;
 
     if (!name?.trim()) {
@@ -49,14 +49,21 @@ export async function PUT(
       );
     }
 
+    // Build update object
+    const updateData: Record<string, any> = {
+      name: name.trim(),
+      address: address?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (settings) {
+      updateData.settings = settings;
+    }
+
     // Update place
     const { data, error } = await supabase
       .from('places')
-      .update({
-        name: name.trim(),
-        address: address?.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', placeId)
       .eq('manager_id', user.id) // Ensure manager owns this place
       .select()

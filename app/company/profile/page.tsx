@@ -150,7 +150,7 @@ export default function CompanyProfilePage() {
     return (
       <PageContainer>
         <div className="text-center py-8">
-          <p className="text-muted-foreground">Profile not found</p>
+          <p className="text-foreground-muted">Profile not found</p>
         </div>
       </PageContainer>
     );
@@ -231,9 +231,9 @@ export default function CompanyProfilePage() {
                     <Input
                       value={profile.email}
                       disabled
-                      className="bg-muted"
+                      className="bg-background-secondary"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="text-xs text-foreground-muted mt-1">
                       Email cannot be changed
                     </p>
                   </div>
@@ -294,9 +294,9 @@ export default function CompanyProfilePage() {
                 // View Mode
                 <div className="space-y-4">
                   <div className="flex items-center space-x-3">
-                    <User className="w-5 h-5 text-muted-foreground" />
+                    <User className="w-5 h-5 text-foreground-muted" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Name</p>
+                      <p className="text-sm text-foreground-muted">Name</p>
                       <p className="font-medium">
                         {profile.first_name} {profile.last_name}
                       </p>
@@ -304,18 +304,18 @@ export default function CompanyProfilePage() {
                   </div>
 
                   <div className="flex items-center space-x-3">
-                    <Mail className="w-5 h-5 text-muted-foreground" />
+                    <Mail className="w-5 h-5 text-foreground-muted" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Email</p>
+                      <p className="text-sm text-foreground-muted">Email</p>
                       <p className="font-medium">{profile.email}</p>
                     </div>
                   </div>
 
                   {profile.phone && (
                     <div className="flex items-center space-x-3">
-                      <Phone className="w-5 h-5 text-muted-foreground" />
+                      <Phone className="w-5 h-5 text-foreground-muted" />
                       <div>
-                        <p className="text-sm text-muted-foreground">Phone</p>
+                        <p className="text-sm text-foreground-muted">Phone</p>
                         <p className="font-medium">{profile.phone}</p>
                       </div>
                     </div>
@@ -323,18 +323,18 @@ export default function CompanyProfilePage() {
 
                   {profile.hourly_rate && (
                     <div className="flex items-center space-x-3">
-                      <span className="w-5 h-5 text-muted-foreground text-center">$</span>
+                      <span className="w-5 h-5 text-foreground-muted text-center">$</span>
                       <div>
-                        <p className="text-sm text-muted-foreground">Hourly Rate</p>
+                        <p className="text-sm text-foreground-muted">Hourly Rate</p>
                         <p className="font-medium">${profile.hourly_rate.toFixed(2)}</p>
                       </div>
                     </div>
                   )}
 
                   <div className="flex items-center space-x-3">
-                    <Building2 className="w-5 h-5 text-muted-foreground" />
+                    <Building2 className="w-5 h-5 text-foreground-muted" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Company</p>
+                      <p className="text-sm text-foreground-muted">Company</p>
                       <p className="font-medium">{profile.companies.name}</p>
                     </div>
                   </div>

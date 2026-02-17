@@ -2,13 +2,13 @@
 
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { Avatar, Button } from '@/components/ui';
-import { ChevronDown, Bell, LogOut } from 'lucide-react';
+import { Bell, LogOut, ChevronDown, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export function Header() {
   const { user } = useAuthStore();
-  const { selectedPlace, unreadCount } = useAppStore();
+  const { unreadCount } = useAppStore();
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -21,41 +21,36 @@ export function Header() {
   if (!user) return null;
 
   const displayName = `${user.first_name} ${user.last_name}`;
-  const roleLabel =
-    user.role === 'admin'
-      ? 'Company Admin'
-      : user.role === 'manager'
-      ? 'Manager'
-      : 'Worker';
 
   return (
-    <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border">
-      <div className="flex items-center justify-between h-14 px-4 max-w-7xl mx-auto">
-        <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-40 bg-background border-b border-border">
+      <div className="flex items-center justify-between h-14 px-4 lg:px-6">
+        {/* Mobile logo — only on small screens where sidebar is hidden */}
+        <div className="flex items-center gap-3 lg:hidden">
           <Link href={`/${user.role === 'admin' ? 'company' : user.role}`} className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">C</span>
-            </div>
-            <span className="font-semibold text-foreground hidden sm:inline">
-              Clocked
+            <span className="text-xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
+              CLOCKED
             </span>
           </Link>
-
-          {user.role === 'manager' && selectedPlace && (
-            <button className="flex items-center gap-1 px-3 py-1.5 bg-background-tertiary rounded-lg text-sm ml-4">
-              <span className="text-foreground-muted">Place:</span>
-              <span className="text-foreground font-medium">
-                {selectedPlace.name}
-              </span>
-              <ChevronDown className="w-4 h-4 text-foreground-muted" />
-            </button>
-          )}
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Desktop: search bar in header center area */}
+        <div className="hidden lg:flex items-center flex-1">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+            <input
+              type="text"
+              placeholder="Search employees etc."
+              className="w-full text-sm py-2 pl-9 pr-4 rounded-lg border border-border bg-background text-foreground placeholder:text-foreground-muted"
+            />
+          </div>
+        </div>
+
+        {/* Right side: notifications + avatar + logout */}
+        <div className="flex items-center gap-2">
           <Link
             href={`/${user.role === 'admin' ? 'company' : user.role}/notifications`}
-            className="relative p-2 rounded-lg hover:bg-background-tertiary transition-colors"
+            className="relative p-2 rounded-lg hover:bg-background-secondary transition-colors"
           >
             <Bell className="w-5 h-5 text-foreground-muted" />
             {unreadCount > 0 && (
@@ -65,34 +60,25 @@ export function Header() {
             )}
           </Link>
 
-          <div className="flex items-center gap-3">
-            <Link href={`/${user.role === 'admin' ? 'company' : user.role}/profile`} className="flex items-center gap-2">
-              <Avatar name={displayName} src={user.avatar_url} size="sm" />
-              <div className="hidden sm:block text-right">
-                <p className="text-sm font-medium text-foreground">{displayName}</p>
-                <p className="text-xs text-foreground-muted">{roleLabel}</p>
-              </div>
-            </Link>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="hidden sm:flex items-center gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Logout</span>
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="sm:hidden p-2"
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
+          <Link
+            href={`/${user.role === 'admin' ? 'company' : user.role}/profile`}
+            className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-background-secondary transition-colors"
+          >
+            <Avatar name={displayName} src={user.avatar_url} size="sm" />
+            <span className="hidden sm:inline text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            <ChevronDown className="hidden sm:block w-4 h-4 text-foreground-muted" />
+          </Link>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="p-2 text-foreground-muted hover:text-foreground"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
         </div>
       </div>
     </header>

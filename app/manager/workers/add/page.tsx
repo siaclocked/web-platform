@@ -176,7 +176,7 @@ export default function AddWorkerPage() {
               </svg>
             </div>
             <h3 className="text-xl font-semibold mb-2">Worker Created Successfully!</h3>
-            <p className="text-muted-foreground mb-6">
+            <p className="text-foreground-muted mb-6">
               {formData.email} will receive an email to set up their account
             </p>
             <div className="flex gap-3 justify-center">
@@ -254,7 +254,7 @@ export default function AddWorkerPage() {
                 Positions <span className="text-danger">*</span>
               </label>
               {isLoadingData ? (
-                <p className="text-sm text-muted-foreground">Loading positions...</p>
+                <p className="text-sm text-foreground-muted">Loading positions...</p>
               ) : positions.length === 0 ? (
                 <p className="text-sm text-warning">No positions available. Please add positions first.</p>
               ) : (
@@ -267,7 +267,7 @@ export default function AddWorkerPage() {
                       className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                         selectedPositions.includes(position.id)
                           ? 'bg-primary text-white'
-                          : 'bg-muted text-foreground hover:bg-muted/80'
+                          : 'bg-background-secondary text-foreground hover:bg-background-tertiary'
                       }`}
                     >
                       <Briefcase className="w-3 h-3 inline mr-1" />
@@ -277,7 +277,7 @@ export default function AddWorkerPage() {
                 </div>
               )}
               {selectedPositions.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-foreground-muted mt-1">
                   {selectedPositions.length} position(s) selected
                 </p>
               )}
@@ -289,7 +289,7 @@ export default function AddWorkerPage() {
                 Work Locations <span className="text-danger">*</span>
               </label>
               {isLoadingData ? (
-                <p className="text-sm text-muted-foreground">Loading places...</p>
+                <p className="text-sm text-foreground-muted">Loading places...</p>
               ) : places.length === 0 ? (
                 <p className="text-sm text-warning">No places available. Please add places first.</p>
               ) : (
@@ -301,8 +301,8 @@ export default function AddWorkerPage() {
                       onClick={() => togglePlace(place.id)}
                       className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                         selectedPlaces.includes(place.id)
-                          ? 'bg-info text-white'
-                          : 'bg-muted text-foreground hover:bg-muted/80'
+                          ? 'bg-accent text-white'
+                          : 'bg-background-secondary text-foreground hover:bg-background-tertiary'
                       }`}
                     >
                       <MapPin className="w-3 h-3 inline mr-1" />
@@ -312,7 +312,7 @@ export default function AddWorkerPage() {
                 </div>
               )}
               {selectedPlaces.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-foreground-muted mt-1">
                   {selectedPlaces.length} location(s) selected
                 </p>
               )}

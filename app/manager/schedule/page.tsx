@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, Send, CheckCircle, ChevronLeft, ChevronRight, List, LayoutGrid } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
+
+type ViewMode = 'month' | 'week' | 'list';
 
 interface SolverAssignment {
   worker_id: string;
@@ -51,17 +53,52 @@ interface Position {
   name: string;
 }
 
+interface FlatShift {
+  date: string;
+  worker_name: string;
+  worker_id: string;
+  skill_id: string;
+  start_minutes: number;
+  end_minutes: number;
+  place_name: string;
+  schedule_name: string;
+  schedule_id: string;
+}
+
 export default function ManagerSchedulePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const reviewId = searchParams.get('review');
   const [schedules, setSchedules] = useState<ScheduleTemplate[]>([]);
   const [places, setPlaces] = useState<Place[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedSchedule, setExpandedSchedule] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day;
+    return new Date(now.getFullYear(), now.getMonth(), diff);
+  });
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
   }, []);
+
+  // Auto-expand schedule being reviewed
+  useEffect(() => {
+    if (reviewId && schedules.length > 0) {
+      const target = schedules.find(s => s.id === reviewId);
+      if (target) setExpandedSchedule(reviewId);
+    }
+  }, [reviewId, schedules]);
 
   const fetchAll = async () => {
     setIsLoading(true);
@@ -84,9 +121,9 @@ export default function ManagerSchedulePage() {
 
       if (response.ok) {
         const data = await response.json();
-        // Only show templates that have been solved (closed with solver results)
+        // Show templates that have been solved or published
         const solvedTemplates = (data.templates || []).filter(
-          (t: any) => t.status === 'closed' && t.solver_status && t.solver_result
+          (t: any) => (t.status === 'closed' || t.status === 'schedule_published') && t.solver_status && t.solver_result
         );
         setSchedules(solvedTemplates);
       }
@@ -140,6 +177,35 @@ export default function ManagerSchedulePage() {
   const getPlaceName = (placeId: string) => {
     return places.find(p => p.id === placeId)?.name || 'Unknown Place';
   };
+
+  // Flatten all schedules into a date-keyed map of shifts
+  const flatShiftsByDate = useMemo(() => {
+    const map: Record<string, FlatShift[]> = {};
+    schedules.forEach(s => {
+      if (!s.solver_result?.assignments) return;
+      const placeName = getPlaceName(s.place_id);
+      s.solver_result.assignments.forEach(a => {
+        const startDate = new Date(s.start_date + 'T00:00:00');
+        const shiftDate = new Date(startDate);
+        shiftDate.setDate(shiftDate.getDate() + a.day);
+        const dateStr = shiftDate.toISOString().split('T')[0];
+        if (!map[dateStr]) map[dateStr] = [];
+        map[dateStr].push({
+          date: dateStr,
+          worker_name: a.worker_name,
+          worker_id: a.worker_id,
+          skill_id: a.skill_id,
+          start_minutes: a.start_minutes,
+          end_minutes: a.end_minutes,
+          place_name: placeName,
+          schedule_name: s.name,
+          schedule_id: s.id,
+        });
+      });
+    });
+    Object.values(map).forEach(arr => arr.sort((a, b) => a.start_minutes - b.start_minutes));
+    return map;
+  }, [schedules, places]);
 
   const getPositionName = (skillId: string) => {
     return positions.find(p => p.id === skillId)?.name || skillId;
@@ -204,6 +270,39 @@ export default function ManagerSchedulePage() {
     setExpandedSchedule(prev => prev === id ? null : id);
   };
 
+  const handlePublish = async (scheduleId: string) => {
+    if (!confirm('Publish this schedule? Workers will be notified of their assigned shifts.')) return;
+    setPublishingId(scheduleId);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('/api/manager/schedule-templates/publish-schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ schedule_template_id: scheduleId }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Schedule published! ${data.workers_notified} worker(s) notified.`);
+        fetchSchedules();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Failed to publish schedule');
+      }
+    } catch (error) {
+      console.error('Error publishing schedule:', error);
+      alert('Failed to publish schedule');
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <PageContainer>
@@ -214,33 +313,147 @@ export default function ManagerSchedulePage() {
     );
   }
 
+  // Month calendar helpers
+  const mYear = currentMonth.getFullYear();
+  const mMonth = currentMonth.getMonth();
+  const daysInMonth = new Date(mYear, mMonth + 1, 0).getDate();
+  const firstDayOfWeek = new Date(mYear, mMonth, 1).getDay();
+  const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const calendarDays: Array<{ day: number; dateStr: string; isCurrentMonth: boolean }> = [];
+  // Previous month filler
+  const prevMonthLastDay = new Date(mYear, mMonth, 0).getDate();
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const d = prevMonthLastDay - i;
+    const pm = mMonth === 0 ? 12 : mMonth;
+    const py = mMonth === 0 ? mYear - 1 : mYear;
+    calendarDays.push({ day: d, dateStr: `${py}-${String(pm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${mYear}-${String(mMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    calendarDays.push({ day: d, dateStr, isCurrentMonth: true });
+  }
+  // Next month filler
+  const remainingCells = 7 - (calendarDays.length % 7);
+  if (remainingCells < 7) {
+    for (let d = 1; d <= remainingCells; d++) {
+      const nm = mMonth + 2 > 12 ? 1 : mMonth + 2;
+      const ny = mMonth + 2 > 12 ? mYear + 1 : mYear;
+      calendarDays.push({ day: d, dateStr: `${ny}-${String(nm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
+    }
+  }
+
+  // Week view helpers
+  const weekDays: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(currentWeekStart);
+    d.setDate(d.getDate() + i);
+    weekDays.push(d.toISOString().split('T')[0]);
+  }
+
+  const selectedDayShifts = selectedDate ? (flatShiftsByDate[selectedDate] || []) : [];
+
+  const renderShiftCard = (shift: FlatShift, idx: number) => (
+    <div key={`${shift.worker_id}-${shift.start_minutes}-${idx}`} className="p-2 bg-background-secondary border border-border rounded-lg text-center text-xs">
+      <div className="font-medium text-foreground">{shift.worker_name}</div>
+      <div className="text-foreground-muted">
+        {formatMinutesToTime(shift.start_minutes)}-{formatMinutesToTime(shift.end_minutes)}
+      </div>
+    </div>
+  );
+
   return (
     <PageContainer>
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Generated Schedules</h1>
-              <p className="text-foreground-muted">
-                Schedules generated from your timesheets
-              </p>
-            </div>
-            <Link href="/manager/timesheets">
-              <Button>
-                <Calendar className="w-4 h-4 mr-2" />
-                Go to Timesheets
+      <div>
+        {/* Review banner */}
+        {reviewId && (() => {
+          const reviewSchedule = schedules.find(s => s.id === reviewId);
+          if (!reviewSchedule) return null;
+          const gaps = reviewSchedule.solver_result?.coverage_gaps?.length || 0;
+          const assignments = reviewSchedule.solver_result?.assignments?.length || 0;
+          const isFeasible = reviewSchedule.solver_result?.status === 'OPTIMAL' || reviewSchedule.solver_result?.status === 'FEASIBLE';
+          return (
+            <Card className={`mb-4 border-l-4 ${isFeasible && gaps === 0 ? 'border-l-success' : 'border-l-warning'}`}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-foreground">
+                      Review: {reviewSchedule.name}
+                    </h3>
+                    <p className="text-sm text-foreground-muted mt-1">
+                      {assignments} shift{assignments !== 1 ? 's' : ''} assigned
+                      {gaps > 0 && <span className="text-warning ml-2">· {gaps} coverage gap{gaps !== 1 ? 's' : ''}</span>}
+                      {gaps === 0 && <span className="text-success ml-2">· No gaps</span>}
+                    </p>
+                    {reviewSchedule.solver_result?.diagnostics && reviewSchedule.solver_result.diagnostics.length > 0 && (
+                      <ul className="mt-2 text-xs text-foreground-muted space-y-0.5">
+                        {reviewSchedule.solver_result.diagnostics.slice(0, 3).map((d, i) => (
+                          <li key={i}>→ {d}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {reviewSchedule.status === 'closed' && (
+                      <Button
+                        onClick={() => handlePublish(reviewSchedule.id)}
+                        isLoading={publishingId === reviewSchedule.id}
+                      >
+                        <Send className="w-4 h-4 mr-1" />
+                        Approve & Send to Employees
+                      </Button>
+                    )}
+                    {reviewSchedule.status === 'schedule_published' && (
+                      <Badge variant="success">Published</Badge>
+                    )}
+                    <Button variant="outline" onClick={() => router.push('/manager/schedule')}>
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
+        {/* Top bar — wireframe style */}
+        <div className="flex items-center justify-between mb-6">
+          <Link href="/manager/timesheets">
+            <Button variant="outline">
+              Auto Generate Schedule
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            {schedules.some(s => s.status === 'closed') && (
+              <Button onClick={() => {
+                const first = schedules.find(s => s.status === 'closed');
+                if (first) handlePublish(first.id);
+              }}>
+                Publish
               </Button>
-            </Link>
+            )}
+            <div className="relative">
+              <select
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value as ViewMode)}
+                className="text-sm py-2 pl-3 pr-8 border border-border rounded-lg bg-background text-foreground appearance-none cursor-pointer"
+              >
+                <option value="month">Month View</option>
+                <option value="week">Week View</option>
+                <option value="list">List View</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+            </div>
           </div>
         </div>
 
         {schedules.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <Calendar className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">No generated schedules yet</h3>
-              <p className="text-muted-foreground mb-4">
+              <p className="text-foreground-muted mb-4">
                 Create a timesheet, publish it, let workers set availability, then close it to generate a schedule.
               </p>
               <Link href="/manager/timesheets">
@@ -252,183 +465,326 @@ export default function ManagerSchedulePage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {schedules.map((schedule) => {
-              const isExpanded = expandedSchedule === schedule.id;
-              const result = schedule.solver_result;
-              const assignmentCount = result?.assignments?.length || 0;
-              const gapCount = result?.coverage_gaps?.length || 0;
-              const uniqueWorkers = result ? new Set(result.assignments?.map(a => a.worker_id)).size : 0;
-
-              return (
-                <Card key={schedule.id}>
+          <>
+            {/* ===== MONTH VIEW ===== */}
+            {viewMode === 'month' && (
+              <div className="space-y-4">
+                <Card>
                   <CardContent className="p-4">
-                    {/* Header */}
-                    <div
-                      className="flex items-center justify-between cursor-pointer"
-                      onClick={() => toggleExpand(schedule.id)}
-                    >
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-foreground">{schedule.name}</h3>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <div className="flex items-center gap-1 text-sm text-foreground-muted">
-                            <MapPin className="w-3.5 h-3.5" />
-                            <span>{getPlaceName(schedule.place_id)}</span>
-                          </div>
-                          <span className="text-foreground-muted">·</span>
-                          <div className="flex items-center gap-1 text-sm text-foreground-muted">
-                            <Calendar className="w-3.5 h-3.5" />
-                            <span>{formatDate(schedule.start_date)} - {formatDate(schedule.end_date)}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 mt-2 flex-wrap">
-                          <Badge variant={getSolverStatusVariant(schedule.solver_status)}>
-                            {getSolverStatusLabel(schedule.solver_status, result)}
-                          </Badge>
-                          <span className="text-sm text-foreground-muted flex items-center gap-1">
-                            <Users className="w-3.5 h-3.5" />
-                            {uniqueWorkers} workers · {assignmentCount} shifts
-                          </span>
-                          {gapCount > 0 && (
-                            <span className="text-sm text-warning flex items-center gap-1">
-                              <AlertCircle className="w-3.5 h-3.5" />
-                              {gapCount} gaps
-                            </span>
-                          )}
-                        </div>
+                    <div className="flex items-center justify-between mb-4">
+                      <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(mYear, mMonth - 1, 1))}>
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-semibold text-foreground">{monthLabel}</h2>
+                        <Button variant="outline" size="sm" onClick={() => {
+                          const now = new Date();
+                          setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                          setSelectedDate(todayStr);
+                        }} className="text-xs">Today</Button>
                       </div>
-                      <div className="ml-4">
-                        {isExpanded ? (
-                          <ChevronUp className="w-5 h-5 text-foreground-muted" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-foreground-muted" />
-                        )}
-                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(mYear, mMonth + 1, 1))}>
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
                     </div>
 
-                    {/* Expanded details */}
-                    {isExpanded && result && (
-                      <div className="mt-4 pt-4 border-t border-border space-y-4">
-                        {/* Diagnostics */}
-                        {result.diagnostics && result.diagnostics.length > 0 && (
-                          <div className="p-3 bg-background-secondary rounded-lg">
-                            <h4 className="text-sm font-medium text-foreground mb-2">Solver Info</h4>
-                            <ul className="text-sm text-foreground-muted space-y-1">
-                              {result.diagnostics.map((d, i) => (
-                                <li key={i}>· {d}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
+                    <div className="grid grid-cols-7 mb-1">
+                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                        <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
+                      ))}
+                    </div>
 
-                        {/* Hours by worker */}
-                        {result.total_hours_by_worker && Object.keys(result.total_hours_by_worker).length > 0 && (
-                          <div>
-                            <h4 className="text-sm font-medium text-foreground mb-2">Hours by Worker</h4>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {Object.entries(result.total_hours_by_worker).map(([workerId, hours]) => {
-                                const workerName = result.assignments?.find(a => a.worker_id === workerId)?.worker_name || workerId;
-                                return (
-                                  <div key={workerId} className="p-2 bg-background-secondary rounded-lg text-sm">
-                                    <span className="font-medium text-foreground">{workerName}</span>
-                                    <span className="text-foreground-muted ml-2">{Number(hours).toFixed(1)}h</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
+                    <div className="grid grid-cols-7">
+                      {calendarDays.map((cell, idx) => {
+                        const shifts = flatShiftsByDate[cell.dateStr] || [];
+                        const isToday = cell.dateStr === todayStr;
+                        const isSelected = cell.dateStr === selectedDate;
+                        const hasShifts = shifts.length > 0;
 
-                        {/* Assignments by day */}
-                        {result.assignments && result.assignments.length > 0 && (
-                          <div>
-                            <h4 className="text-sm font-medium text-foreground mb-2">Schedule</h4>
-                            <div className="space-y-3">
-                              {Object.entries(getAssignmentsByDay(result.assignments, schedule.start_date))
-                                .sort(([a], [b]) => Number(a) - Number(b))
-                                .map(([dayStr, dayAssignments]) => {
-                                  const dayNum = Number(dayStr);
-                                  const dayDate = getDayDate(schedule.start_date, dayNum);
-                                  return (
-                                    <Card key={dayStr} className="border-border/50">
-                                      <CardContent className="p-3">
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <Calendar className="w-4 h-4 text-primary" />
-                                          <span className="font-medium text-sm text-foreground">
-                                            {dayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                                          </span>
-                                          <Badge variant="default" className="text-xs">
-                                            {dayAssignments.length} shifts
-                                          </Badge>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                          {dayAssignments.map((assignment, idx) => (
-                                            <div
-                                              key={idx}
-                                              className="flex items-center gap-3 p-2 bg-background-secondary rounded text-sm"
-                                            >
-                                              <div className="flex items-center gap-1.5 text-foreground-muted">
-                                                <Clock className="w-3.5 h-3.5" />
-                                                <span>
-                                                  {formatMinutesToTime(assignment.start_minutes)} - {formatMinutesToTime(assignment.end_minutes)}
-                                                </span>
-                                              </div>
-                                              <span className="font-medium text-foreground">
-                                                {assignment.worker_name}
-                                              </span>
-                                              <Badge variant="info" className="text-xs">
-                                                {getPositionName(assignment.skill_id)}
-                                              </Badge>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  );
-                                })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Coverage gaps */}
-                        {result.coverage_gaps && result.coverage_gaps.length > 0 && (
-                          <div>
-                            <h4 className="text-sm font-medium text-warning mb-2">Coverage Gaps</h4>
-                            <div className="space-y-1.5">
-                              {result.coverage_gaps.map((gap, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-center gap-3 p-2 bg-warning-muted/20 rounded text-sm"
-                                >
-                                  <AlertCircle className="w-4 h-4 text-warning" />
-                                  <span className="text-foreground">
-                                    Day {gap.day}: {formatMinutesToTime(gap.start_minutes)} - {formatMinutesToTime(gap.end_minutes)}
-                                  </span>
-                                  <Badge variant="warning" className="text-xs">
-                                    {getPositionName(gap.skill_id)}
-                                  </Badge>
-                                  <span className="text-foreground-muted">
-                                    {gap.assigned}/{gap.required} workers
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* No assignments */}
-                        {(!result.assignments || result.assignments.length === 0) && (
-                          <div className="text-center py-4">
-                            <p className="text-foreground-muted">No assignments were generated for this schedule.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setSelectedDate(isSelected ? null : cell.dateStr)}
+                            className={`relative flex flex-col items-start p-2 min-h-[80px] border border-border/50 text-left transition-all
+                              ${hasShifts && cell.isCurrentMonth ? 'border-success bg-success/5' : ''}
+                              ${isSelected ? 'ring-2 ring-primary/40 bg-primary/5' : ''}
+                              ${!cell.isCurrentMonth ? 'text-foreground-muted/40' : 'text-foreground'}
+                              ${cell.isCurrentMonth && !hasShifts ? 'hover:bg-background-secondary' : ''}`}
+                          >
+                            <span className={`text-sm font-semibold ${isToday ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center' : ''}`}>
+                              {cell.day}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </CardContent>
                 </Card>
-              );
-            })}
-          </div>
+
+                {selectedDate && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <h3 className="font-semibold text-foreground mb-3">
+                        {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                      </h3>
+                      {selectedDayShifts.length === 0 ? (
+                        <p className="text-sm text-foreground-muted py-2">No shifts scheduled.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {selectedDayShifts.map((shift, idx) => (
+                            <div key={idx} className="flex items-center gap-3 p-3 bg-background-secondary rounded-lg text-sm">
+                              <div className="flex items-center gap-1.5 text-foreground-muted">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{formatMinutesToTime(shift.start_minutes)} – {formatMinutesToTime(shift.end_minutes)}</span>
+                              </div>
+                              <span className="font-medium text-foreground">{shift.worker_name}</span>
+                              <Badge variant="info" className="text-xs">{getPositionName(shift.skill_id)}</Badge>
+                              <span className="text-xs text-foreground-muted ml-auto flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />{shift.place_name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ===== WEEK VIEW ===== */}
+            {viewMode === 'week' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date(currentWeekStart);
+                    d.setDate(d.getDate() - 7);
+                    setCurrentWeekStart(d);
+                  }}>
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground text-sm">
+                      {new Date(weekDays[0] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {' – '}
+                      {new Date(weekDays[6] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                    <Button variant="outline" size="sm" onClick={() => {
+                      const now = new Date();
+                      const day = now.getDay();
+                      const diff = now.getDate() - day;
+                      setCurrentWeekStart(new Date(now.getFullYear(), now.getMonth(), diff));
+                    }} className="text-xs">This Week</Button>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date(currentWeekStart);
+                    d.setDate(d.getDate() + 7);
+                    setCurrentWeekStart(d);
+                  }}>
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-7 gap-2">
+                  {weekDays.map(dateStr => {
+                    const shifts = flatShiftsByDate[dateStr] || [];
+                    const isToday = dateStr === todayStr;
+                    const dt = new Date(dateStr + 'T00:00:00');
+
+                    return (
+                      <Card key={dateStr} className={`min-h-[180px] ${isToday ? 'border-primary/40' : ''}`}>
+                        <CardContent className="p-2">
+                          <div className={`text-center mb-2 pb-1 border-b border-border ${isToday ? 'text-primary font-bold' : 'text-foreground-muted'}`}>
+                            <div className="text-xs">{dt.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                            <div className="text-lg font-semibold">{dt.getDate()}</div>
+                          </div>
+                          <div className="space-y-1.5">
+                            {shifts.length === 0 ? (
+                              <p className="text-[10px] text-foreground-muted text-center py-2">No shifts</p>
+                            ) : shifts.map((shift, idx) => renderShiftCard(shift, idx))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ===== LIST VIEW (original with publish) ===== */}
+            {viewMode === 'list' && (
+              <div className="space-y-4">
+                {schedules.map((schedule) => {
+                  const isExpanded = expandedSchedule === schedule.id;
+                  const result = schedule.solver_result;
+                  const assignmentCount = result?.assignments?.length || 0;
+                  const gapCount = result?.coverage_gaps?.length || 0;
+                  const uniqueWorkers = result ? new Set(result.assignments?.map(a => a.worker_id)).size : 0;
+
+                  return (
+                    <Card key={schedule.id}>
+                      <CardContent className="p-4">
+                        <div
+                          className="flex items-center justify-between cursor-pointer"
+                          onClick={() => toggleExpand(schedule.id)}
+                        >
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-foreground">{schedule.name}</h3>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
+                                <MapPin className="w-3.5 h-3.5" />
+                                <span>{getPlaceName(schedule.place_id)}</span>
+                              </div>
+                              <span className="text-foreground-muted">·</span>
+                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span>{formatDate(schedule.start_date)} - {formatDate(schedule.end_date)}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 mt-2 flex-wrap">
+                              {schedule.status === 'schedule_published' ? (
+                                <Badge variant="success">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Published
+                                </Badge>
+                              ) : (
+                                <Badge variant={getSolverStatusVariant(schedule.solver_status)}>
+                                  {getSolverStatusLabel(schedule.solver_status, result)}
+                                </Badge>
+                              )}
+                              <span className="text-sm text-foreground-muted flex items-center gap-1">
+                                <Users className="w-3.5 h-3.5" />
+                                {uniqueWorkers} workers · {assignmentCount} shifts
+                              </span>
+                              {gapCount > 0 && (
+                                <span className="text-sm text-warning flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                  {gapCount} gaps
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="ml-4 flex items-center gap-2">
+                            {schedule.status === 'closed' && (
+                              <Button
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handlePublish(schedule.id); }}
+                                isLoading={publishingId === schedule.id}
+                                disabled={publishingId !== null}
+                              >
+                                <Send className="w-3.5 h-3.5 mr-1" />
+                                Publish
+                              </Button>
+                            )}
+                            {isExpanded ? (
+                              <ChevronUp className="w-5 h-5 text-foreground-muted" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-foreground-muted" />
+                            )}
+                          </div>
+                        </div>
+
+                        {isExpanded && result && (
+                          <div className="mt-4 pt-4 border-t border-border space-y-4">
+                            {result.diagnostics && result.diagnostics.length > 0 && (
+                              <div className="p-3 bg-background-secondary rounded-lg">
+                                <h4 className="text-sm font-medium text-foreground mb-2">Solver Info</h4>
+                                <ul className="text-sm text-foreground-muted space-y-1">
+                                  {result.diagnostics.map((d, i) => (
+                                    <li key={i}>· {d}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {result.total_hours_by_worker && Object.keys(result.total_hours_by_worker).length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium text-foreground mb-2">Hours by Worker</h4>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  {Object.entries(result.total_hours_by_worker).map(([workerId, hours]) => {
+                                    const workerName = result.assignments?.find(a => a.worker_id === workerId)?.worker_name || workerId;
+                                    return (
+                                      <div key={workerId} className="p-2 bg-background-secondary rounded-lg text-sm">
+                                        <span className="font-medium text-foreground">{workerName}</span>
+                                        <span className="text-foreground-muted ml-2">{Number(hours).toFixed(1)}h</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {result.assignments && result.assignments.length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium text-foreground mb-2">Schedule</h4>
+                                <div className="space-y-3">
+                                  {Object.entries(getAssignmentsByDay(result.assignments, schedule.start_date))
+                                    .sort(([a], [b]) => Number(a) - Number(b))
+                                    .map(([dayStr, dayAssignments]) => {
+                                      const dayNum = Number(dayStr);
+                                      const dayDate = getDayDate(schedule.start_date, dayNum);
+                                      return (
+                                        <Card key={dayStr} className="border-border/50">
+                                          <CardContent className="p-3">
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <Calendar className="w-4 h-4 text-primary" />
+                                              <span className="font-medium text-sm text-foreground">
+                                                {dayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                                              </span>
+                                              <Badge variant="default" className="text-xs">{dayAssignments.length} shifts</Badge>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                              {dayAssignments.map((assignment, idx) => (
+                                                <div key={idx} className="flex items-center gap-3 p-2 bg-background-secondary rounded text-sm">
+                                                  <div className="flex items-center gap-1.5 text-foreground-muted">
+                                                    <Clock className="w-3.5 h-3.5" />
+                                                    <span>{formatMinutesToTime(assignment.start_minutes)} - {formatMinutesToTime(assignment.end_minutes)}</span>
+                                                  </div>
+                                                  <span className="font-medium text-foreground">{assignment.worker_name}</span>
+                                                  <Badge variant="info" className="text-xs">{getPositionName(assignment.skill_id)}</Badge>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </CardContent>
+                                        </Card>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            )}
+
+                            {result.coverage_gaps && result.coverage_gaps.length > 0 && (
+                              <div>
+                                <h4 className="text-sm font-medium text-warning mb-2">Coverage Gaps</h4>
+                                <div className="space-y-1.5">
+                                  {result.coverage_gaps.map((gap, idx) => (
+                                    <div key={idx} className="flex items-center gap-3 p-2 bg-warning-muted/20 rounded text-sm">
+                                      <AlertCircle className="w-4 h-4 text-warning" />
+                                      <span className="text-foreground">
+                                        Day {gap.day}: {formatMinutesToTime(gap.start_minutes)} - {formatMinutesToTime(gap.end_minutes)}
+                                      </span>
+                                      <Badge variant="warning" className="text-xs">{getPositionName(gap.skill_id)}</Badge>
+                                      <span className="text-foreground-muted">{gap.assigned}/{gap.required} workers</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {(!result.assignments || result.assignments.length === 0) && (
+                              <div className="text-center py-4">
+                                <p className="text-foreground-muted">No assignments were generated for this schedule.</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
     </PageContainer>

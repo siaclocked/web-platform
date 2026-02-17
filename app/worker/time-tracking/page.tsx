@@ -261,7 +261,7 @@ export default function WorkerTimeTrackingPage() {
                 <div className="text-4xl font-bold text-foreground mb-2 font-mono">
                   {formatElapsed(sessionDuration)}
                 </div>
-                <p className="text-muted-foreground">
+                <p className="text-foreground-muted">
                   Started at{" "}
                   {new Date(activeSession.start_time).toLocaleTimeString()}
                 </p>
@@ -426,7 +426,7 @@ export default function WorkerTimeTrackingPage() {
               <h3 className="font-medium text-foreground mb-4">
                 Recent Sessions
               </h3>
-              <p className="text-muted-foreground text-center py-4">
+              <p className="text-foreground-muted text-center py-4">
                 No recent sessions
               </p>
             </CardContent>

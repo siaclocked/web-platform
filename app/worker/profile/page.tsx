@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Avatar, Badge } from '@/components/ui';
+import { Card, CardContent, Avatar, Badge, Button, Input } from '@/components/ui';
 import { BackButton } from '@/components/ui';
-import { User, Mail, Phone, Clock, Calendar, MapPin, Briefcase } from 'lucide-react';
+import { User, Mail, Phone, Clock, Calendar, MapPin, Briefcase, Edit2, Save, X } from 'lucide-react';
 
 interface Position {
   id: string;
@@ -53,6 +53,10 @@ export default function WorkerProfilePage() {
   const [profile, setProfile] = useState<WorkerProfile | null>(null);
   const [recentSessions, setRecentSessions] = useState<WorkSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', phone: '' });
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchProfile();
@@ -171,6 +175,26 @@ export default function WorkerProfilePage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <BackButton href="/worker" />
+          {!isEditing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (profile) {
+                  setEditForm({
+                    first_name: profile.first_name,
+                    last_name: profile.last_name,
+                    phone: profile.phone || '',
+                  });
+                  setIsEditing(true);
+                  setEditError('');
+                }
+              }}
+            >
+              <Edit2 className="w-4 h-4 mr-2" />
+              Edit Profile
+            </Button>
+          )}
         </div>
 
         {/* Profile Card */}
@@ -197,47 +221,143 @@ export default function WorkerProfilePage() {
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    First Name
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-foreground-muted" />
-                    <span>{profile.first_name}</span>
+              {isEditing ? (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        First Name
+                      </label>
+                      <Input
+                        value={editForm.first_name}
+                        onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                        placeholder="First name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Last Name
+                      </label>
+                      <Input
+                        value={editForm.last_name}
+                        onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                        placeholder="Last name"
+                      />
+                    </div>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Last Name
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-foreground-muted" />
-                    <span>{profile.last_name}</span>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Email
+                    </label>
+                    <div className="flex items-center gap-2 text-foreground-muted">
+                      <Mail className="w-4 h-4" />
+                      <span>{profile.email}</span>
+                      <span className="text-xs">(cannot be changed)</span>
+                    </div>
                   </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  Email
-                </label>
-                <div className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-foreground-muted" />
-                  <span>{profile.email}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  Phone
-                </label>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-foreground-muted" />
-                  <span>{profile.phone || 'Not provided'}</span>
-                </div>
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Phone
+                    </label>
+                    <Input
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      placeholder="+1 234 567 8900"
+                    />
+                  </div>
+                  {editError && (
+                    <div className="p-2 bg-danger-muted/20 border border-danger/30 rounded">
+                      <p className="text-sm text-danger">{editError}</p>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      isLoading={isSaving}
+                      onClick={async () => {
+                        if (!editForm.first_name.trim() || !editForm.last_name.trim()) {
+                          setEditError('First and last name are required');
+                          return;
+                        }
+                        setIsSaving(true);
+                        setEditError('');
+                        try {
+                          const supabase = createClient();
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (!session) return;
+                          const response = await fetch('/api/worker/profile', {
+                            method: 'PUT',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${session.access_token}`,
+                            },
+                            body: JSON.stringify(editForm),
+                          });
+                          if (response.ok) {
+                            setIsEditing(false);
+                            fetchProfile();
+                          } else {
+                            const err = await response.json();
+                            setEditError(err.error || 'Failed to save');
+                          }
+                        } catch {
+                          setEditError('Failed to save profile');
+                        } finally {
+                          setIsSaving(false);
+                        }
+                      }}
+                    >
+                      <Save className="w-4 h-4 mr-1" />
+                      Save
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
+                      <X className="w-4 h-4 mr-1" />
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        First Name
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-foreground-muted" />
+                        <span>{profile.first_name}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Last Name
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-foreground-muted" />
+                        <span>{profile.last_name}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Email
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-foreground-muted" />
+                      <span>{profile.email}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Phone
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-foreground-muted" />
+                      <span>{profile.phone || 'Not provided'}</span>
+                    </div>
+                  </div>
+                </>)
+              }
 
               {profile.hourly_rate && (
                 <div>
@@ -288,7 +408,7 @@ export default function WorkerProfilePage() {
                       {profile.places.map((place) => (
                         <span
                           key={place.id}
-                          className="px-2 py-1 text-sm bg-info/20 text-info rounded-md"
+                          className="px-2 py-1 text-sm bg-accent/20 text-accent rounded-md"
                         >
                           {place.name}
                         </span>

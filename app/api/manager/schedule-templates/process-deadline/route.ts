@@ -154,24 +154,29 @@ export async function POST(request: Request) {
       console.error('Error fetching worker skills:', skillsError);
     }
 
-    // Get availability submissions
-    const { data: submissions, error: submissionsError } = await supabase
-      .from('worker_availability_submissions')
+    // Get worker availability from the calendar-based worker_availability table
+    const { data: availEntries, error: availError } = await supabase
+      .from('worker_availability')
       .select('*')
-      .eq('schedule_template_id', schedule_template_id)
-      .eq('is_available', true);
+      .in('worker_id', workerIds)
+      .gte('date', template.start_date)
+      .lte('date', template.end_date);
 
-    if (submissionsError) {
-      console.error('Error fetching submissions:', submissionsError);
+    if (availError) {
+      console.error('Error fetching worker availability:', availError);
     }
 
-    // Build worker availability lookup
-    const workerAvailability: Record<string, Set<string>> = {};
-    (submissions || []).forEach(sub => {
-      if (!workerAvailability[sub.worker_id]) {
-        workerAvailability[sub.worker_id] = new Set();
+    // Build worker availability lookup: worker_id -> date -> entry
+    const workerAvailMap: Record<string, Record<string, { type: string; start_time?: string; end_time?: string }>> = {};
+    (availEntries || []).forEach((entry: any) => {
+      if (!workerAvailMap[entry.worker_id]) {
+        workerAvailMap[entry.worker_id] = {};
       }
-      workerAvailability[sub.worker_id].add(`${sub.shift_template_id}-${sub.shift_index}`);
+      workerAvailMap[entry.worker_id][entry.date] = {
+        type: entry.availability_type,
+        start_time: entry.start_time,
+        end_time: entry.end_time,
+      };
     });
 
     // Build workers array for solver
@@ -219,32 +224,59 @@ export async function POST(request: Request) {
       }
     });
 
-    // Build unavailability from workers who didn't mark themselves available
+    // Build unavailability from worker_availability calendar entries
+    // Workers who have NO entry for a date are treated as unavailable (conservative).
+    // Workers with 'unavailable' are fully off that day.
+    // Workers with 'available_range' are unavailable outside that range.
+    // Workers with 'available_all_day' have no unavailability for that day.
     const unavailability: SolverRequest['unavailability'] = [];
-    
-    Object.keys(workersMap).forEach(workerId => {
-      (shiftTemplates || []).forEach((st) => {
-        if (st.day_type === 'work' && st.shifts) {
-          const shiftDate = new Date(st.date);
-          const dayOfWeek = shiftDate.getDay();
 
-          st.shifts.forEach((shift: any, shiftIndex: number) => {
-            const key = `${st.id}-${shiftIndex}`;
-            const isAvailable = workerAvailability[workerId]?.has(key);
-            
-            if (!isAvailable) {
-              const [startH, startM] = shift.startTime.split(':').map(Number);
-              const [endH, endM] = shift.endTime.split(':').map(Number);
-              
+    Object.keys(workersMap).forEach(workerId => {
+      const workerAvail = workerAvailMap[workerId] || {};
+
+      (shiftTemplates || []).forEach((st) => {
+        if (st.day_type === 'work') {
+          const shiftDate = new Date(st.date + 'T00:00:00');
+          const dayOfWeek = shiftDate.getDay();
+          const dateStr = st.date; // YYYY-MM-DD
+          const entry = workerAvail[dateStr];
+
+          if (!entry || entry.type === 'unavailable') {
+            // No availability set or explicitly unavailable → full day off
+            unavailability.push({
+              worker_id: workerId,
+              day: dayOfWeek,
+              is_full_day: true,
+            });
+          } else if (entry.type === 'available_range' && entry.start_time && entry.end_time) {
+            // Available only during a range → unavailable outside that range
+            const [aStartH, aStartM] = entry.start_time.split(':').map(Number);
+            const [aEndH, aEndM] = entry.end_time.split(':').map(Number);
+            const availStart = aStartH * 60 + (aStartM || 0);
+            const availEnd = aEndH * 60 + (aEndM || 0);
+
+            // Unavailable before their available start
+            if (availStart > 0) {
               unavailability.push({
                 worker_id: workerId,
                 day: dayOfWeek,
-                start_minutes: startH * 60 + startM,
-                end_minutes: endH * 60 + endM,
-                is_full_day: false
+                start_minutes: 0,
+                end_minutes: availStart,
+                is_full_day: false,
               });
             }
-          });
+            // Unavailable after their available end
+            if (availEnd < 1440) {
+              unavailability.push({
+                worker_id: workerId,
+                day: dayOfWeek,
+                start_minutes: availEnd,
+                end_minutes: 1440,
+                is_full_day: false,
+              });
+            }
+          }
+          // 'available_all_day' → no unavailability entry needed
         }
       });
     });

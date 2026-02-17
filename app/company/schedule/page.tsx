@@ -56,9 +56,9 @@ export default function CompanySchedulePage() {
         ) : schedules.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <Calendar className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">No schedules yet</h3>
-              <p className="text-muted-foreground mb-4">
+              <p className="text-foreground-muted mb-4">
                 Create your first company schedule
               </p>
               <Button>
@@ -75,14 +75,14 @@ export default function CompanySchedulePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="font-medium">{schedule.name}</h4>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-foreground-muted">
                         {schedule.places?.name} • {schedule.start_date} to {schedule.end_date}
                       </p>
                       <div className="flex items-center space-x-4 mt-2">
                         <Badge variant={schedule.status === 'PUBLISHED' ? 'success' : 'warning'}>
                           {schedule.status}
                         </Badge>
-                        <span className="text-sm text-muted-foreground flex items-center">
+                        <span className="text-sm text-foreground-muted flex items-center">
                           <Users className="w-4 h-4 mr-1" />
                           {schedule.worker_count || 0} workers
                         </span>

@@ -261,9 +261,9 @@ export default function ManagerPositionsPage() {
           {positions.length === 0 ? (
             <Card>
               <CardContent className="text-center py-8">
-                <Briefcase className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <Briefcase className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
                 <h3 className="text-lg font-medium mb-2">No positions yet</h3>
-                <p className="text-muted-foreground mb-4">
+                <p className="text-foreground-muted mb-4">
                   Add your first position to get started
                 </p>
                 <Button onClick={() => setIsAddingPosition(true)}>
@@ -282,11 +282,11 @@ export default function ManagerPositionsPage() {
                         {position.name}
                       </h3>
                       {position.description && (
-                        <p className="text-sm text-muted-foreground mb-2">
+                        <p className="text-sm text-foreground-muted mb-2">
                           {position.description}
                         </p>
                       )}
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-4 text-sm text-foreground-muted">
                         <div className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
                           <span>{position.worker_count || 0} workers</span>

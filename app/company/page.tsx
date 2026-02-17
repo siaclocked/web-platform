@@ -74,7 +74,7 @@ export default function CompanyPage() {
             <CardContent className="p-4 text-center">
               <Users className="w-8 h-8 mx-auto mb-2 text-primary" />
               <div className="text-2xl font-bold">{stats.totalManagers}</div>
-              <div className="text-sm text-muted-foreground">Managers</div>
+              <div className="text-sm text-foreground-muted">Managers</div>
             </CardContent>
           </Card>
           
@@ -82,7 +82,7 @@ export default function CompanyPage() {
             <CardContent className="p-4 text-center">
               <Users className="w-8 h-8 mx-auto mb-2 text-blue-500" />
               <div className="text-2xl font-bold">{stats.totalWorkers}</div>
-              <div className="text-sm text-muted-foreground">Workers</div>
+              <div className="text-sm text-foreground-muted">Workers</div>
             </CardContent>
           </Card>
           
@@ -90,7 +90,7 @@ export default function CompanyPage() {
             <CardContent className="p-4 text-center">
               <Building2 className="w-8 h-8 mx-auto mb-2 text-green-500" />
               <div className="text-2xl font-bold">{stats.totalPlaces}</div>
-              <div className="text-sm text-muted-foreground">Places</div>
+              <div className="text-sm text-foreground-muted">Places</div>
             </CardContent>
           </Card>
           
@@ -98,7 +98,7 @@ export default function CompanyPage() {
             <CardContent className="p-4 text-center">
               <Calendar className="w-8 h-8 mx-auto mb-2 text-orange-500" />
               <div className="text-2xl font-bold">{stats.activeSchedules}</div>
-              <div className="text-sm text-muted-foreground">Active Schedules</div>
+              <div className="text-sm text-foreground-muted">Active Schedules</div>
             </CardContent>
           </Card>
         </div>

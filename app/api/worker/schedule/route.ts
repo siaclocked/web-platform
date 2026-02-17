@@ -64,7 +64,7 @@ export async function GET(request: Request) {
         )
       `)
       .in('place_id', placeIds)
-      .eq('status', 'closed')
+      .in('status', ['closed', 'schedule_published'])
       .eq('solver_status', 'completed')
       .order('start_date', { ascending: false });
 

@@ -134,7 +134,7 @@ export default function ManagerNotificationsPage() {
         return 'text-primary';
       case 'HANDOFF_NOTE_RECEIVED':
       case 'handoff_note':
-        return 'text-info';
+        return 'text-accent';
       case 'OPEN_SHIFT_AVAILABLE':
       case 'OPEN_SHIFT_INTEREST_SUBMITTED':
       case 'open_shift':
@@ -150,7 +150,7 @@ export default function ManagerNotificationsPage() {
       case 'TIMESHEET_PUBLISHED':
         return 'text-primary';
       default:
-        return 'text-muted-foreground';
+        return 'text-foreground-muted';
     }
   };
 
@@ -184,9 +184,9 @@ export default function ManagerNotificationsPage() {
         {notifications.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
-              <Bell className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <Bell className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">No notifications</h3>
-              <p className="text-muted-foreground">
+              <p className="text-foreground-muted">
                 You're all caught up!
               </p>
             </CardContent>
@@ -218,7 +218,7 @@ export default function ManagerNotificationsPage() {
                         {notification.message}
                       </p>
                       <div className="flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-foreground-muted">
                           {new Date(notification.created_at).toLocaleString()}
                         </p>
                         {!notification.is_read && (

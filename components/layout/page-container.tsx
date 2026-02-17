@@ -16,7 +16,7 @@ export function PageContainer({
   action,
 }: PageContainerProps) {
   return (
-    <div className={cn('px-4 py-6 pb-24 max-w-7xl mx-auto', className)}>
+    <div className={cn('px-4 lg:px-6 py-6 pb-24 lg:pb-6', className)}>
       {(title || action) && (
         <div className="flex items-start justify-between mb-6">
           <div>

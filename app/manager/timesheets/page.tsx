@@ -39,7 +39,7 @@ interface Timesheet {
   start_date: string;
   end_date: string;
   availability_deadline: string;
-  status: 'draft' | 'published' | 'closed';
+  status: 'draft' | 'published' | 'closed' | 'schedule_published';
   company_id: string;
   manager_id: string;
   created_at: string;
@@ -404,20 +404,13 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
       return;
     }
 
+    // availability_deadline is auto-set for backwards compat (not shown to user)
     if (!editingTimesheet.availability_deadline) {
-      alert('Please set an availability deadline for the schedule template');
-      return;
-    }
-
-    // Validate deadline format and future date
-    if (!validateDateTimeFormat(editingTimesheet.availability_deadline)) {
-      alert('Deadline format must be YYYY-MM-DD HH:MM (e.g., 2025-06-01 17:30)');
-      return;
-    }
-
-    if (!isDateTimeInFuture(editingTimesheet.availability_deadline)) {
-      alert('Availability deadline must be in the future');
-      return;
+      // Default to end_date + 1 day at 23:59
+      const endDate = dateRange.end || new Date();
+      const deadline = new Date(endDate);
+      deadline.setDate(deadline.getDate() + 1);
+      editingTimesheet.availability_deadline = `${deadline.toISOString().split('T')[0]} 23:59`;
     }
 
     // Validate all shift times
@@ -570,7 +563,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
 
     const confirmPublish = confirm(
       `Are you sure you want to publish "${timesheet.name}"?\n\n` +
-      `This will notify all workers at the selected place to set their availability before the deadline.`
+      `This will send the schedule to the solver, which will read worker availability and automatically assign shifts.`
     );
     if (!confirmPublish) return;
 
@@ -579,11 +572,12 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
-        alert('You must be logged in to publish timesheets');
+        alert('You must be logged in');
         return;
       }
 
-      const response = await fetch('/api/manager/schedule-templates/publish', {
+      // Step 1: Mark as published first (required by API)
+      const pubResponse = await fetch('/api/manager/schedule-templates/publish', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -592,20 +586,45 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
         body: JSON.stringify({ id: timesheetId }),
       });
 
-      const result = await response.json();
+      if (!pubResponse.ok) {
+        const err = await pubResponse.json();
+        alert(err.error || 'Failed to publish');
+        return;
+      }
 
-      if (response.ok && result.success) {
-        // Update local state
+      // Step 2: Immediately trigger the solver (reads worker_availability table)
+      const solverResponse = await fetch('/api/manager/schedule-templates/process-deadline', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ schedule_template_id: timesheetId }),
+      });
+
+      const solverResult = await solverResponse.json();
+
+      if (solverResponse.ok && solverResult.success) {
+        setTimesheets(prev => prev.map(t => 
+          t.id === timesheetId ? { ...t, status: 'closed' as const } : t
+        ));
+        if (solverResult.is_feasible) {
+          alert(`Schedule generated successfully! ${solverResult.result?.assignments?.length || 0} shifts assigned.\n\nReview the schedule and approve it to send to employees.`);
+        } else {
+          alert(`Schedule generated with coverage gaps. Review the results and edit manually if needed.`);
+        }
+      } else {
+        // Solver failed but schedule is published — update local state
         setTimesheets(prev => prev.map(t => 
           t.id === timesheetId ? { ...t, status: 'published' as const } : t
         ));
-        alert(`Timesheet "${timesheet.name}" published successfully!\n${result.notifications_sent} workers have been notified.`);
-      } else {
-        alert(result.error || 'Failed to publish timesheet');
+        alert(solverResult.error || 'Solver failed. You can retry from the schedule list.');
       }
+
+      await fetchTimesheets();
     } catch (error) {
-      console.error('Error publishing timesheet:', error);
-      alert('An error occurred while publishing the timesheet');
+      console.error('Error publishing:', error);
+      alert('An error occurred');
     }
   };
 
@@ -1000,48 +1019,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Availability Deadline *
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs text-foreground-muted mb-1">
-                        Date
-                      </label>
-                      <input
-                        type="date"
-                        value={editingTimesheet?.availability_deadline?.split(' ')[0] || ''}
-                        onChange={(e) => {
-                          const currentDate = e.target.value;
-                          const currentTime = editingTimesheet?.availability_deadline?.split(' ')[1] || '17:00';
-                          setEditingTimesheet(prev => prev ? {...prev, availability_deadline: `${currentDate} ${currentTime}`} : null);
-                        }}
-                        min={new Date().toISOString().split('T')[0]} // Prevent selecting past dates
-                        className="w-full p-2 border border-border rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-foreground-muted mb-1">
-                        Time (24h)
-                      </label>
-                      <input
-                        type="text"
-                        value={editingTimesheet?.availability_deadline?.split(' ')[1] || ''}
-                        onChange={(e) => {
-                          const currentDate = editingTimesheet?.availability_deadline?.split(' ')[0] || new Date().toISOString().split('T')[0];
-                          const newTime = e.target.value;
-                          setEditingTimesheet(prev => prev ? {...prev, availability_deadline: `${currentDate} ${newTime}`} : null);
-                        }}
-                        placeholder="17:30"
-                        className="w-full p-2 border border-border rounded-lg"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-foreground-muted mt-1">
-                    Select date and time in 24-hour format (e.g., 17:30)
-                  </p>
-                </div>
+                {/* Availability deadline removed — workers set availability independently */}
               </div>
             </CardContent>
           </Card>
@@ -1178,7 +1156,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                   Copy to All
                 </Button>
                 {copySourceDay && (
-                  <div className="text-sm text-info">
+                  <div className="text-sm text-accent">
                     <strong>Copy Mode:</strong> Click work days to select as targets, then click "Apply" to copy shifts
                   </div>
                 )}
@@ -1380,7 +1358,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
               <div className="text-2xl font-bold text-foreground">
                 {timesheets.filter(t => t.status === 'draft').length}
               </div>
-              <p className="text-sm text-muted-foreground">Drafts</p>
+              <p className="text-sm text-foreground-muted">Drafts</p>
             </CardContent>
           </Card>
 
@@ -1390,7 +1368,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
               <div className="text-2xl font-bold text-foreground">
                 {timesheets.filter(t => t.status === 'published').length}
               </div>
-              <p className="text-sm text-muted-foreground">Published</p>
+              <p className="text-sm text-foreground-muted">Published</p>
             </CardContent>
           </Card>
 
@@ -1400,7 +1378,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
               <div className="text-2xl font-bold text-foreground">
                 {timesheets.length}
               </div>
-              <p className="text-sm text-muted-foreground">Total</p>
+              <p className="text-sm text-foreground-muted">Total</p>
             </CardContent>
           </Card>
         </div>
@@ -1432,19 +1410,14 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                       </h3>
                       <div className="flex items-center gap-2 mt-1">
                         <MapPin className="w-4 h-4 text-foreground-muted" />
-                        <span className="text-sm text-muted-foreground">
+                        <span className="text-sm text-foreground-muted">
                           {places.find(p => p.id === timesheet.place_id)?.name || 'Unknown Place'}
                         </span>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-sm text-foreground-muted mt-1">
                         {formatDate(timesheet.start_date)} - {formatDate(timesheet.end_date)}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Clock className="w-4 h-4 text-foreground-muted" />
-                        <span className="text-sm text-muted-foreground">
-                          Deadline: {formatDateTime24(timesheet.availability_deadline)}
-                        </span>
-                      </div>
+                      {/* deadline hidden — workers set availability independently */}
                     </div>
                     <Badge variant={getStatusColor(timesheet.status)}>
                       {timesheet.status}
@@ -1463,7 +1436,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                               start_date: timesheet.start_date,
                               end_date: timesheet.end_date,
                               place_id: timesheet.place_id,
-                              availability_deadline: timesheet.availability_deadline
+                              availability_deadline: timesheet.availability_deadline || ''
                             };
                             setEditingTimesheet(template);
                             setCreatingNew(false);
@@ -1509,14 +1482,25 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                         onClick={() => processDeadline(timesheet.id)}
                       >
                         <CheckCircle className="w-4 h-4 mr-2" />
-                        Close & Generate
+                        Retry Solver
                       </Button>
                     )}
-                    {timesheet.status !== 'closed' && (
+                    {timesheet.status === 'closed' && (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="text-primary"
+                        onClick={() => router.push(`/manager/schedule?review=${timesheet.id}`)}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Review & Approve
+                      </Button>
+                    )}
+                    {timesheet.status !== 'closed' && timesheet.status !== 'schedule_published' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-danger hover:text-danger hover:bg-danger/5"
                         onClick={() => deleteTimesheet(timesheet.id, timesheet.name)}
                       >
                         <Trash className="w-4 h-4 mr-2" />

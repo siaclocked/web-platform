@@ -6,14 +6,11 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-background" />
+        <div className="absolute inset-0 bg-linear-to-br from-primary/20 via-background to-background" />
         <div className="relative max-w-6xl mx-auto px-4 py-16 sm:py-24">
           <div className="text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary rounded-2xl mb-6">
-              <Clock className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-4xl sm:text-5xl font-bold text-foreground mb-4">
-              Clocked
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-foreground mb-4" style={{ fontFamily: "'Georgia', serif" }}>
+              CLOCKED
             </h1>
             <p className="text-xl text-foreground-muted max-w-2xl mx-auto mb-8">
               The modern worker scheduling platform. Generate smart schedules,

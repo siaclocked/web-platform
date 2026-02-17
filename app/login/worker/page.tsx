@@ -134,12 +134,11 @@ export default function WorkerLoginPage() {
         <div className="max-w-6xl mx-auto px-4 py-6">
           <button
             onClick={() => router.push("/")}
-            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            className="hover:opacity-80 transition-opacity"
           >
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-              <Clock className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground">Clocked</h1>
+            <span className="text-2xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
+              CLOCKED
+            </span>
           </button>
         </div>
       </div>

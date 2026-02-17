@@ -2,17 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/layout";
-import { Card, CardContent, Button } from "@/components/ui";
-import {
-  Calendar,
-  Users,
-  Plus,
-  Briefcase,
-  MapPin,
-  ClipboardList,
-  TrendingUp,
-} from "lucide-react";
-import Link from "next/link";
+import { Card, CardContent } from "@/components/ui";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface ActiveWorker {
@@ -29,6 +20,10 @@ export default function ManagerDashboard() {
   const [placesCount, setPlacesCount] = useState(0);
   const [activeWorkers, setActiveWorkers] = useState<ActiveWorker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   useEffect(() => {
     fetchAllCounts();
@@ -110,24 +105,44 @@ export default function ManagerDashboard() {
     setIsLoading(false);
   };
 
-  const formatDurationMins = (mins: number) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    if (h === 0) return `${m}m`;
-    if (m === 0) return `${h}h`;
-    return `${h}h ${m}m`;
-  };
+  // Calendar helpers
+  const mYear = currentMonth.getFullYear();
+  const mMonth = currentMonth.getMonth();
+  const daysInMonth = new Date(mYear, mMonth + 1, 0).getDate();
+  const firstDayOfWeek = new Date(mYear, mMonth, 1).getDay();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const calendarCells: Array<{ day: number; dateStr: string; isCurrentMonth: boolean } | null> = [];
+  // Previous month filler
+  const prevMonthDays = new Date(mYear, mMonth, 0).getDate();
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const d = prevMonthDays - i;
+    const pm = mMonth === 0 ? 12 : mMonth;
+    const py = mMonth === 0 ? mYear - 1 : mYear;
+    calendarCells.push({ day: d, dateStr: `${py}-${String(pm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
+  }
+  // Current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${mYear}-${String(mMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    calendarCells.push({ day: d, dateStr, isCurrentMonth: true });
+  }
+  // Next month filler
+  const remaining = 7 - (calendarCells.length % 7);
+  if (remaining < 7) {
+    for (let d = 1; d <= remaining; d++) {
+      const nm = mMonth + 2 > 12 ? 1 : mMonth + 2;
+      const ny = mMonth + 2 > 12 ? mYear + 1 : mYear;
+      calendarCells.push({ day: d, dateStr: `${ny}-${String(nm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
+    }
+  }
 
   if (isLoading) {
     return (
       <PageContainer>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">
-            Manager Dashboard
-          </h1>
-          <p className="text-foreground-muted">Overview of your operations</p>
-        </div>
-        <div className="flex items-center justify-center min-h-[300px]">
+        <div className="flex items-center justify-center min-h-[400px]">
           <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
         </div>
       </PageContainer>
@@ -136,164 +151,101 @@ export default function ManagerDashboard() {
 
   return (
     <PageContainer>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">
-          Manager Dashboard
-        </h1>
-        <p className="text-foreground-muted">Overview of your operations</p>
+      {/* Stat cards — 4-column row matching wireframe */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-6">
+            <span className="text-3xl font-bold text-foreground">{activeWorkers.length}</span>
+            <span className="text-sm text-foreground-muted mt-1">Active Workers</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-6">
+            <span className="text-3xl font-bold text-foreground">{workerCount}</span>
+            <span className="text-sm text-foreground-muted mt-1">Total Employees</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-6">
+            <span className="text-3xl font-bold text-foreground">{placesCount}</span>
+            <span className="text-sm text-foreground-muted mt-1">Places</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-6">
+            <span className="text-3xl font-bold text-foreground">0</span>
+            <span className="text-sm text-foreground-muted mt-1">Open Shifts</span>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Live Status */}
-      <Card
-        className={`mb-4 ${activeWorkers.length > 0 ? "border-success/30 bg-success-muted/10" : "border-warning/30 bg-warning-muted/10"}`}
-      >
-        <CardContent>
-          {activeWorkers.length === 0 ? (
+      {/* Calendar — month mini-view matching wireframe */}
+      <Card>
+        <CardContent className="p-6">
+          {/* Month nav */}
+          <div className="flex items-center gap-4 mb-6">
+            <button
+              onClick={() => setCurrentMonth(new Date(mYear, mMonth - 1, 1))}
+              className="p-1 rounded hover:bg-background-secondary transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5 text-foreground-muted" />
+            </button>
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-warning rounded-full" />
-              <div>
-                <p className="font-medium text-foreground">
-                  No workers currently clocked in
-                </p>
-                <p className="text-sm text-foreground-muted">All locations</p>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-3 h-3 bg-success rounded-full animate-pulse" />
-                <p className="font-medium text-foreground">
-                  {activeWorkers.length} worker
-                  {activeWorkers.length !== 1 ? "s" : ""} currently clocked in
-                </p>
-              </div>
-              <div className="space-y-2">
-                {activeWorkers.map((w) => (
-                  <div
-                    key={w.id}
-                    className="flex items-center justify-between text-sm bg-background/50 p-2 rounded"
-                  >
-                    <span className="font-medium text-foreground">
-                      {w.worker_name}
-                    </span>
-                    <div className="flex items-center gap-2 text-foreground-muted">
-                      <span>{w.place_name}</span>
-                      <span>•</span>
-                      <span>{w.skill_name}</span>
-                      <span>•</span>
-                      <span>{formatDurationMins(w.duration_minutes)}</span>
-                    </div>
-                  </div>
+              <select
+                value={mMonth}
+                onChange={(e) => setCurrentMonth(new Date(mYear, Number(e.target.value), 1))}
+                className="text-sm font-medium py-1.5 px-3 border border-border rounded-lg bg-background text-foreground"
+              >
+                {monthNames.map((name, idx) => (
+                  <option key={idx} value={idx}>{name}</option>
                 ))}
-              </div>
+              </select>
+              <select
+                value={mYear}
+                onChange={(e) => setCurrentMonth(new Date(Number(e.target.value), mMonth, 1))}
+                className="text-sm font-medium py-1.5 px-3 border border-border rounded-lg bg-background text-foreground"
+              >
+                {Array.from({ length: 5 }, (_, i) => mYear - 2 + i).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
             </div>
-          )}
+            <button
+              onClick={() => setCurrentMonth(new Date(mYear, mMonth + 1, 1))}
+              className="p-1 rounded hover:bg-background-secondary transition-colors"
+            >
+              <ChevronRight className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 mb-2">
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+              <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7">
+            {calendarCells.map((cell, idx) => {
+              if (!cell) return <div key={idx} />;
+              const isToday = cell.dateStr === todayStr;
+              return (
+                <div
+                  key={idx}
+                  className={`relative flex items-start justify-start p-2 min-h-[60px] border border-border/50 
+                    ${cell.isCurrentMonth ? 'text-foreground' : 'text-foreground-muted/40'}
+                    ${isToday ? 'bg-primary/5' : ''}`}
+                >
+                  <span className={`text-sm font-medium ${isToday ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center' : ''}`}>
+                    {cell.day}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary-muted rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {workerCount}
-                </p>
-                <p className="text-xs text-foreground-muted">Workers</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-accent" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {placesCount}
-                </p>
-                <p className="text-xs text-foreground-muted">Places</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Links */}
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/manager/positions">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center py-4">
-              <Briefcase className="w-6 h-6 text-info mb-2" />
-              <span className="text-sm font-medium text-foreground">
-                Positions
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/manager/workers">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center py-4">
-              <Users className="w-6 h-6 text-accent mb-2" />
-              <span className="text-sm font-medium text-foreground">
-                Workers
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/manager/places">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center py-4">
-              <MapPin className="w-6 h-6 text-warning mb-2" />
-              <span className="text-sm font-medium text-foreground">
-                Places
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/manager/schedule">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center py-4">
-              <Calendar className="w-6 h-6 text-primary mb-2" />
-              <span className="text-sm font-medium text-foreground">
-                Schedules
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/manager/timesheets">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center py-4">
-              <ClipboardList className="w-6 h-6 text-success mb-2" />
-              <span className="text-sm font-medium text-foreground">
-                Timesheets
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/manager/reports">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center py-4">
-              <TrendingUp className="w-6 h-6 text-warning mb-2" />
-              <span className="text-sm font-medium text-foreground">
-                Reports
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
     </PageContainer>
   );
 }
