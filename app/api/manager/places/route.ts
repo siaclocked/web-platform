@@ -50,11 +50,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get places for this manager
+    // Get all places for this manager's company
     const { data: places, error } = await supabase
       .from('places')
       .select('*')
-      .eq('manager_id', user.id)
       .eq('company_id', userData.company_id)
       .order('created_at', { ascending: false });
 
@@ -73,7 +72,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get worker counts for each place (only if places exist)
+    // Get worker counts for each place using worker_places junction table
     let placesWithCounts = places || [];
     if (placesWithCounts.length > 0) {
       try {
@@ -81,10 +80,10 @@ export async function GET(request: Request) {
           placesWithCounts.map(async (place) => {
             try {
               const { count } = await supabase
-                .from('users')
+                .from('worker_places')
                 .select('*', { count: 'exact', head: true })
                 .eq('place_id', place.id)
-                .eq('company_id', userData.company_id);
+                .eq('is_active', true);
 
               return {
                 ...place,

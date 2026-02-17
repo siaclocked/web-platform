@@ -25,6 +25,13 @@ const DEFAULT_SETTINGS: PlaceSettings = {
   grace_period_minutes: 15,
 };
 
+interface Worker {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 interface Place {
   id: string;
   name: string;
@@ -32,6 +39,7 @@ interface Place {
   settings?: PlaceSettings;
   created_at: string;
   worker_count?: number;
+  workers?: Worker[];
 }
 
 export default function ManagerPlacesPage() {
@@ -48,6 +56,8 @@ export default function ManagerPlacesPage() {
   const [settingsForm, setSettingsForm] = useState<PlaceSettings>(DEFAULT_SETTINGS);
   const [expandedSettings, setExpandedSettings] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [expandedWorkers, setExpandedWorkers] = useState<string | null>(null);
+  const [loadingWorkers, setLoadingWorkers] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPlaces();
@@ -55,7 +65,6 @@ export default function ManagerPlacesPage() {
 
   const fetchPlaces = async () => {
     try {
-      // Get auth token
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -73,6 +82,43 @@ export default function ManagerPlacesPage() {
       console.error('Error fetching places:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchWorkersForPlace = async (placeId: string) => {
+    setLoadingWorkers(placeId);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`/api/manager/places/${placeId}/workers`, {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setPlaces(prev => prev.map(p => 
+          p.id === placeId ? { ...p, workers: data.workers || [] } : p
+        ));
+      }
+    } catch (error) {
+      console.error('Error fetching workers:', error);
+    } finally {
+      setLoadingWorkers(null);
+    }
+  };
+
+  const toggleWorkers = async (placeId: string) => {
+    if (expandedWorkers === placeId) {
+      setExpandedWorkers(null);
+    } else {
+      setExpandedWorkers(placeId);
+      const place = places.find(p => p.id === placeId);
+      if (!place?.workers) {
+        await fetchWorkersForPlace(placeId);
+      }
     }
   };
 
@@ -332,10 +378,18 @@ export default function ManagerPlacesPage() {
                         </p>
                       )}
                       <div className="flex items-center gap-4 text-sm text-foreground-muted">
-                        <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => toggleWorkers(place.id)}
+                          className="flex items-center gap-1 hover:text-primary transition-colors"
+                        >
                           <Users className="w-4 h-4" />
                           <span>{place.worker_count || 0} workers</span>
-                        </div>
+                          {expandedWorkers === place.id ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
                         <span>
                           Created {new Date(place.created_at).toLocaleDateString()}
                         </span>
@@ -366,6 +420,36 @@ export default function ManagerPlacesPage() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Workers List */}
+                  {expandedWorkers === place.id && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        Workers at this location
+                      </h4>
+                      {loadingWorkers === place.id ? (
+                        <div className="flex items-center justify-center py-4">
+                          <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+                        </div>
+                      ) : place.workers && place.workers.length > 0 ? (
+                        <div className="space-y-2">
+                          {place.workers.map((worker) => (
+                            <div key={worker.id} className="flex items-center justify-between p-2 bg-background-secondary rounded-lg">
+                              <div>
+                                <p className="text-sm font-medium text-foreground">
+                                  {worker.first_name} {worker.last_name}
+                                </p>
+                                <p className="text-xs text-foreground-muted">{worker.email}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-foreground-muted py-2">No workers assigned to this place yet</p>
+                      )}
+                    </div>
+                  )}
 
                   {expandedSettings === place.id && (
                     <div className="mt-4 pt-4 border-t border-border">

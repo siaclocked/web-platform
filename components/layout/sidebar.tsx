@@ -44,9 +44,9 @@ const workerNavItems = [
 
 const adminNavItems = [
   { href: '/company', icon: Home, label: 'Overview' },
-  { href: '/admin/places', icon: MapPin, label: 'Places' },
+  { href: '/company/places', icon: MapPin, label: 'Places' },
   { href: '/company/settings', icon: Settings, label: 'Settings' },
-  { href: '/managers', icon: Users, label: 'Managers' },
+  { href: '/company/managers', icon: Users, label: 'Managers' },
 ];
 
 export function Sidebar() {
