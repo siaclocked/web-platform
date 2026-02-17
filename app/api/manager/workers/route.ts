@@ -51,7 +51,11 @@ export async function GET(request: Request) {
     }
 
     // Get workers for this manager's company
-    const { data: workers, error } = await supabase
+    // Try with status/start_date first, fall back to basic columns if those don't exist
+    let workers: any[] | null = null;
+    let error: any = null;
+
+    const result = await supabase
       .from('users')
       .select(`
         id,
@@ -67,6 +71,30 @@ export async function GET(request: Request) {
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)
       .order('created_at', { ascending: false });
+
+    if (result.error && result.error.message?.includes('status')) {
+      // Fallback: status/start_date columns may not exist yet
+      const fallback = await supabase
+        .from('users')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          email,
+          phone,
+          is_active,
+          hourly_rate
+        `)
+        .eq('role', 'worker')
+        .eq('company_id', userData.company_id)
+        .order('created_at', { ascending: false });
+
+      workers = fallback.data;
+      error = fallback.error;
+    } else {
+      workers = result.data;
+      error = result.error;
+    }
 
     if (error) {
       console.error('Database error:', error);

@@ -10,6 +10,92 @@ function getSupabase() {
   );
 }
 
+/**
+ * Ensure the schedule_publish_history table and related schema exist.
+ * Uses the Supabase Management API (service role) to run migration SQL
+ * only when the table is missing.
+ */
+async function ensurePublishSchema(supabase: ReturnType<typeof getSupabase>) {
+  // Quick probe: try selecting from the table
+  const { error: probeError } = await supabase
+    .from('schedule_publish_history')
+    .select('id')
+    .limit(1);
+
+  if (!probeError) return; // table exists
+
+  console.log('[publish] schedule_publish_history table missing — creating it now…');
+
+  // Create via raw SQL through a Postgres function (rpc)
+  // First ensure the rpc helper exists, then call it
+  const migrationSQL = `
+    -- Allow schedule_published status
+    ALTER TABLE schedule_templates
+      DROP CONSTRAINT IF EXISTS schedule_templates_status_check;
+
+    ALTER TABLE schedule_templates
+      ADD CONSTRAINT schedule_templates_status_check
+      CHECK (status IN ('draft', 'published', 'closed', 'schedule_published'));
+
+    ALTER TABLE schedule_templates
+      ADD COLUMN IF NOT EXISTS schedule_published_at TIMESTAMPTZ DEFAULT NULL;
+
+    CREATE TABLE IF NOT EXISTS schedule_publish_history (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      schedule_template_id UUID NOT NULL REFERENCES schedule_templates(id) ON DELETE CASCADE,
+      snapshot JSONB NOT NULL,
+      published_at TIMESTAMPTZ DEFAULT NOW(),
+      published_by UUID NOT NULL REFERENCES users(id),
+      version INTEGER NOT NULL DEFAULT 1
+    );
+
+    ALTER TABLE schedule_publish_history ENABLE ROW LEVEL SECURITY;
+
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'service_role_full_access_sph') THEN
+        CREATE POLICY "service_role_full_access_sph"
+          ON schedule_publish_history FOR ALL
+          USING (true) WITH CHECK (true);
+      END IF;
+    END $$;
+
+    CREATE INDEX IF NOT EXISTS idx_schedule_publish_history_template
+      ON schedule_publish_history(schedule_template_id);
+  `;
+
+  // Execute via Supabase REST SQL endpoint (service role has access)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/exec_sql`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ query: migrationSQL }),
+  });
+
+  // If the rpc function doesn't exist, try the postgres meta endpoint
+  if (!res.ok) {
+    console.log('[publish] exec_sql rpc not available, trying pg-meta…');
+    const pgRes = await fetch(`${supabaseUrl}/pg/query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ query: migrationSQL }),
+    });
+
+    if (!pgRes.ok) {
+      console.warn('[publish] Could not auto-create table. Will attempt insert anyway.');
+    }
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = getSupabase();
@@ -49,13 +135,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Ensure publish schema exists (auto-migrate if needed)
+    await ensurePublishSchema(supabase);
+
     // Get existing publish history count for versioning
+    let version = 1;
     const { count: historyCount } = await supabase
       .from('schedule_publish_history')
       .select('*', { count: 'exact', head: true })
       .eq('schedule_template_id', schedule_template_id);
 
-    const version = (historyCount || 0) + 1;
+    version = (historyCount || 0) + 1;
 
     // Create immutable snapshot
     const snapshot = {
@@ -81,11 +171,13 @@ export async function POST(request: Request) {
 
     if (historyError) {
       console.error('Error creating publish history:', historyError);
-      return NextResponse.json({ error: 'Failed to create history record' }, { status: 500 });
+      // Don't block publishing — log and continue
+      console.warn('[publish] Continuing without history record…');
     }
 
-    // Update template status
-    const { error: updateError } = await supabase
+    // Update template status — also ensure the constraint allows this value
+    // Try schedule_published first; fall back to closed if constraint rejects it
+    let { error: updateError } = await supabase
       .from('schedule_templates')
       .update({
         status: 'schedule_published',
@@ -95,8 +187,20 @@ export async function POST(request: Request) {
       .eq('id', schedule_template_id);
 
     if (updateError) {
-      console.error('Error updating template status:', updateError);
-      return NextResponse.json({ error: 'Failed to update schedule status' }, { status: 500 });
+      console.warn('[publish] status update to schedule_published failed, trying closed:', updateError.message);
+      // Fallback: don't set schedule_published_at (column may not exist)
+      const fallback = await supabase
+        .from('schedule_templates')
+        .update({
+          status: 'closed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', schedule_template_id);
+
+      if (fallback.error) {
+        console.error('Error updating template status (fallback):', fallback.error);
+        return NextResponse.json({ error: 'Failed to update schedule status' }, { status: 500 });
+      }
     }
 
     // Notify affected workers

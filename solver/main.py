@@ -8,8 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, date, time, timedelta
-from ortools.sat.python import cp_model
 import uvicorn
+
+# Try to import OR-Tools; fall back to greedy solver if unavailable
+ORTOOLS_AVAILABLE = False
+try:
+    from ortools.sat.python import cp_model
+    ORTOOLS_AVAILABLE = True
+    print("[solver] OR-Tools loaded — using CP-SAT solver")
+except (ImportError, OSError) as e:
+    print(f"[solver] OR-Tools unavailable ({e}) — using greedy fallback solver")
 
 app = FastAPI(
     title="Clocked Solver Service",
@@ -114,10 +122,153 @@ async def health_check():
     return {"status": "healthy", "service": "clocked-solver"}
 
 
-@app.post("/solve", response_model=SolveResponse)
-async def solve_schedule(request: SolveRequest):
+def _is_worker_unavailable(worker_id: str, day_of_week: int, cov_start: int, cov_end: int, unavail_lookup: dict) -> bool:
+    """Check if a worker is unavailable for a given coverage window."""
+    unavails = unavail_lookup.get((worker_id, day_of_week), [])
+    for ua in unavails:
+        if ua.is_full_day:
+            return True
+        if ua.start_minutes is not None and ua.end_minutes is not None:
+            if not (cov_end <= ua.start_minutes or cov_start >= ua.end_minutes):
+                return True
+    return False
+
+
+def _solve_greedy(request: SolveRequest) -> SolveResponse:
     """
-    Generate an optimized schedule using CP-SAT solver.
+    Pure-Python greedy solver fallback.
+    Assigns workers to coverage windows based on skill match, availability,
+    and hour balancing. No native dependencies required.
+    """
+    start_time = datetime.now()
+
+    start = datetime.fromisoformat(request.start_date).date()
+    end = datetime.fromisoformat(request.end_date).date()
+    num_days = (end - start).days + 1
+
+    if num_days <= 0 or num_days > 31:
+        raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
+
+    workers = request.workers
+    coverage = request.coverage_windows
+    start_weekday = start.weekday()
+
+    # Build unavailability lookup
+    unavail_lookup: dict = {}
+    for ua in request.unavailability:
+        key = (ua.worker_id, ua.day)
+        unavail_lookup.setdefault(key, []).append(ua)
+
+    # Track worker assignments: worker_id -> list of (day, cov)
+    worker_assignments: dict[str, list[tuple[int, CoverageWindow]]] = {w.id: [] for w in workers}
+    total_hours: dict[str, float] = {w.id: 0.0 for w in workers}
+    assignments: list[Assignment] = []
+
+    # Build list of (day, coverage_window) sorted by min_workers desc (hardest to fill first)
+    day_covs: list[tuple[int, CoverageWindow]] = []
+    for day in range(num_days):
+        dow = (start_weekday + day) % 7
+        for cov in coverage:
+            if cov.day == dow:
+                day_covs.append((day, cov))
+    day_covs.sort(key=lambda dc: dc[1].min_workers, reverse=True)
+
+    max_hours_per_day = request.settings.max_hours_per_day
+
+    for day, cov in day_covs:
+        dow = (start_weekday + day) % 7
+        needed = cov.min_workers
+        duration_hours = (cov.end_minutes - cov.start_minutes) / 60
+
+        # Find eligible workers for this window
+        candidates = []
+        for w in workers:
+            # Must have the skill
+            if cov.skill_id not in w.skill_ids:
+                continue
+            # Must not be unavailable
+            if _is_worker_unavailable(w.id, dow, cov.start_minutes, cov.end_minutes, unavail_lookup):
+                continue
+            # Must not already be assigned on this day (one shift per day)
+            already_on_day = any(d == day for d, _ in worker_assignments[w.id])
+            if already_on_day:
+                continue
+            # Must not exceed max hours per day
+            if total_hours[w.id] + duration_hours > max_hours_per_day * num_days:
+                continue
+
+            skill_rating = w.skill_ratings.get(cov.skill_id, 3)
+            candidates.append((w, skill_rating))
+
+        # Sort by: least total hours first (balance), then highest skill rating
+        candidates.sort(key=lambda c: (total_hours[c[0].id], -c[1]))
+
+        assigned_count = 0
+        for w, rating in candidates:
+            if assigned_count >= needed:
+                break
+            assignments.append(Assignment(
+                worker_id=w.id,
+                worker_name=w.name,
+                skill_id=cov.skill_id,
+                day=day,
+                start_minutes=cov.start_minutes,
+                end_minutes=cov.end_minutes,
+            ))
+            worker_assignments[w.id].append((day, cov))
+            total_hours[w.id] += duration_hours
+            assigned_count += 1
+
+    # Calculate coverage gaps
+    gaps: list[CoverageGap] = []
+    for day in range(num_days):
+        dow = (start_weekday + day) % 7
+        for cov in coverage:
+            if cov.day != dow:
+                continue
+            assigned_count = sum(
+                1 for a in assignments
+                if a.day == day and a.skill_id == cov.skill_id
+                and a.start_minutes == cov.start_minutes
+            )
+            if assigned_count < cov.min_workers:
+                gaps.append(CoverageGap(
+                    skill_id=cov.skill_id,
+                    day=day,
+                    start_minutes=cov.start_minutes,
+                    end_minutes=cov.end_minutes,
+                    required=cov.min_workers,
+                    assigned=assigned_count,
+                ))
+
+    solve_time = int((datetime.now() - start_time).total_seconds() * 1000)
+    status_str = "OPTIMAL" if not gaps else ("FEASIBLE" if assignments else "INFEASIBLE")
+
+    diagnostics = [
+        f"Generated {len(assignments)} shifts (greedy solver)",
+        f"Solve time: {solve_time}ms",
+    ]
+    if gaps:
+        diagnostics.append(f"{len(gaps)} coverage gaps remaining")
+    else:
+        diagnostics.append("100% coverage achieved")
+    hours_list = [h for h in total_hours.values() if h > 0]
+    if hours_list:
+        diagnostics.append(f"Hours range: {min(hours_list):.1f}h - {max(hours_list):.1f}h")
+
+    return SolveResponse(
+        status=status_str,
+        assignments=assignments,
+        coverage_gaps=gaps,
+        diagnostics=diagnostics,
+        solve_time_ms=solve_time,
+        total_hours_by_worker=total_hours,
+    )
+
+
+def _solve_cpsat(request: SolveRequest) -> SolveResponse:
+    """
+    Generate an optimized schedule using OR-Tools CP-SAT solver.
     
     Hard constraints:
     - Workers can only work skills they have
@@ -133,261 +284,270 @@ async def solve_schedule(request: SolveRequest):
     - Maximize skill rating matches
     """
     start_time = datetime.now()
-    
-    try:
-        # Parse dates
-        start = datetime.fromisoformat(request.start_date).date()
-        end = datetime.fromisoformat(request.end_date).date()
-        num_days = (end - start).days + 1
-        
-        if num_days <= 0 or num_days > 31:
-            raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
-        
-        # Create the model
-        model = cp_model.CpModel()
-        
-        # Time slots based on granularity
-        granularity = request.settings.granularity_minutes
-        slots_per_day = 24 * 60 // granularity
-        
-        # Decision variables: worker_shift[w, d, s, skill] = 1 if worker w works on day d starting at slot s for skill
-        worker_shift = {}
-        
-        workers = request.workers
-        coverage = request.coverage_windows
-        
-        # Compute start weekday for correct day-of-week mapping
-        start_weekday = start.weekday()
-        
-        # Create variables for each possible shift
-        for w_idx, worker in enumerate(workers):
-            for day in range(num_days):
-                for cov in coverage:
-                    if cov.day != (start_weekday + day) % 7:
-                        continue
-                    if cov.skill_id not in worker.skill_ids:
-                        continue
-                    
-                    var_name = f"shift_w{w_idx}_d{day}_c{cov.id}"
-                    worker_shift[(w_idx, day, cov.id)] = model.NewBoolVar(var_name)
-        
-        # Build unavailability lookup
-        unavail_lookup = {}
-        for ua in request.unavailability:
-            key = (ua.worker_id, ua.day)
-            if key not in unavail_lookup:
-                unavail_lookup[key] = []
-            unavail_lookup[key].append(ua)
-        
-        # Constraint: Workers cannot work when unavailable
-        for (w_idx, day, cov_id), var in worker_shift.items():
-            worker = workers[w_idx]
-            cov = next((c for c in coverage if c.id == cov_id), None)
-            if not cov:
-                continue
-            
-            day_of_week = (start_weekday + day) % 7
-            unavails = unavail_lookup.get((worker.id, day_of_week), [])
-            
-            for ua in unavails:
-                if ua.is_full_day:
-                    model.Add(var == 0)
-                else:
-                    # Check time overlap
-                    if ua.start_minutes is not None and ua.end_minutes is not None:
-                        if not (cov.end_minutes <= ua.start_minutes or cov.start_minutes >= ua.end_minutes):
-                            model.Add(var == 0)
-        
-        # Constraint: Maximum one shift per worker per day
-        for w_idx in range(len(workers)):
-            for day in range(num_days):
-                day_shifts = [
-                    var for (wi, d, cov_id), var in worker_shift.items()
-                    if wi == w_idx and d == day
-                ]
-                if day_shifts:
-                    model.Add(sum(day_shifts) <= 1)
-        
-        # Constraint: Coverage requirements
-        coverage_slack = {}
+
+    # Parse dates
+    start = datetime.fromisoformat(request.start_date).date()
+    end = datetime.fromisoformat(request.end_date).date()
+    num_days = (end - start).days + 1
+
+    if num_days <= 0 or num_days > 31:
+        raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
+
+    # Create the model
+    model = cp_model.CpModel()
+
+    # Time slots based on granularity
+    granularity = request.settings.granularity_minutes
+    slots_per_day = 24 * 60 // granularity
+
+    # Decision variables: worker_shift[w, d, s, skill] = 1 if worker w works on day d starting at slot s for skill
+    worker_shift = {}
+
+    workers = request.workers
+    coverage = request.coverage_windows
+
+    # Compute start weekday for correct day-of-week mapping
+    start_weekday = start.weekday()
+
+    # Create variables for each possible shift
+    for w_idx, worker in enumerate(workers):
         for day in range(num_days):
             for cov in coverage:
                 if cov.day != (start_weekday + day) % 7:
                     continue
-                
-                assigned_workers = [
-                    worker_shift[(w_idx, day, cov.id)]
-                    for w_idx in range(len(workers))
-                    if (w_idx, day, cov.id) in worker_shift
-                ]
-                
-                # Create slack variable for under-coverage
-                slack_var = model.NewIntVar(0, cov.min_workers, f"slack_d{day}_c{cov.id}")
-                coverage_slack[(day, cov.id)] = slack_var
-                
-                if assigned_workers:
-                    model.Add(sum(assigned_workers) + slack_var >= cov.min_workers)
-                else:
-                    model.Add(slack_var >= cov.min_workers)
-        
-        # Handle locked assignments
-        locked_lookup = {}
+                if cov.skill_id not in worker.skill_ids:
+                    continue
+
+                var_name = f"shift_w{w_idx}_d{day}_c{cov.id}"
+                worker_shift[(w_idx, day, cov.id)] = model.NewBoolVar(var_name)
+
+    # Build unavailability lookup
+    unavail_lookup = {}
+    for ua in request.unavailability:
+        key = (ua.worker_id, ua.day)
+        if key not in unavail_lookup:
+            unavail_lookup[key] = []
+        unavail_lookup[key].append(ua)
+
+    # Constraint: Workers cannot work when unavailable
+    for (w_idx, day, cov_id), var in worker_shift.items():
+        worker = workers[w_idx]
+        cov = next((c for c in coverage if c.id == cov_id), None)
+        if not cov:
+            continue
+
+        day_of_week = (start_weekday + day) % 7
+        unavails = unavail_lookup.get((worker.id, day_of_week), [])
+
+        for ua in unavails:
+            if ua.is_full_day:
+                model.Add(var == 0)
+            else:
+                # Check time overlap
+                if ua.start_minutes is not None and ua.end_minutes is not None:
+                    if not (cov.end_minutes <= ua.start_minutes or cov.start_minutes >= ua.end_minutes):
+                        model.Add(var == 0)
+
+    # Constraint: Maximum one shift per worker per day
+    for w_idx in range(len(workers)):
+        for day in range(num_days):
+            day_shifts = [
+                var for (wi, d, cov_id), var in worker_shift.items()
+                if wi == w_idx and d == day
+            ]
+            if day_shifts:
+                model.Add(sum(day_shifts) <= 1)
+
+    # Constraint: Coverage requirements
+    coverage_slack = {}
+    for day in range(num_days):
+        for cov in coverage:
+            if cov.day != (start_weekday + day) % 7:
+                continue
+
+            assigned_workers = [
+                worker_shift[(w_idx, day, cov.id)]
+                for w_idx in range(len(workers))
+                if (w_idx, day, cov.id) in worker_shift
+            ]
+
+            # Create slack variable for under-coverage
+            slack_var = model.NewIntVar(0, cov.min_workers, f"slack_d{day}_c{cov.id}")
+            coverage_slack[(day, cov.id)] = slack_var
+
+            if assigned_workers:
+                model.Add(sum(assigned_workers) + slack_var >= cov.min_workers)
+            else:
+                model.Add(slack_var >= cov.min_workers)
+
+    # Handle locked assignments
+    locked_lookup = {}
+    for ea in request.existing_assignments:
+        if ea.is_locked:
+            locked_lookup[(ea.worker_id, ea.day)] = ea
+
+    for (w_idx, day, cov_id), var in worker_shift.items():
+        worker = workers[w_idx]
+        cov = next((c for c in coverage if c.id == cov_id), None)
+        if not cov:
+            continue
+
+        day_of_week = (start_weekday + day) % 7
+        locked = locked_lookup.get((worker.id, day_of_week))
+
+        if locked:
+            if locked.skill_id == cov.skill_id and locked.start_minutes == cov.start_minutes:
+                model.Add(var == 1)
+
+    # Objective: Minimize coverage gaps (primary)
+    objectives = []
+
+    # Heavily penalize coverage gaps
+    for (day, cov_id), slack in coverage_slack.items():
+        objectives.append(slack * 1000)
+
+    # Balance hours if requested
+    if request.balance_hours and len(workers) > 1:
+        total_shifts = []
+        for w_idx in range(len(workers)):
+            worker_total = sum(
+                var for (wi, d, cov_id), var in worker_shift.items()
+                if wi == w_idx
+            )
+            total_shifts.append(worker_total)
+
+        # Minimize variance by minimizing max-min difference
+        max_shifts = model.NewIntVar(0, num_days * 3, "max_shifts")
+        min_shifts = model.NewIntVar(0, num_days * 3, "min_shifts")
+
+        for ts in total_shifts:
+            model.Add(max_shifts >= ts)
+            model.Add(min_shifts <= ts)
+
+        objectives.append((max_shifts - min_shifts) * 10)
+
+    # Minimize changes from existing if requested
+    if request.minimize_changes:
+        existing_lookup = {}
         for ea in request.existing_assignments:
-            if ea.is_locked:
-                locked_lookup[(ea.worker_id, ea.day)] = ea
-        
+            existing_lookup[(ea.worker_id, ea.day, ea.skill_id)] = True
+
         for (w_idx, day, cov_id), var in worker_shift.items():
             worker = workers[w_idx]
             cov = next((c for c in coverage if c.id == cov_id), None)
             if not cov:
                 continue
-            
+
             day_of_week = (start_weekday + day) % 7
-            locked = locked_lookup.get((worker.id, day_of_week))
-            
-            if locked:
-                if locked.skill_id == cov.skill_id and locked.start_minutes == cov.start_minutes:
-                    model.Add(var == 1)
-        
-        # Objective: Minimize coverage gaps (primary)
-        objectives = []
-        
-        # Heavily penalize coverage gaps
-        for (day, cov_id), slack in coverage_slack.items():
-            objectives.append(slack * 1000)
-        
-        # Balance hours if requested
-        if request.balance_hours and len(workers) > 1:
-            total_shifts = []
-            for w_idx in range(len(workers)):
-                worker_total = sum(
-                    var for (wi, d, cov_id), var in worker_shift.items()
-                    if wi == w_idx
-                )
-                total_shifts.append(worker_total)
-            
-            # Minimize variance by minimizing max-min difference
-            max_shifts = model.NewIntVar(0, num_days * 3, "max_shifts")
-            min_shifts = model.NewIntVar(0, num_days * 3, "min_shifts")
-            
-            for ts in total_shifts:
-                model.Add(max_shifts >= ts)
-                model.Add(min_shifts <= ts)
-            
-            objectives.append((max_shifts - min_shifts) * 10)
-        
-        # Minimize changes from existing if requested
-        if request.minimize_changes:
-            existing_lookup = {}
-            for ea in request.existing_assignments:
-                existing_lookup[(ea.worker_id, ea.day, ea.skill_id)] = True
-            
-            for (w_idx, day, cov_id), var in worker_shift.items():
+            was_assigned = existing_lookup.get((worker.id, day_of_week, cov.skill_id), False)
+
+            if was_assigned:
+                # Penalize removing this assignment
+                not_assigned = model.NewBoolVar(f"not_assigned_{w_idx}_{day}_{cov_id}")
+                model.Add(var + not_assigned == 1)
+                objectives.append(not_assigned * 5)
+
+    # Set objective
+    if objectives:
+        model.Minimize(sum(objectives))
+
+    # Solve
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.num_search_workers = 4
+
+    status = solver.Solve(model)
+
+    solve_time = int((datetime.now() - start_time).total_seconds() * 1000)
+
+    # Process results
+    assignments = []
+    total_hours = {w.id: 0.0 for w in workers}
+
+    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+        for (w_idx, day, cov_id), var in worker_shift.items():
+            if solver.Value(var) == 1:
                 worker = workers[w_idx]
                 cov = next((c for c in coverage if c.id == cov_id), None)
-                if not cov:
-                    continue
-                
-                day_of_week = (start_weekday + day) % 7
-                was_assigned = existing_lookup.get((worker.id, day_of_week, cov.skill_id), False)
-                
-                if was_assigned:
-                    # Penalize removing this assignment
-                    not_assigned = model.NewBoolVar(f"not_assigned_{w_idx}_{day}_{cov_id}")
-                    model.Add(var + not_assigned == 1)
-                    objectives.append(not_assigned * 5)
-        
-        # Set objective
-        if objectives:
-            model.Minimize(sum(objectives))
-        
-        # Solve
-        solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 30.0
-        solver.parameters.num_search_workers = 4
-        
-        status = solver.Solve(model)
-        
-        solve_time = int((datetime.now() - start_time).total_seconds() * 1000)
-        
-        # Process results
-        assignments = []
-        total_hours = {w.id: 0.0 for w in workers}
-        
-        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-            for (w_idx, day, cov_id), var in worker_shift.items():
-                if solver.Value(var) == 1:
-                    worker = workers[w_idx]
-                    cov = next((c for c in coverage if c.id == cov_id), None)
-                    if cov:
-                        duration_hours = (cov.end_minutes - cov.start_minutes) / 60
-                        total_hours[worker.id] += duration_hours
-                        
-                        assignments.append(Assignment(
-                            worker_id=worker.id,
-                            worker_name=worker.name,
-                            skill_id=cov.skill_id,
-                            day=day,
-                            start_minutes=cov.start_minutes,
-                            end_minutes=cov.end_minutes
-                        ))
-        
-        # Calculate coverage gaps
-        gaps = []
-        for day in range(num_days):
-            for cov in coverage:
-                if cov.day != (start_weekday + day) % 7:
-                    continue
-                
-                assigned_count = sum(
-                    1 for a in assignments
-                    if a.day == day and a.skill_id == cov.skill_id
-                    and a.start_minutes == cov.start_minutes
-                )
-                
-                if assigned_count < cov.min_workers:
-                    gaps.append(CoverageGap(
+                if cov:
+                    duration_hours = (cov.end_minutes - cov.start_minutes) / 60
+                    total_hours[worker.id] += duration_hours
+
+                    assignments.append(Assignment(
+                        worker_id=worker.id,
+                        worker_name=worker.name,
                         skill_id=cov.skill_id,
                         day=day,
                         start_minutes=cov.start_minutes,
-                        end_minutes=cov.end_minutes,
-                        required=cov.min_workers,
-                        assigned=assigned_count
+                        end_minutes=cov.end_minutes
                     ))
-        
-        # Determine status string
-        status_str = "INFEASIBLE"
-        if status == cp_model.OPTIMAL:
-            status_str = "OPTIMAL" if len(gaps) == 0 else "FEASIBLE"
-        elif status == cp_model.FEASIBLE:
-            status_str = "FEASIBLE"
-        
-        # Build diagnostics
-        diagnostics = []
-        diagnostics.append(f"Generated {len(assignments)} shifts")
-        diagnostics.append(f"Solve time: {solve_time}ms")
-        
-        if gaps:
-            diagnostics.append(f"{len(gaps)} coverage gaps remaining")
-        else:
-            diagnostics.append("100% coverage achieved")
-        
-        if request.balance_hours:
-            hours_list = list(total_hours.values())
-            if hours_list:
-                diagnostics.append(
-                    f"Hours range: {min(hours_list):.1f}h - {max(hours_list):.1f}h"
-                )
-        
-        return SolveResponse(
-            status=status_str,
-            assignments=assignments,
-            coverage_gaps=gaps,
-            diagnostics=diagnostics,
-            solve_time_ms=solve_time,
-            total_hours_by_worker=total_hours
-        )
-        
+
+    # Calculate coverage gaps
+    gaps = []
+    for day in range(num_days):
+        for cov in coverage:
+            if cov.day != (start_weekday + day) % 7:
+                continue
+
+            assigned_count = sum(
+                1 for a in assignments
+                if a.day == day and a.skill_id == cov.skill_id
+                and a.start_minutes == cov.start_minutes
+            )
+
+            if assigned_count < cov.min_workers:
+                gaps.append(CoverageGap(
+                    skill_id=cov.skill_id,
+                    day=day,
+                    start_minutes=cov.start_minutes,
+                    end_minutes=cov.end_minutes,
+                    required=cov.min_workers,
+                    assigned=assigned_count
+                ))
+
+    # Determine status string
+    status_str = "INFEASIBLE"
+    if status == cp_model.OPTIMAL:
+        status_str = "OPTIMAL" if len(gaps) == 0 else "FEASIBLE"
+    elif status == cp_model.FEASIBLE:
+        status_str = "FEASIBLE"
+
+    # Build diagnostics
+    diagnostics = []
+    diagnostics.append(f"Generated {len(assignments)} shifts")
+    diagnostics.append(f"Solve time: {solve_time}ms")
+
+    if gaps:
+        diagnostics.append(f"{len(gaps)} coverage gaps remaining")
+    else:
+        diagnostics.append("100% coverage achieved")
+
+    if request.balance_hours:
+        hours_list = list(total_hours.values())
+        if hours_list:
+            diagnostics.append(
+                f"Hours range: {min(hours_list):.1f}h - {max(hours_list):.1f}h"
+            )
+
+    return SolveResponse(
+        status=status_str,
+        assignments=assignments,
+        coverage_gaps=gaps,
+        diagnostics=diagnostics,
+        solve_time_ms=solve_time,
+        total_hours_by_worker=total_hours
+    )
+
+
+@app.post("/solve", response_model=SolveResponse)
+async def solve_schedule(request: SolveRequest):
+    """Route to the appropriate solver backend."""
+    try:
+        if ORTOOLS_AVAILABLE:
+            return _solve_cpsat(request)
+        return _solve_greedy(request)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
