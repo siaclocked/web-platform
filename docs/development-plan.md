@@ -1,8 +1,9 @@
 # Clocked — Development Plan & Checklist
 
 **Document status:** Active  
-**Last updated:** 2026-02-16  
-**Reference:** [requirements.md](./requirements.md)
+**Last updated:** 2026-02-17  
+**Reference:** [requirements.md](./requirements.md)  
+**Methodology:** Kanban (Backlog → In Progress → Review → Done)
 
 ---
 
@@ -72,14 +73,20 @@
 - [ ] Each publish creates an immutable history record (§4.5)
 - [ ] Workers see only PUBLISHED schedules (§4.5)
 
-### 1.8 Schedule Views
+### 1.8 Worker Dashboard
+
+- [ ] Worker home shows **next upcoming shift** prominently (place, skill, date, time) (§10.2)
+- [ ] Below: **handoff notes** from previous shift at that place/skill (§10.2)
+- [ ] Quick-access menu to other features
+
+### 1.9 Schedule Views
 
 - [ ] Manager: month view calendar showing scheduled days (§ wireframes)
 - [ ] Manager: week view — columns = days, rows = worker shift cards
 - [ ] Manager: day view — Gantt-chart: roles on Y-axis, time on X-axis, worker bars (§ wireframes)
 - [ ] Worker: planning calendar — month view, tap day to see blocks + coworkers (§10.4)
 
-### 1.9 Notifications (In-App — MVP)
+### 1.10 Notifications (In-App — MVP)
 
 - [ ] Notification storage with read/unread (§12.4)
 - [ ] SCHEDULE_CHANGED_FOR_WORKER — only impacted workers notified (§12.3)
@@ -154,22 +161,33 @@
 - [ ] Approve a month → locks the period
 - [ ] Notifications: TIMESHEET_APPROVED, TIMESHEET_EDITED_BY_MANAGER (§12.2)
 
-### 5.2 Export
+### 5.2 Export (Core Feature)
 
-- [ ] Export CSV per worker and/or place summary (§11.2)
-- [ ] Monthly salary summary view (total payroll, avg rate, total hours — per wireframes)
+- [ ] Manager selects workers via checkbox list + date range (start date, end date) (§11.2)
+- [ ] Download CSV with columns: `Name Surname`, `Hours during <start date> – <end date>`
+- [ ] One row per selected worker; hours = sum of approved work session durations in period
+- [ ] Monthly salary summary view (total payroll, avg rate, total hours)
 
 ---
 
 ## Phase 6 — Leave / Vacation Management
 
-> **Goal:** Workers request leave, managers approve, balance is tracked.
+> **Goal:** Workers request leave, managers approve, balance is tracked with automatic accrual.
+
+### 6.1 Leave Requests
 
 - [ ] Worker submits leave request: date range, leave type, comment
-- [ ] Manager views pending/approved/rejected leave requests
+- [ ] Manager views pending/approved/rejected leave requests (§11.4)
 - [ ] Manager approves or rejects with reason
 - [ ] Approved leave creates unavailability entries for the solver
-- [ ] Leave balance tracking (accrual formula — placeholder, configurable later) (§4.7)
+- [ ] Forward approved leave summaries to accountant (simple export or email — exact workflow TBD) (§11.4)
+
+### 6.2 Vacation Accrual
+
+- [ ] Manager sets global accrual rate X in company settings ("1 vacation day per X worked hours") (§4.7)
+- [ ] System automatically calculates accrued vacation days from approved work sessions
+- [ ] Worker can view: total accrued days, used days, remaining balance (§4.7)
+- [ ] Vacation balance shown in worker profile / leave request screen
 
 ---
 
@@ -188,36 +206,55 @@
 
 ## Phase 8 — Documents
 
-> **Goal:** Centralized document storage for worker files.  
-> **Note:** On hold per requirements.md §2.2 due to legal liability concerns.
+> **Goal:** Centralized document storage for worker and company files.  
+> **Note:** On hold per requirements.md §2.2 due to legal liability concerns. Implement when cleared.
 
-- [ ] Manager uploads/replaces/archives documents for a worker (§11.3)
-- [ ] Worker views document list + downloads via signed URLs (§10.11)
-- [ ] Document states: ACTIVE / REPLACED / ARCHIVED / EXPIRED (§14.2)
-- [ ] Expiration evaluated on-read (no scheduled job) (§14.2)
+### 8.1 Manager Document Management
+
+- [ ] Manager uploads/replaces/archives documents for individual workers (e.g., employment contracts) (§11.3)
+- [ ] Manager uploads team-wide or company-wide documents (exact scope TBD by product) (§11.3)
 - [ ] DOCUMENT_UPLOADED notification (§12.2)
+
+### 8.2 Worker Document Access
+
+- [ ] Worker views document list (manager-uploaded + self-uploaded) + downloads via signed URLs (§10.11)
+- [ ] Worker can view employment contract and other manager-assigned documents (§10.11)
+- [ ] Worker can upload personal documents (certificates, ID copies, medical records) (§10.11)
+
+### 8.3 Document Lifecycle
+
+- [ ] Document scopes: worker-specific (manager-uploaded), worker-specific (self-uploaded), team/company-wide (§14.2)
+- [ ] Document states: ACTIVE / REPLACED / ARCHIVED / EXPIRED (§14.3)
+- [ ] Expiration evaluated on-read (no scheduled job) (§14.3)
 
 ---
 
 ## Phase 9 — Settings & Admin
 
-> **Goal:** Company settings, billing, multi-manager support.
+> **Goal:** Company settings, place management across managers, billing.
 
 ### 9.1 Company Settings
 
 - [ ] View/edit company info: name, registration number, address, email, phone, logo
-- [ ] Venue management (view all places across managers)
+- [ ] Set global vacation accrual rate (hours per vacation day) — shared config for Phase 6
 
-### 9.2 Billing & Subscription (from PRD, not in requirements.md)
+### 9.2 Place Reassignment (Company Admin)
 
-- [ ] View current subscription tier
-- [ ] Upgrade subscription
-- [ ] Contact support
+- [ ] Company Admin can view all places across all managers (§3.2)
+- [ ] Company Admin can reassign a place from one manager to another (§3.1)
 
-### 9.3 Manager Permissions (from PRD, not in requirements.md)
+### 9.3 Billing & Subscription (§16)
 
-- [ ] Multiple manager roles with configurable permissions
-- [ ] Manager can manage other managers' access levels
+> **Note:** Not needed for early clients (manual billing). Implement when scaling.
+
+- [ ] Integrate Stripe (Checkout + Customer Portal + Webhooks) (§16.1)
+- [ ] Multiple subscription tiers (Starter, Professional, Enterprise) (§16.1)
+- [ ] Custom tier: form for company size, managers, worker count → tailored quote (§16.1)
+- [ ] Manager/Admin view: current tier, billing cycle, invoice history (§16.2)
+- [ ] Upgrade / downgrade tier (§16.2)
+- [ ] Contact support / request custom plan (§16.2)
+- [ ] Stripe webhooks activate/deactivate company subscription status (§16.3)
+- [ ] Deactivation → company enters read-only mode (§16.3)
 
 ---
 
@@ -280,6 +317,7 @@
 The following legacy items should be cleaned up (see migration `018_cleanup_dead_tables.sql`):
 
 **Tables dropped:**
+
 - `positions` (replaced by `skills`)
 - `shift_timeframes`, `shift_slots`, `worker_shift_assignments` (replaced by `schedule_templates` flow)
 - `shift_interests` (unused)
@@ -287,12 +325,15 @@ The following legacy items should be cleaned up (see migration `018_cleanup_dead
 - `documents` (feature on hold)
 
 **Dead columns removed:**
+
 - `users.position_id`
 
 **Legacy API routes to remove:**
+
 - `app/api/schedules/solve/route.ts` — uses dead `schedules`/`shifts` tables
 - `app/api/schedules/publish/route.ts` — uses dead `schedules`/`shifts`/`schedule_history` tables
 - `app/api/timesheets/route.ts` — uses dead `timesheets` table
 
 **Active scheduling flow:**
+
 - `schedule_templates` → `shift_templates` → `worker_availability_submissions` → solver → publish

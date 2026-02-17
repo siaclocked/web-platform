@@ -11,6 +11,7 @@
 - **Owner:** Product/Engineering
 - **Goal:** Single source of truth for building the MVP with Windsurf
 - **Change process:** Any change must be reflected in this file; feature decisions should be recorded under “Decisions”.
+- **Development methodology:** Kanban (continuous flow with WIP limits). The team is small, features vary in size, and there is no fixed sprint cadence — Kanban fits better than Scrum for this context. Use a board with columns: Backlog → In Progress → Review → Done.
 
 ---
 
@@ -26,6 +27,7 @@ Current pain points:
 4. Worked-hours tracking is inefficient and inaccurate → payroll overpayments.
 5. Employees lack transparency on how pay is calculated.
 6. Employees lack clarity on vacation/leave requests.
+7. Workers have no visibility into their accrued vacation balance.
 
 ### 1.2 Expected Improvements
 
@@ -36,6 +38,7 @@ Automation should:
 - Centralize employee documents.
 - Provide transparent hours and pay estimates.
 - Simplify vacation/leave processes (MVP: basic).
+- Provide transparent vacation balance accrual.
 
 ### 1.3 Key Metrics
 
@@ -76,7 +79,6 @@ The following features are defined in this document but are **on hold** and will
 - **Open Shifts** (§13) — Worker interest + Manager approval for unfilled coverage gaps.
 - **Draft Overlay / Layer Toggle** (§8.2) — Diff comparison between published and draft schedules.
 - **Manual Overrides + Locking** (§8.4) — Assign/unassign with lock/unlock and revalidation.
-- **CSV Export** (§11.2) — Timesheet export functionality.
 - **Audit Log** (§15.1) — Detailed audit trail for sensitive actions.
 
 ### 2.3 Out of Scope (MVP)
@@ -94,13 +96,13 @@ The following features are defined in this document but are **on hold** and will
 
 ### 3.1 Roles
 
-- **Company Admin (Your team):** Creates company + Manager account(s)
+- **Company Admin (Your team):** Creates company + Manager account(s); can reassign places between managers
 - **Manager:** Configures places, skills, workers, schedules, approvals
 - **Worker:** Views schedule, sets availability (within published horizon), time tracking, docs, notes, checklist
 
 ### 3.2 Permissions (High Level)
 
-- Company Admin: create company, create Manager accounts
+- Company Admin: create company, create Manager accounts, reassign places between managers
 - Manager:
   - CRUD: Places, Place settings, Place skills config, Coverage templates
   - CRUD: Workers, Worker skills/ratings, Worker place scope, Worker status
@@ -116,6 +118,8 @@ The following features are defined in this document but are **on hold** and will
   - Start/stop time tracking + checklist + handoff note
   - View hours + pay estimate
   - Download documents
+  - Upload personal documents (e.g., certificates, ID copies)
+  - View employment contract and other manager-uploaded documents relevant to the worker
   - View/mark notifications read
 
 ---
@@ -159,7 +163,14 @@ Representation of **unfilled coverage** (gaps). Workers can express interest; Ma
 ### 4.7 Vacation (Paid Leave)
 
 A special unavailability flag (`isPaidLeave=true`) that consumes leave balance.
-Accrual formula is configurable later (placeholder in MVP).
+
+**Accrual rule:** For every X worked hours, the worker earns 1 vacation day. The Manager sets X globally for all workers in the company dashboard (e.g., X = 160 means 1 vacation day per 160 hours worked). The system tracks the accrued balance automatically based on approved work sessions.
+
+Worker can see:
+
+- total accrued vacation days
+- used vacation days
+- remaining balance
 
 ---
 
@@ -383,9 +394,12 @@ For each coverage window + skill:
 - Rate limiting and OTP TTL enforced
 - First login may request minimal profile confirmation (optional)
 
-### 10.2 Home + Navigation
+### 10.2 Home / Dashboard
 
-- Home shows feature menu and unread notifications badge
+- Home shows the worker's **next upcoming shift** (place, skill, date, time) prominently
+- Below: **handoff notes** from the previous shift at that place/skill (if any)
+- Unread notifications badge in navigation
+- Quick-access menu to other features
 
 ### 10.3 Notifications (In-App MVP)
 
@@ -453,8 +467,10 @@ Worker can see:
 
 ### 10.11 Documents
 
-- Worker sees list of their documents
+- Worker sees list of their documents (both manager-uploaded and self-uploaded)
 - Downloads via signed URLs
+- Worker can upload personal documents (e.g., certificates, ID copies, medical records)
+- Worker can view employment contract and other manager-assigned documents
 - Document expiration is evaluated **on-read** (no scheduled job in MVP)
 
 ---
@@ -469,12 +485,23 @@ Based on active work sessions (`endTime = null`), with safeguards for stuck sess
 
 - Manager can edit sessions with required reason + audit
 - Approve a month (MVP) → locks period
-- Export CSV per worker and/or place summary
+- **Export CSV** (core feature):
+  - Manager selects workers (checkbox list) and date range (start date, end date)
+  - Downloads a CSV file with columns: `Name Surname`, `Hours during <start date> – <end date>`
+  - One row per selected worker
+  - Hours = sum of approved work session durations in the period
 
 ### 11.3 Documents Management
 
-- Upload/replace/archive documents for a worker
+- Upload/replace/archive documents for individual workers (e.g., employment contracts)
+- Upload team-wide or company-wide documents visible to all workers (exact scope TBD by product)
 - Notify worker about new documents
+
+### 11.4 Leave Management
+
+- View pending/approved/rejected leave requests from workers
+- Approve or reject leave requests with optional reason
+- Forward approved leave summaries to accountant (exact workflow TBD — initial implementation may be a simple export or email)
 
 ---
 
@@ -534,7 +561,13 @@ Open shift = unfilled coverage window/segment requiring staffing.
 - store in Supabase Storage
 - serve via signed URLs only
 
-### 14.2 States
+### 14.2 Document Scopes
+
+- **Worker-specific (manager-uploaded):** employment contracts, individual notices — visible only to that worker
+- **Worker-specific (self-uploaded):** certificates, ID copies — visible to the worker and their manager
+- **Team / Company-wide:** company policies, handbooks, announcements — visible to all workers in the company (exact scoping rules TBD by product)
+
+### 14.3 States
 
 - ACTIVE / REPLACED / ARCHIVED / EXPIRED
 - expiration evaluated on-read when listing or requesting download
@@ -563,18 +596,47 @@ Open shift = unfilled coverage window/segment requiring staffing.
 
 ---
 
-## 16. MVP vs V1 Roadmap
+## 16. Billing & Subscription
+
+> **Note:** Not needed for initial testing/early clients (manual billing). Implement when scaling.
+
+### 16.1 Overview
+
+- Integrated via **Stripe** (Checkout + Customer Portal + Webhooks)
+- Multiple subscription tiers (e.g., Starter, Professional, Enterprise)
+- Custom tier: prospect fills out a form (company size, number of managers, worker count, required features) and receives a tailored quote
+
+### 16.2 Manager / Company Admin View
+
+- View current subscription tier and billing cycle
+- Upgrade / downgrade tier
+- View invoice history
+- Contact support / request custom plan
+
+### 16.3 Webhook Integration
+
+- Stripe webhooks activate/deactivate company subscription status
+- On deactivation: company enters read-only mode (no new schedules, no new workers)
+- Grace period and notifications before hard deactivation (TBD)
+
+---
+
+## 17. MVP vs V1 Roadmap
 
 ### MVP
 
-- All features defined in this document
+- All features defined in this document (excluding §16 Billing and deferred items in §2.2)
 - Auth: Email OTP for workers/managers; email+password for company admin
 - In-app notifications only
 - Expiration on-read
 - Simple hourly pay
+- CSV export for payroll
+- Vacation accrual tracking
 
 ### V1+
 
+- Stripe billing & subscription management (§16)
+- Native mobile app (React Native + Expo) for Worker role
 - SMS/Phone OTP login option
 - Push notifications
 - Recurring availability
@@ -585,7 +647,7 @@ Open shift = unfilled coverage window/segment requiring staffing.
 
 ---
 
-## 17. Acceptance Criteria Checklist (High Level)
+## 18. Acceptance Criteria Checklist (High Level)
 
 - Manager can configure place skills + weekly coverage + settings
 - Manager can CRUD workers (email OTP login), assign places, set skill ratings
@@ -593,12 +655,17 @@ Open shift = unfilled coverage window/segment requiring staffing.
 - Draft overlay compare; publish overwrites only within interval; history exists
 - Manual overrides create locks; draft revalidation blocks publish if invalid
 - Worker sees published schedule only
+- Worker dashboard shows next upcoming shift + handoff notes from previous shift
 - Worker can submit availability only within published horizon
 - Availability triggers repair (within horizon) with minimal changes + notify only impacted workers
 - Open shifts show gaps; worker can express interest; Manager approves
-- Worker start/stop time tracking; Manager can view “currently working”
-- Timesheets editable with audit; approval locks; CSV export works
+- Worker start/stop time tracking; Manager can view "currently working"
+- Timesheets editable with audit; approval locks; CSV export works (select workers + date range)
+- Worker can view vacation balance (accrued, used, remaining)
+- Manager can approve/reject leave requests
 - Documents upload/download with signed URLs; expiration on-read
+- Worker can upload personal documents; view employment contract docs
+- Company Admin can reassign places between managers
 - Notifications list + read/unread works
 
 ---
