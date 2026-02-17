@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input, Select, BackButton } from '@/components/ui';
+import { Card, CardContent, Button, Input, Select } from '@/components/ui';
 import { Mail, User, Phone, Building2, Briefcase, DollarSign, MapPin, X, Plus } from 'lucide-react';
 
 interface Position {
@@ -211,8 +211,6 @@ export default function AddWorkerPage() {
     >
       <Card className="max-w-md mx-auto">
         <CardContent className="pt-6">
-          <BackButton href="/manager/workers" label="Back to Workers" className="mb-6" />
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Input

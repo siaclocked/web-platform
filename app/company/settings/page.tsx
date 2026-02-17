@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button } from '@/components/ui';
-import { BackButton } from '@/components/ui';
+
 import { Building2, Mail, Phone, MapPin, Clock, Save } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 

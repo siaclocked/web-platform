@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent, Button, Badge } from "@/components/ui";
-import { BackButton } from "@/components/ui";
 import { TrendingUp, Clock, Users, DollarSign } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -93,11 +92,6 @@ export default function ManagerReportsPage() {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton
-            href="/manager"
-            label="Back to Dashboard"
-            className="mb-4"
-          />
           <h1 className="text-2xl font-bold text-foreground">
             Hours & Reports
           </h1>

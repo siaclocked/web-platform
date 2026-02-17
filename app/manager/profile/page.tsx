@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Avatar, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { User, Mail, Phone, Building2, Calendar, Users } from 'lucide-react';
 
 interface ManagerProfile {
@@ -134,10 +133,6 @@ export default function ManagerProfilePage() {
     <PageContainer>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <BackButton href="/manager" />
-        </div>
-
         {/* Profile Card */}
         <Card>
           <CardContent className="p-6">

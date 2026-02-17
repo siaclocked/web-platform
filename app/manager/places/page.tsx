@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
+
 import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -276,7 +276,6 @@ export default function ManagerPlacesPage() {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-foreground">Places</h1>
             <Button

@@ -151,9 +151,8 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
 
     workers = request.workers
     coverage = request.coverage_windows
-    start_weekday = start.weekday()
 
-    # Build unavailability lookup
+    # Build unavailability lookup keyed by (worker_id, day_offset)
     unavail_lookup: dict = {}
     for ua in request.unavailability:
         key = (ua.worker_id, ua.day)
@@ -164,19 +163,16 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
     total_hours: dict[str, float] = {w.id: 0.0 for w in workers}
     assignments: list[Assignment] = []
 
-    # Build list of (day, coverage_window) sorted by min_workers desc (hardest to fill first)
+    # Build list of (day_offset, coverage_window) sorted by min_workers desc (hardest to fill first)
+    # coverage.day is now a day OFFSET from start_date (not day-of-week)
     day_covs: list[tuple[int, CoverageWindow]] = []
-    for day in range(num_days):
-        dow = (start_weekday + day) % 7
-        for cov in coverage:
-            if cov.day == dow:
-                day_covs.append((day, cov))
+    for cov in coverage:
+        day_covs.append((cov.day, cov))
     day_covs.sort(key=lambda dc: dc[1].min_workers, reverse=True)
 
     max_hours_per_day = request.settings.max_hours_per_day
 
     for day, cov in day_covs:
-        dow = (start_weekday + day) % 7
         needed = cov.min_workers
         duration_hours = (cov.end_minutes - cov.start_minutes) / 60
 
@@ -186,8 +182,8 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
             # Must have the skill
             if cov.skill_id not in w.skill_ids:
                 continue
-            # Must not be unavailable
-            if _is_worker_unavailable(w.id, dow, cov.start_minutes, cov.end_minutes, unavail_lookup):
+            # Must not be unavailable (uses day offset for lookup)
+            if _is_worker_unavailable(w.id, day, cov.start_minutes, cov.end_minutes, unavail_lookup):
                 continue
             # Must not already be assigned on this day (one shift per day)
             already_on_day = any(d == day for d, _ in worker_assignments[w.id])
@@ -219,27 +215,24 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
             total_hours[w.id] += duration_hours
             assigned_count += 1
 
-    # Calculate coverage gaps
+    # Calculate coverage gaps (coverage.day is now a day offset)
     gaps: list[CoverageGap] = []
-    for day in range(num_days):
-        dow = (start_weekday + day) % 7
-        for cov in coverage:
-            if cov.day != dow:
-                continue
-            assigned_count = sum(
-                1 for a in assignments
-                if a.day == day and a.skill_id == cov.skill_id
-                and a.start_minutes == cov.start_minutes
-            )
-            if assigned_count < cov.min_workers:
-                gaps.append(CoverageGap(
-                    skill_id=cov.skill_id,
-                    day=day,
-                    start_minutes=cov.start_minutes,
-                    end_minutes=cov.end_minutes,
-                    required=cov.min_workers,
-                    assigned=assigned_count,
-                ))
+    for cov in coverage:
+        day = cov.day
+        assigned_count = sum(
+            1 for a in assignments
+            if a.day == day and a.skill_id == cov.skill_id
+            and a.start_minutes == cov.start_minutes
+        )
+        if assigned_count < cov.min_workers:
+            gaps.append(CoverageGap(
+                skill_id=cov.skill_id,
+                day=day,
+                start_minutes=cov.start_minutes,
+                end_minutes=cov.end_minutes,
+                required=cov.min_workers,
+                assigned=assigned_count,
+            ))
 
     solve_time = int((datetime.now() - start_time).total_seconds() * 1000)
     status_str = "OPTIMAL" if not gaps else ("FEASIBLE" if assignments else "INFEASIBLE")
@@ -306,14 +299,12 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
     workers = request.workers
     coverage = request.coverage_windows
 
-    # Compute start weekday for correct day-of-week mapping
-    start_weekday = start.weekday()
-
     # Create variables for each possible shift
+    # coverage.day is now a day OFFSET from start_date (not day-of-week)
     for w_idx, worker in enumerate(workers):
         for day in range(num_days):
             for cov in coverage:
-                if cov.day != (start_weekday + day) % 7:
+                if cov.day != day:
                     continue
                 if cov.skill_id not in worker.skill_ids:
                     continue
@@ -330,14 +321,14 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
         unavail_lookup[key].append(ua)
 
     # Constraint: Workers cannot work when unavailable
+    # unavailability.day is now a day offset (same as coverage)
     for (w_idx, day, cov_id), var in worker_shift.items():
         worker = workers[w_idx]
         cov = next((c for c in coverage if c.id == cov_id), None)
         if not cov:
             continue
 
-        day_of_week = (start_weekday + day) % 7
-        unavails = unavail_lookup.get((worker.id, day_of_week), [])
+        unavails = unavail_lookup.get((worker.id, day), [])
 
         for ua in unavails:
             if ua.is_full_day:
@@ -360,25 +351,23 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
 
     # Constraint: Coverage requirements
     coverage_slack = {}
-    for day in range(num_days):
-        for cov in coverage:
-            if cov.day != (start_weekday + day) % 7:
-                continue
+    for cov in coverage:
+        day = cov.day
 
-            assigned_workers = [
-                worker_shift[(w_idx, day, cov.id)]
-                for w_idx in range(len(workers))
-                if (w_idx, day, cov.id) in worker_shift
-            ]
+        assigned_workers = [
+            worker_shift[(w_idx, day, cov.id)]
+            for w_idx in range(len(workers))
+            if (w_idx, day, cov.id) in worker_shift
+        ]
 
-            # Create slack variable for under-coverage
-            slack_var = model.NewIntVar(0, cov.min_workers, f"slack_d{day}_c{cov.id}")
-            coverage_slack[(day, cov.id)] = slack_var
+        # Create slack variable for under-coverage
+        slack_var = model.NewIntVar(0, cov.min_workers, f"slack_d{day}_c{cov.id}")
+        coverage_slack[(day, cov.id)] = slack_var
 
-            if assigned_workers:
-                model.Add(sum(assigned_workers) + slack_var >= cov.min_workers)
-            else:
-                model.Add(slack_var >= cov.min_workers)
+        if assigned_workers:
+            model.Add(sum(assigned_workers) + slack_var >= cov.min_workers)
+        else:
+            model.Add(slack_var >= cov.min_workers)
 
     # Handle locked assignments
     locked_lookup = {}
@@ -392,8 +381,7 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
         if not cov:
             continue
 
-        day_of_week = (start_weekday + day) % 7
-        locked = locked_lookup.get((worker.id, day_of_week))
+        locked = locked_lookup.get((worker.id, day))
 
         if locked:
             if locked.skill_id == cov.skill_id and locked.start_minutes == cov.start_minutes:
@@ -438,8 +426,7 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
             if not cov:
                 continue
 
-            day_of_week = (start_weekday + day) % 7
-            was_assigned = existing_lookup.get((worker.id, day_of_week, cov.skill_id), False)
+            was_assigned = existing_lookup.get((worker.id, day, cov.skill_id), False)
 
             if was_assigned:
                 # Penalize removing this assignment
@@ -482,28 +469,25 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
                         end_minutes=cov.end_minutes
                     ))
 
-    # Calculate coverage gaps
+    # Calculate coverage gaps (coverage.day is now a day offset)
     gaps = []
-    for day in range(num_days):
-        for cov in coverage:
-            if cov.day != (start_weekday + day) % 7:
-                continue
+    for cov in coverage:
+        day = cov.day
+        assigned_count = sum(
+            1 for a in assignments
+            if a.day == day and a.skill_id == cov.skill_id
+            and a.start_minutes == cov.start_minutes
+        )
 
-            assigned_count = sum(
-                1 for a in assignments
-                if a.day == day and a.skill_id == cov.skill_id
-                and a.start_minutes == cov.start_minutes
-            )
-
-            if assigned_count < cov.min_workers:
-                gaps.append(CoverageGap(
-                    skill_id=cov.skill_id,
-                    day=day,
-                    start_minutes=cov.start_minutes,
-                    end_minutes=cov.end_minutes,
-                    required=cov.min_workers,
-                    assigned=assigned_count
-                ))
+        if assigned_count < cov.min_workers:
+            gaps.append(CoverageGap(
+                skill_id=cov.skill_id,
+                day=day,
+                start_minutes=cov.start_minutes,
+                end_minutes=cov.end_minutes,
+                required=cov.min_workers,
+                assigned=assigned_count
+            ))
 
     # Determine status string
     status_str = "INFEASIBLE"

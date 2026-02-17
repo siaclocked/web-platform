@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { Bell, CheckCircle, Clock, Users, AlertCircle, Calendar, XCircle } from 'lucide-react';
 
 interface Notification {
@@ -170,7 +169,6 @@ export default function ManagerNotificationsPage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-foreground">Notifications</h1>
             {unreadCount > 0 && (

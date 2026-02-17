@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Avatar, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { User, Mail, Phone, Building2, Edit2, Save, X } from 'lucide-react';
 
 interface CompanyProfile {
@@ -160,7 +159,6 @@ export default function CompanyProfilePage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/company" label="Back to Dashboard" className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Profile</h1>
           <p className="text-foreground-muted">
             Manage your personal information

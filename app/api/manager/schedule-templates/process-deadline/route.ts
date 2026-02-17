@@ -200,13 +200,15 @@ export async function POST(request: Request) {
     });
 
     // Build coverage windows from shift templates
+    // Use day OFFSET from start_date (not day-of-week) to avoid duplicates
+    // and the JS getDay() vs Python weekday() numbering mismatch.
     const coverageWindows: SolverRequest['coverage_windows'] = [];
-    const startDate = new Date(template.start_date);
+    const startDateObj = new Date(template.start_date + 'T00:00:00');
 
     (shiftTemplates || []).forEach((st, dayIndex) => {
       if (st.day_type === 'work' && st.shifts) {
-        const shiftDate = new Date(st.date);
-        const dayOfWeek = shiftDate.getDay();
+        const shiftDate = new Date(st.date + 'T00:00:00');
+        const dayOffset = Math.round((shiftDate.getTime() - startDateObj.getTime()) / (24 * 60 * 60 * 1000));
 
         st.shifts.forEach((shift: any, shiftIndex: number) => {
           const [startH, startM] = shift.startTime.split(':').map(Number);
@@ -215,7 +217,7 @@ export async function POST(request: Request) {
           coverageWindows.push({
             id: `${st.id}-${shiftIndex}`,
             skill_id: shift.position,
-            day: dayOfWeek,
+            day: dayOffset,
             start_minutes: startH * 60 + startM,
             end_minutes: endH * 60 + endM,
             min_workers: shift.workers || 1
@@ -237,7 +239,7 @@ export async function POST(request: Request) {
       (shiftTemplates || []).forEach((st) => {
         if (st.day_type === 'work') {
           const shiftDate = new Date(st.date + 'T00:00:00');
-          const dayOfWeek = shiftDate.getDay();
+          const dayOffset = Math.round((shiftDate.getTime() - startDateObj.getTime()) / (24 * 60 * 60 * 1000));
           const dateStr = st.date; // YYYY-MM-DD
           const entry = workerAvail[dateStr];
 
@@ -245,7 +247,7 @@ export async function POST(request: Request) {
             // No availability set or explicitly unavailable → full day off
             unavailability.push({
               worker_id: workerId,
-              day: dayOfWeek,
+              day: dayOffset,
               is_full_day: true,
             });
           } else if (entry.type === 'available_range' && entry.start_time && entry.end_time) {
@@ -259,7 +261,7 @@ export async function POST(request: Request) {
             if (availStart > 0) {
               unavailability.push({
                 worker_id: workerId,
-                day: dayOfWeek,
+                day: dayOffset,
                 start_minutes: 0,
                 end_minutes: availStart,
                 is_full_day: false,
@@ -269,7 +271,7 @@ export async function POST(request: Request) {
             if (availEnd < 1440) {
               unavailability.push({
                 worker_id: workerId,
-                day: dayOfWeek,
+                day: dayOffset,
                 start_minutes: availEnd,
                 end_minutes: 1440,
                 is_full_day: false,

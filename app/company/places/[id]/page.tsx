@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { MapPin, Users, Mail, Phone, Briefcase } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -98,7 +97,6 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
     return (
       <PageContainer>
         <div className="max-w-4xl mx-auto">
-          <BackButton href={managerId ? `/company/places?manager=${managerId}` : "/company/places"} label="Back to Manager Places" className="mb-4" />
           <Card>
             <CardContent className="text-center py-8">
               <MapPin className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -117,7 +115,6 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton href={managerId ? `/company/places?manager=${managerId}` : "/company/places"} label="Back to Manager Places" className="mb-4" />
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-foreground">{place.name}</h1>

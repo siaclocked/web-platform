@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent, Badge, Button } from "@/components/ui";
-import { BackButton } from "@/components/ui";
 import {
   Calendar,
   Clock,
@@ -154,7 +153,6 @@ export default function WorkerSchedulePage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/worker" label="Back to Dashboard" className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">My Schedule</h1>
           <p className="text-foreground-muted">Tap a day to see your shifts</p>
         </div>

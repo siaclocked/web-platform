@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { MapPin, Users, Calendar, Building2, User, ChevronRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -75,7 +74,6 @@ export default function CompanyPlacesPage() {
     <PageContainer>
       <div className="max-w-6xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/company" label="Back to Dashboard" className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">All Places</h1>
           <p className="text-foreground-muted">
             View all work locations with their managers, workers, and schedules

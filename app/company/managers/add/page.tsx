@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input, BackButton } from '@/components/ui';
+import { Card, CardContent, Button, Input } from '@/components/ui';
 import { Mail, User, Phone, Building2 } from 'lucide-react';
 
 export default function AddManagerPage() {
@@ -116,7 +116,6 @@ export default function AddManagerPage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/company/managers" label="Back to Managers" className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">Add New Manager</h1>
           <p className="text-foreground-muted">
             Create a manager account for your company

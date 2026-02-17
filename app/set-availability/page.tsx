@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { Calendar, Clock, MapPin, Check, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Shift {
@@ -188,7 +187,7 @@ export default function SetAvailabilityPage() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <BackButton href="/worker" />
+          <h1 className="text-2xl font-bold text-foreground">Set Availability</h1>
           <Button 
             onClick={saveAvailability} 
             isLoading={saving}

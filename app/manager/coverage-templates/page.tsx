@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { Layers, Plus, Trash2, Clock, Users, MapPin, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -225,7 +224,6 @@ export default function CoverageTemplatesPage() {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Coverage Templates</h1>

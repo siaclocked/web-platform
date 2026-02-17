@@ -4,8 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
-import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, Send, CheckCircle, ChevronLeft, ChevronRight, List, LayoutGrid } from 'lucide-react';
+
+import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, Send, CheckCircle, ChevronLeft, ChevronRight, List, LayoutGrid, Plus, Trash2, Edit2, Save } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 
@@ -65,6 +65,12 @@ interface FlatShift {
   schedule_id: string;
 }
 
+interface AvailableWorker {
+  id: string;
+  name: string;
+  skill_ids: string[];
+}
+
 export default function ManagerSchedulePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -87,6 +93,17 @@ export default function ManagerSchedulePage() {
     return new Date(now.getFullYear(), now.getMonth(), diff);
   });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [availableWorkers, setAvailableWorkers] = useState<AvailableWorker[]>([]);
+  const [savingEdits, setSavingEdits] = useState(false);
+  const [showAddShift, setShowAddShift] = useState(false);
+  const [addShiftForm, setAddShiftForm] = useState({
+    worker_id: '',
+    skill_id: '',
+    start_minutes: 540,
+    end_minutes: 1020,
+  });
 
   useEffect(() => {
     fetchAll();
@@ -178,9 +195,128 @@ export default function ManagerSchedulePage() {
     return places.find(p => p.id === placeId)?.name || 'Unknown Place';
   };
 
-  // Flatten all schedules into a date-keyed map of shifts
+  const startEditing = async (scheduleId: string) => {
+    const schedule = schedules.find(s => s.id === scheduleId);
+    if (!schedule) return;
+    setEditingScheduleId(scheduleId);
+    setIsEditing(true);
+    setShowAddShift(false);
+
+    // Fetch workers for this schedule's place
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`/api/manager/places/${schedule.place_id}/workers`, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const workers: AvailableWorker[] = (data.workers || []).map((w: any) => ({
+          id: w.id,
+          name: `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Unknown',
+          skill_ids: (w.skills || []).map((s: any) => s.skill_id || s.id),
+        }));
+        setAvailableWorkers(workers);
+      }
+    } catch (err) {
+      console.error('Error fetching workers:', err);
+    }
+  };
+
+  const stopEditing = () => {
+    setIsEditing(false);
+    setEditingScheduleId(null);
+    setShowAddShift(false);
+  };
+
+  const addManualShift = (scheduleId: string, dateStr: string) => {
+    const schedule = schedules.find(s => s.id === scheduleId);
+    if (!schedule || !schedule.solver_result) return;
+
+    const worker = availableWorkers.find(w => w.id === addShiftForm.worker_id);
+    if (!worker) return;
+
+    const startDate = new Date(schedule.start_date + 'T00:00:00');
+    const shiftDate = new Date(dateStr + 'T00:00:00');
+    const dayOffset = Math.round((shiftDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+
+    const newAssignment: SolverAssignment = {
+      worker_id: worker.id,
+      worker_name: worker.name,
+      skill_id: addShiftForm.skill_id,
+      day: dayOffset,
+      start_minutes: addShiftForm.start_minutes,
+      end_minutes: addShiftForm.end_minutes,
+    };
+
+    const updatedAssignments = [...(schedule.solver_result.assignments || []), newAssignment];
+    setSchedules(prev => prev.map(s => {
+      if (s.id === scheduleId && s.solver_result) {
+        return { ...s, solver_result: { ...s.solver_result!, assignments: updatedAssignments } };
+      }
+      return s;
+    }));
+    setShowAddShift(false);
+    setAddShiftForm({ worker_id: '', skill_id: '', start_minutes: 540, end_minutes: 1020 });
+  };
+
+  const removeShift = (scheduleId: string, workerIdToRemove: string, dayToRemove: number, startMinToRemove: number) => {
+    setSchedules(prev => prev.map(s => {
+      if (s.id === scheduleId && s.solver_result) {
+        const filtered = s.solver_result.assignments.filter(a =>
+          !(a.worker_id === workerIdToRemove && a.day === dayToRemove && a.start_minutes === startMinToRemove)
+        );
+        return { ...s, solver_result: { ...s.solver_result, assignments: filtered } };
+      }
+      return s;
+    }));
+  };
+
+  const saveEdits = async () => {
+    if (!editingScheduleId) return;
+    const schedule = schedules.find(s => s.id === editingScheduleId);
+    if (!schedule?.solver_result) return;
+
+    setSavingEdits(true);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('/api/manager/schedule-templates/edit-assignments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          schedule_template_id: editingScheduleId,
+          assignments: schedule.solver_result.assignments,
+        }),
+      });
+
+      if (response.ok) {
+        alert('Schedule changes saved!');
+        stopEditing();
+        fetchSchedules();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Failed to save changes');
+      }
+    } catch (err) {
+      console.error('Error saving edits:', err);
+      alert('Failed to save changes');
+    } finally {
+      setSavingEdits(false);
+    }
+  };
+
+  // Flatten all schedules into a date-keyed map of shifts (deduplicated)
   const flatShiftsByDate = useMemo(() => {
     const map: Record<string, FlatShift[]> = {};
+    const seen = new Set<string>();
     schedules.forEach(s => {
       if (!s.solver_result?.assignments) return;
       const placeName = getPlaceName(s.place_id);
@@ -189,6 +325,12 @@ export default function ManagerSchedulePage() {
         const shiftDate = new Date(startDate);
         shiftDate.setDate(shiftDate.getDate() + a.day);
         const dateStr = shiftDate.toISOString().split('T')[0];
+
+        // Deduplicate: skip if same worker, date, time, skill already added
+        const dedupKey = `${s.id}-${a.worker_id}-${dateStr}-${a.start_minutes}-${a.end_minutes}-${a.skill_id}`;
+        if (seen.has(dedupKey)) return;
+        seen.add(dedupKey);
+
         if (!map[dateStr]) map[dateStr] = [];
         map[dateStr].push({
           date: dateStr,
@@ -419,13 +561,35 @@ export default function ManagerSchedulePage() {
 
         {/* Top bar — wireframe style */}
         <div className="flex items-center justify-between mb-6">
-          <Link href="/manager/timesheets">
-            <Button variant="outline">
-              Auto Generate Schedule
-            </Button>
-          </Link>
           <div className="flex items-center gap-2">
-            {schedules.some(s => s.status === 'closed') && (
+            <Link href="/manager/timesheets">
+              <Button variant="outline">
+                Auto Generate Schedule
+              </Button>
+            </Link>
+            {!isEditing && schedules.some(s => s.status === 'closed') && (
+              <Button variant="outline" onClick={() => {
+                const first = schedules.find(s => s.status === 'closed');
+                if (first) startEditing(first.id);
+              }}>
+                <Edit2 className="w-4 h-4 mr-1" />
+                Edit Schedule
+              </Button>
+            )}
+            {isEditing && (
+              <>
+                <Button onClick={saveEdits} isLoading={savingEdits}>
+                  <Save className="w-4 h-4 mr-1" />
+                  Save Changes
+                </Button>
+                <Button variant="outline" onClick={() => { stopEditing(); fetchSchedules(); }}>
+                  Cancel
+                </Button>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {!isEditing && schedules.some(s => s.status === 'closed') && (
               <Button onClick={() => {
                 const first = schedules.find(s => s.status === 'closed');
                 if (first) handlePublish(first.id);
@@ -447,6 +611,15 @@ export default function ManagerSchedulePage() {
             </div>
           </div>
         </div>
+
+        {isEditing && (
+          <div className="mb-4 p-3 bg-primary-muted/30 border border-primary/20 rounded-lg flex items-center gap-2">
+            <Edit2 className="w-4 h-4 text-primary" />
+            <span className="text-sm text-foreground">
+              <strong>Editing mode:</strong> Click a day to add/remove shifts. You can add any worker, including those on their day off.
+            </span>
+          </div>
+        )}
 
         {schedules.length === 0 ? (
           <Card>
@@ -524,10 +697,90 @@ export default function ManagerSchedulePage() {
                 {selectedDate && (
                   <Card>
                     <CardContent className="p-4">
-                      <h3 className="font-semibold text-foreground mb-3">
-                        {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                      </h3>
-                      {selectedDayShifts.length === 0 ? (
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-foreground">
+                          {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                        </h3>
+                        {isEditing && editingScheduleId && (
+                          <Button size="sm" variant="outline" onClick={() => setShowAddShift(!showAddShift)}>
+                            <Plus className="w-3.5 h-3.5 mr-1" />
+                            Add Shift
+                          </Button>
+                        )}
+                      </div>
+
+                      {isEditing && showAddShift && editingScheduleId && (
+                        <div className="mb-4 p-3 border border-primary/30 bg-primary-muted/10 rounded-lg space-y-3">
+                          <h4 className="text-sm font-medium text-foreground">Add Worker to This Day</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-foreground-muted mb-1">Worker</label>
+                              <select
+                                value={addShiftForm.worker_id}
+                                onChange={(e) => setAddShiftForm(f => ({ ...f, worker_id: e.target.value }))}
+                                className="w-full p-2 border border-border rounded text-sm bg-background text-foreground"
+                              >
+                                <option value="">Select worker...</option>
+                                {availableWorkers.map(w => (
+                                  <option key={w.id} value={w.id}>{w.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-foreground-muted mb-1">Position</label>
+                              <select
+                                value={addShiftForm.skill_id}
+                                onChange={(e) => setAddShiftForm(f => ({ ...f, skill_id: e.target.value }))}
+                                className="w-full p-2 border border-border rounded text-sm bg-background text-foreground"
+                              >
+                                <option value="">Select position...</option>
+                                {positions.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-foreground-muted mb-1">Start Time</label>
+                              <select
+                                value={addShiftForm.start_minutes}
+                                onChange={(e) => setAddShiftForm(f => ({ ...f, start_minutes: parseInt(e.target.value) }))}
+                                className="w-full p-2 border border-border rounded text-sm bg-background text-foreground"
+                              >
+                                {Array.from({ length: 24 }, (_, h) => [0, 30].map(m => h * 60 + m)).flat().map(mins => (
+                                  <option key={mins} value={mins}>{formatMinutesToTime(mins)}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-foreground-muted mb-1">End Time</label>
+                              <select
+                                value={addShiftForm.end_minutes}
+                                onChange={(e) => setAddShiftForm(f => ({ ...f, end_minutes: parseInt(e.target.value) }))}
+                                className="w-full p-2 border border-border rounded text-sm bg-background text-foreground"
+                              >
+                                {Array.from({ length: 24 }, (_, h) => [0, 30].map(m => h * 60 + m)).flat().filter(m => m > addShiftForm.start_minutes).map(mins => (
+                                  <option key={mins} value={mins}>{formatMinutesToTime(mins)}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              disabled={!addShiftForm.worker_id || !addShiftForm.skill_id}
+                              onClick={() => addManualShift(editingScheduleId, selectedDate)}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1" />
+                              Add
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setShowAddShift(false)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedDayShifts.length === 0 && !showAddShift ? (
                         <p className="text-sm text-foreground-muted py-2">No shifts scheduled.</p>
                       ) : (
                         <div className="space-y-2">
@@ -539,9 +792,26 @@ export default function ManagerSchedulePage() {
                               </div>
                               <span className="font-medium text-foreground">{shift.worker_name}</span>
                               <Badge variant="info" className="text-xs">{getPositionName(shift.skill_id)}</Badge>
-                              <span className="text-xs text-foreground-muted ml-auto flex items-center gap-1">
-                                <MapPin className="w-3 h-3" />{shift.place_name}
-                              </span>
+                              {isEditing && editingScheduleId === shift.schedule_id ? (
+                                <button
+                                  onClick={() => {
+                                    const schedule = schedules.find(s => s.id === shift.schedule_id);
+                                    if (!schedule) return;
+                                    const startDate = new Date(schedule.start_date + 'T00:00:00');
+                                    const shiftDate = new Date(shift.date + 'T00:00:00');
+                                    const dayOffset = Math.round((shiftDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+                                    removeShift(shift.schedule_id, shift.worker_id, dayOffset, shift.start_minutes);
+                                  }}
+                                  className="ml-auto p-1 text-danger hover:bg-danger-muted rounded transition-colors"
+                                  title="Remove shift"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <span className="text-xs text-foreground-muted ml-auto flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />{shift.place_name}
+                                </span>
+                              )}
                             </div>
                           ))}
                         </div>

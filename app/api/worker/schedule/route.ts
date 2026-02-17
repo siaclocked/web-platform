@@ -91,9 +91,10 @@ export async function GET(request: Request) {
     const skillMap: Record<string, string> = {};
     (skills || []).forEach(s => { skillMap[s.id] = s.name; });
 
-    // Extract this worker's assignments from solver results
+    // Extract this worker's assignments from solver results (deduplicated)
     const schedules = (templates || []).map(template => {
       const result = template.solver_result as any;
+      const seen = new Set<string>();
       const assignments = (result?.assignments || [])
         .filter((a: any) => a.worker_id === user.id)
         .map((a: any) => {
@@ -116,6 +117,12 @@ export async function GET(request: Request) {
             skill_name: skillMap[a.skill_id] || a.skill_id,
             hours: (a.end_minutes - a.start_minutes) / 60,
           };
+        })
+        .filter((a: any) => {
+          const key = `${a.date}-${a.start_time}-${a.end_time}-${a.skill_id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
         })
         .sort((a: any, b: any) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time));
 

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent, Button, Input, Badge } from "@/components/ui";
-import { BackButton } from "@/components/ui";
 import {
   Play,
   Square,
@@ -241,11 +240,6 @@ export default function WorkerTimeTrackingPage() {
       <PageContainer>
         <div className="max-w-2xl mx-auto">
           <div className="mb-6">
-            <BackButton
-              href="/worker"
-              label="Back to Dashboard"
-              className="mb-4"
-            />
             <h1 className="text-2xl font-bold text-foreground">
               Currently Working
             </h1>
@@ -304,11 +298,6 @@ export default function WorkerTimeTrackingPage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <BackButton
-            href="/worker"
-            label="Back to Dashboard"
-            className="mb-4"
-          />
           <h1 className="text-2xl font-bold text-foreground">Time Tracking</h1>
           <p className="text-foreground-muted">
             Start a work session to track your hours

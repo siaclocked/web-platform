@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { Clock, DollarSign, TrendingUp, MapPin, Briefcase } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -80,7 +79,6 @@ export default function WorkerHoursPage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/worker" label="Back to Dashboard" className="mb-4" />
           <h1 className="text-2xl font-bold text-foreground">My Hours</h1>
           <p className="text-foreground-muted">Track your worked hours and estimated pay</p>
         </div>

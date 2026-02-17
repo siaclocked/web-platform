@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Avatar, Badge, Button, Input } from '@/components/ui';
-import { BackButton } from '@/components/ui';
 import { User, Mail, Phone, Clock, Calendar, MapPin, Briefcase, Edit2, Save, X } from 'lucide-react';
 
 interface Position {
@@ -174,7 +173,7 @@ export default function WorkerProfilePage() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <BackButton href="/worker" />
+          <h1 className="text-2xl font-bold text-foreground">Profile</h1>
           {!isEditing && (
             <Button
               variant="outline"

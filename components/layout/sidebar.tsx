@@ -18,22 +18,21 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useAppStore } from '@/lib/store';
 
 const managerNavItems = [
-  { href: '/manager', icon: Home, label: 'Overview' },
+  { href: '/manager', icon: Home, label: 'Dashboard' },
   { href: '/manager/schedule', icon: Calendar, label: 'Scheduling' },
   { href: '/manager/workers', icon: Users, label: 'Employees' },
   { href: '/manager/timesheets', icon: ClipboardList, label: 'Create Schedule' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
-  { href: '/manager/coverage-templates', icon: FileText, label: 'Coverage' },
   { href: '/manager/reports', icon: DollarSign, label: 'Reports' },
   { href: '/manager/notifications', icon: Bell, label: 'Notifications' },
 ];
 
 const workerNavItems = [
-  { href: '/worker', icon: Home, label: 'Overview' },
+  { href: '/worker', icon: Home, label: 'Dashboard' },
   { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
   { href: '/worker/time-tracking', icon: Clock, label: 'Time Tracking' },
   { href: '/worker/set-availability', icon: ClipboardList, label: 'Availability' },
@@ -43,7 +42,7 @@ const workerNavItems = [
 ];
 
 const adminNavItems = [
-  { href: '/company', icon: Home, label: 'Overview' },
+  { href: '/company', icon: Home, label: 'Dashboard' },
   { href: '/company/places', icon: MapPin, label: 'Places' },
   { href: '/company/settings', icon: Settings, label: 'Settings' },
   { href: '/company/managers', icon: Users, label: 'Managers' },
@@ -52,6 +51,7 @@ const adminNavItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuthStore();
+  const { unreadCount } = useAppStore();
 
   const navItems =
     user?.role === 'admin'
@@ -90,10 +90,10 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.href === pathname ||
-            (item.href !== '/' && pathname.startsWith(item.href + '/'));
-          const isExactActive = item.href === pathname;
+          const isHome = item.href === '/manager' || item.href === '/worker' || item.href === '/company';
+          const isActive = isHome
+            ? pathname === item.href
+            : pathname === item.href || pathname.startsWith(item.href + '/');
 
           return (
             <Link
@@ -101,12 +101,19 @@ export function Sidebar() {
               href={item.href}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-0.5',
-                (isActive || isExactActive)
+                isActive
                   ? 'bg-primary-muted text-foreground'
                   : 'text-foreground-muted hover:text-foreground hover:bg-background-secondary'
               )}
             >
-              <Icon className="w-[18px] h-[18px]" />
+              <div className="relative">
+                <Icon className="w-[18px] h-[18px]" />
+                {item.label === 'Notifications' && unreadCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </div>
               <span>{item.label}</span>
             </Link>
           );

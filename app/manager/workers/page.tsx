@@ -421,14 +421,6 @@ export default function ManagerWorkersPage() {
                               <option value="DISABLED">Disabled</option>
                             </select>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date</label>
-                            <Input
-                              type="date"
-                              value={editForm.start_date}
-                              onChange={(e) => setEditForm({ ...editForm, start_date: e.target.value })}
-                            />
-                          </div>
                         </div>
                         
                         {error && (

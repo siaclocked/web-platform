@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { BackButton } from '@/components/ui';
+
 import { Calendar, Clock, MapPin, Users, Plus, Trash2, Save, Send, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Edit, Trash } from 'lucide-react';
 
 interface ShiftTemplate {
@@ -349,6 +349,31 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
       }
       return template;
     }));
+  };
+
+  const formatTimeInput = (raw: string, previous: string): string => {
+    // Strip non-digits
+    const digits = raw.replace(/\D/g, '');
+    // Cap at 4 digits (HHMM)
+    const capped = digits.slice(0, 4);
+    if (capped.length === 0) return '';
+    if (capped.length <= 2) {
+      // Validate HH: first digit 0-2, second digit 0-9 (but 2X caps at 23)
+      const h = parseInt(capped, 10);
+      if (capped.length === 2 && h > 23) return previous;
+      return capped;
+    }
+    // 3 or 4 digits: split into HH:MM
+    const hh = capped.slice(0, 2);
+    const mm = capped.slice(2);
+    if (parseInt(hh, 10) > 23) return previous;
+    if (mm.length === 2 && parseInt(mm, 10) > 59) return previous;
+    return `${hh}:${mm}`;
+  };
+
+  const handleTimeChange = (dayId: string, shiftId: string, field: 'startTime' | 'endTime', inputValue: string, currentValue: string) => {
+    const formatted = formatTimeInput(inputValue, currentValue);
+    updateShift(dayId, shiftId, field, formatted);
   };
 
   const updateShift = (dayId: string, shiftId: string, field: string, value: any) => {
@@ -900,7 +925,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <BackButton href="/manager/timesheets" />
+            <h1 className="text-2xl font-bold text-foreground">{editingTimesheet ? 'Edit Schedule' : 'New Schedule'}</h1>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => { setCreatingNew(false); setEditingTimesheet(null); setDateRange({ start: null, end: null }); }}>
                 Cancel
@@ -1266,18 +1291,22 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                               <Clock className="w-4 h-4 text-foreground-muted" />
                               <input
                                 type="text"
+                                inputMode="numeric"
                                 value={shift.startTime}
-                                onChange={(e) => updateShift(template.id, shift.id, 'startTime', e.target.value)}
+                                onChange={(e) => handleTimeChange(template.id, shift.id, 'startTime', e.target.value, shift.startTime)}
                                 placeholder="09:00"
-                                className="w-20 px-2 py-1 border border-border rounded text-sm"
+                                maxLength={5}
+                                className="w-20 px-2 py-1 border border-border rounded text-sm text-center font-mono"
                               />
                               <span className="text-foreground-muted text-sm">to</span>
                               <input
                                 type="text"
+                                inputMode="numeric"
                                 value={shift.endTime}
-                                onChange={(e) => updateShift(template.id, shift.id, 'endTime', e.target.value)}
+                                onChange={(e) => handleTimeChange(template.id, shift.id, 'endTime', e.target.value, shift.endTime)}
                                 placeholder="17:00"
-                                className="w-20 px-2 py-1 border border-border rounded text-sm"
+                                maxLength={5}
+                                className="w-20 px-2 py-1 border border-border rounded text-sm text-center font-mono"
                               />
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -1335,7 +1364,6 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <BackButton href="/manager" label="Back to Dashboard" className="mb-4" />
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-foreground">Schedule Templates</h1>
