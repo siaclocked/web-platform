@@ -14,7 +14,6 @@ import {
   Layers,
   Bell,
   User,
-  Search,
   Eye,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -74,18 +73,6 @@ export function Sidebar() {
             CLOCKED
           </span>
         </Link>
-      </div>
-
-      {/* Search */}
-      <div className="px-4 mb-2">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search"
-            className="w-full text-sm py-2 pl-3 pr-8 rounded-lg border border-border bg-background text-foreground placeholder:text-foreground-muted"
-          />
-          <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-        </div>
       </div>
 
       {/* Nav links */}

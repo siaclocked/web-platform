@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui";
-import { Calendar, Clock, Play, Bell, DollarSign, User, MapPin, Briefcase } from "lucide-react";
+import { Calendar, Clock, DollarSign, MapPin, Briefcase } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
@@ -20,12 +20,24 @@ interface NextShift {
   is_active: boolean;
 }
 
+interface HoursData {
+  current_month: {
+    label: string;
+    hours: number;
+    estimated_pay: number;
+  };
+  hourly_rate: number;
+}
+
 export default function WorkerDashboard() {
   const [nextShift, setNextShift] = useState<NextShift | null>(null);
+  const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [isLoadingShift, setIsLoadingShift] = useState(true);
+  const [isLoadingHours, setIsLoadingHours] = useState(true);
 
   useEffect(() => {
     fetchNextShift();
+    fetchHours();
   }, []);
 
   const fetchNextShift = async () => {
@@ -46,6 +58,27 @@ export default function WorkerDashboard() {
       console.error("Error fetching next shift:", error);
     } finally {
       setIsLoadingShift(false);
+    }
+  };
+
+  const fetchHours = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch("/api/worker/hours", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setHoursData(data);
+      }
+    } catch (error) {
+      console.error("Error fetching hours:", error);
+    } finally {
+      setIsLoadingHours(false);
     }
   };
 
@@ -134,76 +167,58 @@ export default function WorkerDashboard() {
         </Card>
       )}
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <Link href="/worker/schedule">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-primary-muted rounded-full flex items-center justify-center mb-3">
-                <Calendar className="w-6 h-6 text-primary" />
+      {/* Hours Worked & Expected Wage */}
+      {isLoadingHours ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="py-6">
+              <div className="animate-pulse space-y-2">
+                <div className="h-8 bg-foreground/10 rounded w-1/2 mx-auto" />
+                <div className="h-3 bg-foreground/10 rounded w-2/3 mx-auto" />
               </div>
-              <span className="font-medium text-foreground">My Schedule</span>
             </CardContent>
           </Card>
-        </Link>
-
-        <Link href="/worker/set-availability">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-accent/10 rounded-full flex items-center justify-center mb-3">
-                <Clock className="w-6 h-6 text-accent" />
+          <Card>
+            <CardContent className="py-6">
+              <div className="animate-pulse space-y-2">
+                <div className="h-8 bg-foreground/10 rounded w-1/2 mx-auto" />
+                <div className="h-3 bg-foreground/10 rounded w-2/3 mx-auto" />
               </div>
-              <span className="font-medium text-foreground">
-                Set Availability
-              </span>
             </CardContent>
           </Card>
-        </Link>
-
-        <Link href="/worker/time-tracking">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-success-muted rounded-full flex items-center justify-center mb-3">
-                <Play className="w-6 h-6 text-success" />
-              </div>
-              <span className="font-medium text-foreground">Time Tracking</span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/worker/hours">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-warning-muted rounded-full flex items-center justify-center mb-3">
-                <DollarSign className="w-6 h-6 text-warning" />
-              </div>
-              <span className="font-medium text-foreground">My Hours</span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/worker/notifications">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center mb-3">
-                <Bell className="w-6 h-6 text-accent" />
-              </div>
-              <span className="font-medium text-foreground">Notifications</span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/worker/profile">
-          <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center py-6">
-              <div className="w-12 h-12 bg-foreground/10 rounded-full flex items-center justify-center mb-3">
-                <User className="w-6 h-6 text-foreground" />
-              </div>
-              <span className="font-medium text-foreground">My Profile</span>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
+        </div>
+      ) : hoursData ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/worker/hours">
+            <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+              <CardContent className="flex flex-col items-center justify-center py-6">
+                <div className="w-10 h-10 bg-primary-muted rounded-full flex items-center justify-center mb-2">
+                  <Clock className="w-5 h-5 text-primary" />
+                </div>
+                <span className="text-2xl font-bold text-foreground">{hoursData.current_month.hours}h</span>
+                <span className="text-xs text-foreground-muted mt-1">Hours worked</span>
+                <span className="text-[10px] text-foreground-muted">{hoursData.current_month.label}</span>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/worker/hours">
+            <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
+              <CardContent className="flex flex-col items-center justify-center py-6">
+                <div className="w-10 h-10 bg-success-muted rounded-full flex items-center justify-center mb-2">
+                  <DollarSign className="w-5 h-5 text-success" />
+                </div>
+                <span className="text-2xl font-bold text-foreground">
+                  ${hoursData.current_month.estimated_pay.toFixed(2)}
+                </span>
+                <span className="text-xs text-foreground-muted mt-1">Expected wage</span>
+                <span className="text-[10px] text-foreground-muted">
+                  {hoursData.hourly_rate > 0 ? `$${hoursData.hourly_rate}/hr` : "Rate not set"}
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      ) : null}
     </PageContainer>
   );
 }

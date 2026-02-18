@@ -55,6 +55,7 @@ interface Position {
 
 interface FlatShift {
   date: string;
+  day: number;
   worker_name: string;
   worker_id: string;
   skill_id: string;
@@ -195,31 +196,39 @@ export default function ManagerSchedulePage() {
     return places.find(p => p.id === placeId)?.name || 'Unknown Place';
   };
 
-  const startEditing = async (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
-    if (!schedule) return;
-    setEditingScheduleId(scheduleId);
+  const startEditing = async (scheduleId?: string) => {
+    setEditingScheduleId(scheduleId || schedules[0]?.id || null);
     setIsEditing(true);
     setShowAddShift(false);
 
-    // Fetch workers for this schedule's place
+    // Fetch workers from all schedule places (deduplicated)
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch(`/api/manager/places/${schedule.place_id}/workers`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const workers: AvailableWorker[] = (data.workers || []).map((w: any) => ({
-          id: w.id,
-          name: `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Unknown',
-          skill_ids: (w.skills || []).map((s: any) => s.skill_id || s.id),
-        }));
-        setAvailableWorkers(workers);
+      const placeIds = [...new Set(schedules.map(s => s.place_id))];
+      const allWorkers: AvailableWorker[] = [];
+      const seenIds = new Set<string>();
+
+      for (const placeId of placeIds) {
+        const response = await fetch(`/api/manager/places/${placeId}/workers`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          (data.workers || []).forEach((w: any) => {
+            if (seenIds.has(w.id)) return;
+            seenIds.add(w.id);
+            allWorkers.push({
+              id: w.id,
+              name: `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Unknown',
+              skill_ids: (w.skills || []).map((s: any) => s.skill_id || s.id),
+            });
+          });
+        }
       }
+      setAvailableWorkers(allWorkers);
     } catch (err) {
       console.error('Error fetching workers:', err);
     }
@@ -275,35 +284,41 @@ export default function ManagerSchedulePage() {
   };
 
   const saveEdits = async () => {
-    if (!editingScheduleId) return;
-    const schedule = schedules.find(s => s.id === editingScheduleId);
-    if (!schedule?.solver_result) return;
-
     setSavingEdits(true);
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const response = await fetch('/api/manager/schedule-templates/edit-assignments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          schedule_template_id: editingScheduleId,
-          assignments: schedule.solver_result.assignments,
-        }),
-      });
+      // Save all schedules that have solver results
+      const schedulesToSave = schedules.filter(s => s.solver_result);
+      let allOk = true;
 
-      if (response.ok) {
+      for (const schedule of schedulesToSave) {
+        const response = await fetch('/api/manager/schedule-templates/edit-assignments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            schedule_template_id: schedule.id,
+            assignments: schedule.solver_result!.assignments,
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          alert(err.error || `Failed to save changes for "${schedule.name}"`);
+          allOk = false;
+          break;
+        }
+      }
+
+      if (allOk) {
         alert('Schedule changes saved!');
         stopEditing();
         fetchSchedules();
-      } else {
-        const err = await response.json();
-        alert(err.error || 'Failed to save changes');
       }
     } catch (err) {
       console.error('Error saving edits:', err);
@@ -324,7 +339,7 @@ export default function ManagerSchedulePage() {
         const startDate = new Date(s.start_date + 'T00:00:00');
         const shiftDate = new Date(startDate);
         shiftDate.setDate(shiftDate.getDate() + a.day);
-        const dateStr = shiftDate.toISOString().split('T')[0];
+        const dateStr = `${shiftDate.getFullYear()}-${String(shiftDate.getMonth() + 1).padStart(2, '0')}-${String(shiftDate.getDate()).padStart(2, '0')}`;
 
         // Deduplicate: skip if same worker, date, time, skill already added
         const dedupKey = `${s.id}-${a.worker_id}-${dateStr}-${a.start_minutes}-${a.end_minutes}-${a.skill_id}`;
@@ -334,6 +349,7 @@ export default function ManagerSchedulePage() {
         if (!map[dateStr]) map[dateStr] = [];
         map[dateStr].push({
           date: dateStr,
+          day: a.day,
           worker_name: a.worker_name,
           worker_id: a.worker_id,
           skill_id: a.skill_id,
@@ -592,11 +608,8 @@ export default function ManagerSchedulePage() {
         {/* Top bar — wireframe style */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            {!isEditing && schedules.some(s => s.solver_result && (s.status === 'closed' || s.status === 'schedule_published')) && (
-              <Button variant="outline" onClick={() => {
-                const first = schedules.find(s => s.solver_result && (s.status === 'closed' || s.status === 'schedule_published'));
-                if (first) startEditing(first.id);
-              }}>
+            {!isEditing && schedules.some(s => s.solver_result) && (
+              <Button variant="outline" onClick={() => startEditing()}>
                 <Edit2 className="w-4 h-4 mr-1" />
                 Edit Schedule
               </Button>
@@ -726,7 +739,7 @@ export default function ManagerSchedulePage() {
                         <h3 className="font-semibold text-foreground">
                           {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                         </h3>
-                        {isEditing && editingScheduleId && (
+                        {isEditing && (
                           <Button size="sm" variant="outline" onClick={() => setShowAddShift(!showAddShift)}>
                             <Plus className="w-3.5 h-3.5 mr-1" />
                             Add Shift
@@ -817,16 +830,9 @@ export default function ManagerSchedulePage() {
                               </div>
                               <span className="font-medium text-foreground">{shift.worker_name}</span>
                               <Badge variant="info" className="text-xs">{getPositionName(shift.skill_id)}</Badge>
-                              {isEditing && editingScheduleId === shift.schedule_id ? (
+                              {isEditing ? (
                                 <button
-                                  onClick={() => {
-                                    const schedule = schedules.find(s => s.id === shift.schedule_id);
-                                    if (!schedule) return;
-                                    const startDate = new Date(schedule.start_date + 'T00:00:00');
-                                    const shiftDate = new Date(shift.date + 'T00:00:00');
-                                    const dayOffset = Math.round((shiftDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
-                                    removeShift(shift.schedule_id, shift.worker_id, dayOffset, shift.start_minutes);
-                                  }}
+                                  onClick={() => removeShift(shift.schedule_id, shift.worker_id, shift.day, shift.start_minutes)}
                                   className="ml-auto p-1 text-danger hover:bg-danger-muted rounded transition-colors"
                                   title="Remove shift"
                                 >

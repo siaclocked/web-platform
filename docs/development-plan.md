@@ -23,25 +23,25 @@
 ### 1.1 Auth & User Management
 
 - [ ] Company Admin can create a company + first Manager account (§3.1)
-- [ ] Manager login with email + password
-- [ ] Worker login with email OTP (§10.1)
+- [] Manager login with email + password
+- [X] Worker login with email OTP (§10.1)
 - [ ] Rate limiting and OTP TTL enforcement
 - [ ] User profile page — worker can view/edit limited personal details (§10.9)
 - [ ] RLS policies enforce company isolation on all tables (§15.1)
 
 ### 1.2 Place Setup (Manager)
 
-- [ ] CRUD places (name, address) (§7.1)
+- [X] CRUD places (name, address) (§7.1)
 - [ ] Place scheduling settings: granularity, min/max hours per day, block limits, rest between shifts (§7.5)
-- [ ] Global skills catalog — Manager can create/edit skill names (§7.2)
+- [X] Global skills catalog — Manager can create/edit skill names (§7.2)
 - [ ] Place skills config — enable skills per place, optional `minAvgRating` threshold (§7.3)
 
 ### 1.3 Worker Management (Manager)
 
 - [ ] CRUD workers: name, email, status (INVITED/ACTIVE/DISABLED) (§7.6)
-- [ ] Assign workers to places (place scope: ALL or selected) (§7.6)
+- [X] Assign workers to places (place scope: ALL or selected) (§7.6)
 - [ ] Assign skills to workers with rating per skill (§7.6)
-- [ ] Set worker hourly rate (§7.6)
+- [X] Set worker hourly rate (§7.6)
 - [ ] Set worker start date (solver eligibility) (§7.6)
 
 ### 1.4 Coverage Templates (Manager)
