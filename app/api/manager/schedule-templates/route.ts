@@ -459,7 +459,18 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Delete shift templates first (due to foreign key constraint)
+    // Delete publish history first (due to foreign key constraint)
+    const { error: historyError } = await supabase
+      .from('schedule_publish_history')
+      .delete()
+      .eq('schedule_template_id', id);
+
+    if (historyError) {
+      console.error('Error deleting publish history:', historyError);
+      // Continue — table may not exist or no records
+    }
+
+    // Delete shift templates (due to foreign key constraint)
     const { error: shiftsError } = await supabase
       .from('shift_templates')
       .delete()

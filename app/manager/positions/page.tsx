@@ -6,12 +6,18 @@ import { Card, CardContent, Button, Input, Badge } from "@/components/ui";
 import { Briefcase, Plus, Edit2, Trash2, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
+interface PositionWorker {
+  id: string;
+  name: string;
+}
+
 interface Position {
   id: string;
   name: string;
   description?: string;
   created_at: string;
   worker_count?: number;
+  workers?: PositionWorker[];
 }
 
 export default function ManagerPositionsPage() {
@@ -290,6 +296,15 @@ export default function ManagerPositionsPage() {
                           {new Date(position.created_at).toLocaleDateString()}
                         </span>
                       </div>
+                      {position.workers && position.workers.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {position.workers.map((w) => (
+                            <Badge key={w.id} variant="default" className="text-xs">
+                              {w.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button

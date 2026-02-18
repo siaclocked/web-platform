@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { createBulkNotifications, NOTIFICATION_TYPES } from '@/lib/notifications';
 
 interface AvailabilityEntry {
   date: string;
@@ -116,6 +117,42 @@ export async function POST(request: Request) {
         );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Notify the worker's manager(s) about the availability update
+    try {
+      const supabaseNotif = getSupabase();
+      // Get worker name
+      const { data: workerData } = await supabaseNotif
+        .from('users')
+        .select('first_name, last_name, company_id')
+        .eq('id', user.id)
+        .single();
+
+      if (workerData) {
+        const workerName = `${workerData.first_name || ''} ${workerData.last_name || ''}`.trim() || 'A worker';
+
+        // Find all managers in the same company
+        const { data: managers } = await supabaseNotif
+          .from('users')
+          .select('id')
+          .eq('company_id', workerData.company_id)
+          .eq('role', 'manager');
+
+        const managerIds = (managers || []).map(m => m.id);
+        if (managerIds.length > 0) {
+          await createBulkNotifications({
+            userIds: managerIds,
+            type: NOTIFICATION_TYPES.WORKER_AVAILABILITY_SET,
+            title: 'Worker Availability Updated',
+            message: `${workerName} has set their availability! Check it out in the Worker Availability page.`,
+            metadata: { worker_id: user.id },
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error sending availability notification:', notifErr);
+      // Don't block the response for notification failures
     }
 
     return NextResponse.json({

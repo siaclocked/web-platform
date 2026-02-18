@@ -15,6 +15,7 @@ import {
   Bell,
   User,
   Search,
+  Eye,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -25,6 +26,7 @@ const managerNavItems = [
   { href: '/manager/schedule', icon: Calendar, label: 'Scheduling' },
   { href: '/manager/workers', icon: Users, label: 'Employees' },
   { href: '/manager/timesheets', icon: ClipboardList, label: 'Create Schedule' },
+  { href: '/manager/worker-availability', icon: Eye, label: 'Worker Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
   { href: '/manager/reports', icon: DollarSign, label: 'Reports' },

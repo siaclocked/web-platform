@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { createBulkNotifications, NOTIFICATION_TYPES } from '@/lib/notifications';
 
 export async function POST(request: Request) {
   try {
@@ -38,13 +39,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Schedule not found or access denied' }, { status: 404 });
     }
 
-    // Must be closed (solver completed) — not yet published
-    if (template.solver_status !== 'completed' || !template.solver_result) {
+    // Must have solver results (closed or published)
+    if (!template.solver_result) {
       return NextResponse.json(
         { error: 'Schedule must have solver results before editing' },
         { status: 400 }
       );
     }
+
+    // Get previous worker IDs before edit
+    const prevWorkerIds = new Set<string>(
+      ((template.solver_result as any)?.assignments || []).map((a: any) => a.worker_id)
+    );
 
     // Rebuild total_hours_by_worker from new assignments
     const totalHours: Record<string, number> = {};
@@ -75,6 +81,27 @@ export async function POST(request: Request) {
     if (updateError) {
       console.error('Error updating assignments:', updateError);
       return NextResponse.json({ error: 'Failed to save changes' }, { status: 500 });
+    }
+
+    // If the schedule is already published, notify affected workers about the change
+    if (template.status === 'schedule_published') {
+      const newWorkerIds = new Set<string>(assignments.map((a: any) => a.worker_id));
+      // Notify all workers who are in the new or old assignments
+      const allAffectedIds = [...new Set([...prevWorkerIds, ...newWorkerIds])];
+
+      if (allAffectedIds.length > 0) {
+        await createBulkNotifications({
+          userIds: allAffectedIds,
+          type: NOTIFICATION_TYPES.SCHEDULE_CHANGED,
+          title: 'Schedule Updated',
+          message: `Your schedule "${template.name}" (${template.start_date} to ${template.end_date}) has been updated by your manager. Please check your schedule for changes.`,
+          metadata: {
+            schedule_template_id,
+            start_date: template.start_date,
+            end_date: template.end_date,
+          },
+        });
+      }
     }
 
     return NextResponse.json({

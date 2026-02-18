@@ -445,6 +445,36 @@ export default function ManagerSchedulePage() {
     }
   };
 
+  const handleDeleteSchedule = async (scheduleId: string, scheduleName: string) => {
+    if (!confirm(`Are you sure you want to delete "${scheduleName}"? This will remove it from the published schedule and history. This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('/api/manager/schedule-templates', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ id: scheduleId }),
+      });
+
+      if (response.ok) {
+        fetchSchedules();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Failed to delete schedule');
+      }
+    } catch (err) {
+      console.error('Error deleting schedule:', err);
+      alert('Failed to delete schedule');
+    }
+  };
+
   if (isLoading) {
     return (
       <PageContainer>
@@ -562,14 +592,9 @@ export default function ManagerSchedulePage() {
         {/* Top bar — wireframe style */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            <Link href="/manager/timesheets">
-              <Button variant="outline">
-                Auto Generate Schedule
-              </Button>
-            </Link>
-            {!isEditing && schedules.some(s => s.status === 'closed') && (
+            {!isEditing && schedules.some(s => s.solver_result && (s.status === 'closed' || s.status === 'schedule_published')) && (
               <Button variant="outline" onClick={() => {
-                const first = schedules.find(s => s.status === 'closed');
+                const first = schedules.find(s => s.solver_result && (s.status === 'closed' || s.status === 'schedule_published'));
                 if (first) startEditing(first.id);
               }}>
                 <Edit2 className="w-4 h-4 mr-1" />
@@ -946,6 +971,13 @@ export default function ManagerSchedulePage() {
                                 Publish
                               </Button>
                             )}
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
                             {isExpanded ? (
                               <ChevronUp className="w-5 h-5 text-foreground-muted" />
                             ) : (

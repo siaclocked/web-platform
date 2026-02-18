@@ -80,19 +80,23 @@ export async function GET(request: Request) {
 
     if (positionsWithCounts.length > 0) {
       try {
-        // Get all worker_skills to count workers per skill
+        // Get all worker_skills with worker names
         const { data: workerSkills } = await supabase
           .from('worker_skills')
-          .select('skill_id, worker_id');
+          .select('skill_id, worker_id, users!worker_skills_worker_id_fkey(id, first_name, last_name)');
         
-        const skillCounts: { [key: string]: number } = {};
-        (workerSkills || []).forEach(ws => {
-          skillCounts[ws.skill_id] = (skillCounts[ws.skill_id] || 0) + 1;
+        const skillWorkers: { [key: string]: { id: string; name: string }[] } = {};
+        (workerSkills || []).forEach((ws: any) => {
+          if (!skillWorkers[ws.skill_id]) skillWorkers[ws.skill_id] = [];
+          const u = ws.users;
+          const name = u ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : 'Unknown';
+          skillWorkers[ws.skill_id].push({ id: ws.worker_id, name });
         });
 
         positionsWithCounts = positionsWithCounts.map(pos => ({
           ...pos,
-          worker_count: skillCounts[pos.id] || 0
+          worker_count: (skillWorkers[pos.id] || []).length,
+          workers: skillWorkers[pos.id] || [],
         }));
       } catch (countError) {
         console.error('Error getting worker counts:', countError);
