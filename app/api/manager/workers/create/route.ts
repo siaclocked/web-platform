@@ -12,6 +12,8 @@ export async function POST(request: Request) {
       placeIds,
       hourlyRate,
       positionRatings,
+      start_date,
+      worker_rating,
     } = await request.json();
 
     if (!email || !firstName || !lastName) {
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
     if (!authData.user) throw new Error("Failed to create worker account");
 
     // Create user profile (without position_id since we use worker_skills)
-    const { error: profileError } = await supabase.from("users").insert({
+    const profileData: Record<string, any> = {
       id: authData.user.id,
       company_id: manager.company_id,
       email: email.trim().toLowerCase(),
@@ -95,9 +97,15 @@ export async function POST(request: Request) {
       phone: phone?.trim() || null,
       role: "worker",
       is_active: true,
+      status: "ACTIVE",
       manager_id: user.id,
       hourly_rate: hourlyRate || null,
-    });
+    };
+
+    if (start_date) profileData.start_date = start_date;
+    if (worker_rating) profileData.worker_rating = worker_rating;
+
+    const { error: profileError } = await supabase.from("users").insert(profileData);
 
     if (profileError) {
       // Rollback: delete the auth user we just created since profile insert failed

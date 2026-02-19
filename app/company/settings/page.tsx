@@ -52,36 +52,21 @@ export default function CompanySettingsPage() {
         return;
       }
 
-      // Get current user (admin)
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email, phone, first_name, last_name, company_id, role')
-        .eq('id', session.user.id)
-        .single();
+      const response = await fetch('/api/company/settings', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
 
-      if (userError || !userData || userData.role !== 'admin') {
-        router.push('/');
+      if (!response.ok) {
+        console.error('Error fetching company settings');
         return;
       }
 
-      setAdmin(userData);
-
-      // Get company data
-      const { data: companyData, error: companyError } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('id', userData.company_id)
-        .single();
-
-      if (companyError) {
-        console.error('Error fetching company:', companyError);
-        return;
-      }
-
-      setCompany(companyData);
+      const data = await response.json();
+      setCompany(data.company);
+      setAdmin(data.admin);
       setEditedCompany({
-        name: companyData.name,
-        timezone: companyData.timezone || 'America/New_York',
+        name: data.company.name,
+        timezone: data.company.timezone || 'America/New_York',
       });
     } catch (error) {
       console.error('Error fetching company data:', error);
@@ -105,21 +90,21 @@ export default function CompanySettingsPage() {
         return;
       }
 
-      const { error } = await supabase
-        .from('companies')
-        .update({
-          name: editedCompany.name,
-          timezone: editedCompany.timezone,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', company.id);
+      const response = await fetch('/api/company/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(editedCompany),
+      });
 
-      if (error) {
-        console.error('Error updating company:', error);
-        setSaveMessage('Failed to save changes');
-      } else {
+      if (response.ok) {
         setSaveMessage('Changes saved successfully');
         await fetchCompanyData();
+      } else {
+        const err = await response.json();
+        setSaveMessage(err.error || 'Failed to save changes');
       }
     } catch (error) {
       console.error('Error saving:', error);

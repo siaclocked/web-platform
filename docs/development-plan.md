@@ -22,7 +22,7 @@
 
 ### 1.1 Auth & User Management
 
-- [ ] Company Admin can create a company + first Manager account (§3.1)
+- [X] Company Admin can create a company + first Manager account (§3.1)
 - [] Manager login with email + password
 - [X] Worker login with email OTP (§10.1)
 - [ ] Rate limiting and OTP TTL enforcement

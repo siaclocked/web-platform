@@ -48,7 +48,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Define public and protected paths
-  const publicPaths = ['/login', '/select-role', '/signup', '/api/auth', '/api/test', '/api/signup'];
+  const publicPaths = ['/login', '/signup', '/api/auth', '/api/test', '/api/signup'];
   const protectedPaths = ['/company', '/manager', '/worker', '/managers'];
 
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path)) || pathname === '/';

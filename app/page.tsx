@@ -18,7 +18,7 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
-                href="/select-role"
+                href="/signup/company"
                 className="inline-flex items-center justify-center px-8 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-hover transition-colors"
               >
                 Get Started
@@ -78,7 +78,7 @@ export default function Home() {
             Join thousands of businesses using Clocked to manage their workforce.
           </p>
           <Link
-            href="/select-role"
+            href="/signup/company"
             className="inline-flex items-center justify-center px-8 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-hover transition-colors"
           >
             Start Free Trial

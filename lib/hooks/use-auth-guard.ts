@@ -15,7 +15,7 @@ export function useAuthGuard() {
 
   useEffect(() => {
     // Define route patterns
-    const publicRoutes = ['/login', '/select-role', '/signup'];
+    const publicRoutes = ['/login', '/signup'];
     const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route)) || pathname === '/';
     
     // Protected route patterns

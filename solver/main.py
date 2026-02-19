@@ -40,6 +40,7 @@ class Worker(BaseModel):
     skill_ids: list[str]
     place_ids: list[str]
     skill_ratings: dict[str, int] = {}
+    worker_rating: int = 3  # overall rating 1-5 set by manager
     start_date: Optional[str] = None
 
 
@@ -172,6 +173,19 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
 
     max_hours_per_day = request.settings.max_hours_per_day
 
+    # Pre-compute worker start_date eligibility per day offset
+    worker_start_day: dict[str, int] = {}  # worker_id -> first eligible day offset
+    for w in workers:
+        if w.start_date:
+            try:
+                ws = datetime.fromisoformat(w.start_date).date()
+                offset = (ws - start).days
+                worker_start_day[w.id] = max(0, offset)
+            except ValueError:
+                worker_start_day[w.id] = 0
+        else:
+            worker_start_day[w.id] = 0
+
     for day, cov in day_covs:
         needed = cov.min_workers
         duration_hours = (cov.end_minutes - cov.start_minutes) / 60
@@ -181,6 +195,9 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
         for w in workers:
             # Must have the skill
             if cov.skill_id not in w.skill_ids:
+                continue
+            # Must have started by this day
+            if day < worker_start_day.get(w.id, 0):
                 continue
             # Must not be unavailable (uses day offset for lookup)
             if _is_worker_unavailable(w.id, day, cov.start_minutes, cov.end_minutes, unavail_lookup):
@@ -196,8 +213,9 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
             skill_rating = w.skill_ratings.get(cov.skill_id, 3)
             candidates.append((w, skill_rating))
 
-        # Sort by: least total hours first (balance), then highest skill rating
-        candidates.sort(key=lambda c: (total_hours[c[0].id], -c[1]))
+        # Sort by: least total hours first (balance), then highest combined rating
+        # worker_rating ensures experienced workers are mixed in with newbies
+        candidates.sort(key=lambda c: (total_hours[c[0].id], -(c[1] + c[0].worker_rating)))
 
         assigned_count = 0
         for w, rating in candidates:

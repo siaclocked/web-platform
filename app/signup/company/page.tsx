@@ -311,10 +311,10 @@ export default function CompanySignupPage() {
 
         <div className="mt-6 text-center">
           <button
-            onClick={() => router.push('/select-role')}
+            onClick={() => router.push('/')}
             className="text-sm text-foreground-muted hover:text-foreground transition-colors"
           >
-            ← Back to role selection
+            ← Back to home
           </button>
         </div>
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Select } from '@/components/ui';
-import { Mail, User, Phone, Building2, Briefcase, DollarSign, MapPin, X, Plus } from 'lucide-react';
+import { Mail, User, Phone, Building2, Briefcase, DollarSign, MapPin, X, Plus, Star, Calendar } from 'lucide-react';
 
 interface Position {
   id: string;
@@ -25,6 +25,8 @@ export default function AddWorkerPage() {
     email: '',
     phone: '',
     hourlyRate: '',
+    startDate: '',
+    workerRating: '3',
   });
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
@@ -129,6 +131,8 @@ export default function AddWorkerPage() {
           positionIds: selectedPositions,
           placeIds: selectedPlaces,
           hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
+          start_date: formData.startDate || null,
+          worker_rating: formData.workerRating ? parseInt(formData.workerRating) : 3,
         }),
       });
 
@@ -191,6 +195,8 @@ export default function AddWorkerPage() {
                   email: '',
                   phone: '',
                   hourlyRate: '',
+                  startDate: '',
+                  workerRating: '3',
                 });
                 setSelectedPositions([]);
                 setSelectedPlaces([]);
@@ -324,6 +330,45 @@ export default function AddWorkerPage() {
               value={formData.hourlyRate}
               onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
             />
+
+            {/* Start Date */}
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                <Calendar className="w-3.5 h-3.5 inline mr-1" />
+                Start Date
+              </label>
+              <input
+                type="date"
+                value={formData.startDate}
+                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                className="w-full p-2 border border-border rounded-lg bg-background text-foreground text-sm"
+              />
+              <p className="text-xs text-foreground-muted mt-1">Date the worker starts. Used by the solver for scheduling eligibility.</p>
+            </div>
+
+            {/* Worker Rating */}
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                <Star className="w-3.5 h-3.5 inline mr-1" />
+                Worker Rating
+              </label>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, workerRating: String(star) })}
+                    className="p-1 transition-colors"
+                  >
+                    <Star
+                      className={`w-6 h-6 ${parseInt(formData.workerRating) >= star ? 'text-warning fill-warning' : 'text-foreground-muted'}`}
+                    />
+                  </button>
+                ))}
+                <span className="text-sm text-foreground-muted ml-2">{formData.workerRating}/5</span>
+              </div>
+              <p className="text-xs text-foreground-muted mt-1">Higher rated workers are preferred by the solver for balanced shifts.</p>
+            </div>
 
             {error && (
               <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg">

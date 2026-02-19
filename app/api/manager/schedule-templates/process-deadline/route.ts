@@ -128,7 +128,9 @@ export async function POST(request: Request) {
         users:worker_id (
           id,
           first_name,
-          last_name
+          last_name,
+          start_date,
+          worker_rating
         )
       `)
       .eq('place_id', template.place_id)
@@ -188,7 +190,9 @@ export async function POST(request: Request) {
         name: `${userData?.first_name || ''} ${userData?.last_name || ''}`.trim() || 'Unknown',
         skill_ids: [],
         place_ids: [template.place_id],
-        skill_ratings: {}
+        skill_ratings: {},
+        worker_rating: userData?.worker_rating || 3,
+        start_date: userData?.start_date || null,
       };
     });
 

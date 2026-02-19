@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input, Select } from '@/components/ui';
-import { Users, Plus, Edit2, Trash2, Mail, Phone, Search, MapPin, Calendar, ChevronRight, Filter } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Mail, Phone, Search, MapPin, Calendar, ChevronRight, Filter, Star } from 'lucide-react';
 
 interface PositionItem {
   id: string;
@@ -27,6 +27,7 @@ interface Worker {
   hourly_rate?: number;
   status?: string;
   start_date?: string;
+  worker_rating?: number;
   positions: PositionItem[];
   places: PlaceItem[];
 }
@@ -52,6 +53,7 @@ export default function ManagerWorkersPage() {
     hourly_rate: '',
     status: 'ACTIVE',
     start_date: '',
+    worker_rating: '3',
   });
   const [editPositions, setEditPositions] = useState<string[]>([]);
   const [editPlaces, setEditPlaces] = useState<string[]>([]);
@@ -185,6 +187,7 @@ export default function ManagerWorkersPage() {
       hourly_rate: worker.hourly_rate ? worker.hourly_rate.toString() : '',
       status: worker.status || 'ACTIVE',
       start_date: worker.start_date || '',
+      worker_rating: worker.worker_rating ? worker.worker_rating.toString() : '3',
     });
     setEditPositions(worker.positions.map(p => p.id));
     setEditPlaces(worker.places.map(p => p.id));
@@ -226,6 +229,7 @@ export default function ManagerWorkersPage() {
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
         status: editForm.status,
         start_date: editForm.start_date || null,
+        worker_rating: editForm.worker_rating ? parseInt(editForm.worker_rating) : 3,
       };
       
       const response = await fetch('/api/manager/workers/update', {
@@ -257,7 +261,7 @@ export default function ManagerWorkersPage() {
 
   const handleCancelEdit = () => {
     setEditingWorker(null);
-    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '' });
+    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', worker_rating: '3' });
     setEditPositions([]);
     setEditPlaces([]);
     setError('');
@@ -420,6 +424,36 @@ export default function ManagerWorkersPage() {
                               <option value="ACTIVE">Active</option>
                               <option value="DISABLED">Disabled</option>
                             </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date</label>
+                            <input
+                              type="date"
+                              value={editForm.start_date}
+                              onChange={(e) => setEditForm({ ...editForm, start_date: e.target.value })}
+                              className="w-full p-2 border border-border rounded-lg bg-background text-foreground text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Worker Rating</label>
+                            <div className="flex items-center gap-0.5 mt-1">
+                              {[1, 2, 3, 4, 5].map(star => (
+                                <button
+                                  key={star}
+                                  type="button"
+                                  onClick={() => setEditForm({ ...editForm, worker_rating: String(star) })}
+                                  className="p-0.5 transition-colors"
+                                >
+                                  <Star
+                                    className={`w-5 h-5 ${parseInt(editForm.worker_rating) >= star ? 'text-warning fill-warning' : 'text-foreground-muted'}`}
+                                  />
+                                </button>
+                              ))}
+                              <span className="text-xs text-foreground-muted ml-1">{editForm.worker_rating}/5</span>
+                            </div>
                           </div>
                         </div>
                         

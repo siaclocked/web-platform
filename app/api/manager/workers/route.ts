@@ -66,14 +66,15 @@ export async function GET(request: Request) {
         is_active,
         hourly_rate,
         status,
-        start_date
+        start_date,
+        worker_rating
       `)
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)
       .order('created_at', { ascending: false });
 
-    if (result.error && result.error.message?.includes('status')) {
-      // Fallback: status/start_date columns may not exist yet
+    if (result.error && (result.error.message?.includes('status') || result.error.message?.includes('start_date') || result.error.message?.includes('worker_rating'))) {
+      // Fallback: new columns may not exist yet — query without them
       const fallback = await supabase
         .from('users')
         .select(`
