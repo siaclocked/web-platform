@@ -24,24 +24,24 @@
 
 - [X] Company Admin can create a company + first Manager account (§3.1)
 - [] Manager login with email + password
-- [X] Worker login with email OTP (§10.1)
+- [x] Worker login with email OTP (§10.1)
 - [ ] Rate limiting and OTP TTL enforcement
 - [ ] User profile page — worker can view/edit limited personal details (§10.9)
 - [ ] RLS policies enforce company isolation on all tables (§15.1)
 
 ### 1.2 Place Setup (Manager)
 
-- [X] CRUD places (name, address) (§7.1)
+- [x] CRUD places (name, address) (§7.1)
 - [ ] Place scheduling settings: granularity, min/max hours per day, block limits, rest between shifts (§7.5)
-- [X] Global skills catalog — Manager can create/edit skill names (§7.2)
+- [x] Global skills catalog — Manager can create/edit skill names (§7.2)
 - [ ] Place skills config — enable skills per place, optional `minAvgRating` threshold (§7.3)
 
 ### 1.3 Worker Management (Manager)
 
 - [ ] CRUD workers: name, email, status (INVITED/ACTIVE/DISABLED) (§7.6)
-- [X] Assign workers to places (place scope: ALL or selected) (§7.6)
+- [x] Assign workers to places (place scope: ALL or selected) (§7.6)
 - [ ] Assign skills to workers with rating per skill (§7.6)
-- [X] Set worker hourly rate (§7.6)
+- [x] Set worker hourly rate (§7.6)
 - [ ] Set worker start date (solver eligibility) (§7.6)
 
 ### 1.4 Coverage Templates (Manager)
@@ -65,6 +65,45 @@
 - [ ] Receive assignments + diagnostics (coverage gaps, constraint violations)
 - [ ] Store result as DRAFT schedule
 - [ ] Display draft to Manager in day/week view
+
+### 1.6a Solver v2 — Flexible Shift Model (§9.3)
+
+> **Must land before any schedule generation UI is shipped.** This replaces the v1 atomic-window assignment model.
+
+**Core model rewrite (`solver/main.py` — `_solve_cpsat` and `_solve_greedy`):**
+
+- [ ] Convert coverage windows to slot-demand map: `required_workers[day, skill, slot]` using `granularity_minutes`
+- [ ] Generate candidate shifts per `(worker, day, skill)`: all `(start, end)` pairs where `minShiftMinutes ≤ end−start ≤ maxShiftMinutes`, start/end snap to granularity, and interval fits worker availability
+- [ ] Decision variable `x[worker, day, skill, start, end]` ∈ {0,1}
+- [ ] Hard constraint: for each slot, `sum(covering shifts)` + slack ≥ `required_workers[slot]`
+- [ ] Hard constraint: `sum(x for worker on day across all skills)` ≤ 1 (one shift per day)
+- [ ] Hard constraint: shift must not overlap worker unavailability
+- [ ] Hard constraint: locked existing assignments fixed to their exact `(start, end)`
+
+**Objective (priority order):**
+
+- [ ] P1: Minimize coverage gap penalty — weight 1000 per uncovered slot-worker unit
+- [ ] P2: Balance hours proportional to availability — compute each worker's available minutes in horizon; target share = `available_i / sum(available_all)`; penalize deviation from target (weight 50)
+- [ ] P3: Prefer longer shifts — penalize `(maxShiftMinutes − actual_shift_minutes)` per assignment (weight 1)
+- [ ] P4: Minimize changes vs existing assignments during repair (weight 5 per removed assignment)
+
+**Greedy fallback update:**
+
+- [ ] Greedy: for each worker/day/skill, pick the longest valid shift (respecting min/max) that covers the most uncovered demand slots; track slot coverage and skip already-filled slots
+
+**API contract (no breaking changes):**
+
+- [ ] Rename `min_hours_per_block` → `min_shift_minutes` and `max_hours_per_block` → `max_shift_minutes` in `PlaceSettings` (keep old names as aliases for backwards compat)
+- [ ] `Assignment` response already carries free `start_minutes`/`end_minutes` — no schema change needed
+- [ ] Update `process-deadline/route.ts` to pass `min_shift_minutes` / `max_shift_minutes` from place settings
+
+**Regression tests (`solver/test_solver.py` — new tests):**
+
+- [ ] T-F1: Cross-window shift — single shift 10:00–18:00 correctly satisfies 08:00–13:00 and 13:00–18:00 demand windows
+- [ ] T-F2: Partial availability handoff — worker A available 09:00–13:30, worker B 13:30–16:00; solver assigns two shifts covering a 09:00–16:00 window
+- [ ] T-F3: Min-length fallback — 4-worker day with only 2h of demand left; solver assigns a `minShiftMinutes` shift rather than leaving a gap
+- [ ] T-F4: Long-shift preference — when two plans are equally valid, solver prefers the one with longer shifts
+- [ ] T-F5: Max-1-shift-per-day preserved — worker with availability across 3 coverage windows gets exactly 1 shift
 
 ### 1.7 Schedule Publish & History
 

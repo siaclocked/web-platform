@@ -196,16 +196,19 @@ Worker can see:
 Inputs:
 
 - place, interval
-- expanded coverage windows
-- workers (eligibility, start date, skill ratings)
-- unavailability
+- coverage windows — each defines **required headcount during a time interval** (staffing demand); they are **not** boundaries constraining individual shift start/end times
+- workers (eligibility, start date, skill ratings, total available minutes in horizon)
+- unavailability (per-day or time-ranged)
 - existing assignments (previous schedule for minimal change)
 - locked assignments (manual overrides)
-- place settings (hours/block/rest/granularity)
-  Outputs:
+- place settings: `minShiftMinutes`, `maxShiftMinutes`, max hours/day, min rest between shifts, granularity
+
+Outputs:
+
 - status: OPTIMAL/FEASIBLE/INFEASIBLE
-- assignments (blocks) per worker
-- diagnostics (coverage gaps, constraint violations summary)
+- assignments per worker — each with actual `start_minutes`/`end_minutes`; a single shift may span across multiple coverage windows
+- coverage gaps (unmet demand per window+skill, with required vs assigned headcount)
+- diagnostics (constraint violations summary)
 
 ---
 
@@ -265,17 +268,18 @@ Manager defines weekly windows per skill:
 - multiple windows/day supported (chunks)
 - MVP: no overlap within the same skill/day for a place
 
+> **Important:** Coverage windows define **required headcount** during that interval — they are staffing demand requirements, not shift boundaries. A worker's shift may start before a window, end after, or span across multiple adjacent windows. The solver determines actual shift start/end times freely within worker availability and place settings.
+
 ### 7.5 Place Scheduling Settings
 
 Per place:
 
-- `timeGranularityMinutes` (15/30/60)
+- `timeGranularityMinutes` (15/30/60) — resolution for shift start/end snapping
 - `minHoursPerDay`, `maxHoursPerDay`
 - optional `minHoursPerWeek`, `maxHoursPerWeek`
-- `blockMinMinutes`, `blockMaxMinutes`
-  - “No blocks” = blockMin = blockMax = maxHoursPerDay \* 60
-- `minRestMinutesBetweenBlocks`
-- optional `maxBlocksPerDayPerWorker`
+- `minShiftMinutes` — minimum shift length (hard constraint). Solver never schedules a shift shorter than this. Example: 120 min (2 h). Short shifts near this value are discouraged by the soft objective and only appear when understaffing forces it.
+- `maxShiftMinutes` — maximum shift length (hard upper bound + soft target). Solver prefers shifts close to this value. Example: 480 min (8 h).
+- `minRestMinutesBetweenShifts` — minimum rest between a worker's shifts across consecutive days
 
 ### 7.6 Worker Management (CRUD)
 
@@ -364,21 +368,38 @@ If solver returns INFEASIBLE:
 
 ### 9.1 Hard Constraints (must always hold)
 
-- Coverage: min ≤ assignedCount ≤ max for every place+window+skill
+- Coverage: min ≤ assignedCount for every place+window+skill (max is soft in MVP)
 - Eligibility: worker has skill rating, is assigned to place (or ALL), startDate reached
-- Availability: no assignment overlapping unavailability
-- No overlap: worker cannot be assigned to two blocks at overlapping times
-- One place per day: worker cannot be scheduled in 2 places on same day
-- Hours: within configured min/max per day/week (if enabled)
-- Blocks: within block min/max duration
-- Rest: min rest time between blocks
+- Availability: shift must fall entirely within worker's available window(s) for that day
+- One shift per day: max one shift per worker per day (shift may span multiple coverage windows)
+- One place per day: worker cannot be scheduled at 2 places on the same day
+- Shift duration: each shift must be ≥ `minShiftMinutes` and ≤ `maxShiftMinutes`
+- Hours: total assigned hours within configured max per day
+- Rest: min rest between a worker's shifts on consecutive days (`minRestMinutesBetweenShifts`)
 
 ### 9.2 Soft Objectives (optimize)
 
-- Minimal change vs previous schedule (primary objective during repair)
-- Fairness balancing (placeholder; can be added later)
+Priority order (highest weight first):
 
-### 9.3 Rating Constraint (per skill, per window)
+1. **Minimize coverage gaps** — penalize every unfilled required headcount slot heavily
+2. **Balance hours proportionally to availability** — workers with more available hours in the planning horizon should receive proportionally more assigned hours
+3. **Prefer longer shifts** — penalize the shortfall `(maxShiftMinutes − actualShiftMinutes)` per assignment; short shifts are a last resort for understaffing situations only
+4. **Minimize changes vs previous schedule** — used as primary objective during repair/regeneration
+
+### 9.3 Flexible Shift Model (Solver v2)
+
+The solver internally uses a **slot-demand model**:
+
+1. Coverage windows are decomposed into time-slot demand: `required_workers[day, skill, slot]`
+2. For each worker/day/skill, candidate shifts are generated with all valid `(start, end)` pairs where `minShiftMinutes ≤ (end − start) ≤ maxShiftMinutes`, start/end snap to `timeGranularityMinutes`, and the window is inside the worker's availability
+3. Decision variable: `x[worker, day, skill, start, end]` ∈ {0, 1}
+4. Coverage constraint: for each slot `(day, skill, t)`, `sum(x where shift covers t)` + slack ≥ required
+5. One-shift constraint: `sum(x for worker on day)` ≤ 1
+6. Objective: weighted sum of gap penalty + hours-balance deviation + shift-length shortfall
+
+This allows the solver to assign a worker `10:00–18:00` that covers part of an `08:00–13:00` window and all of a `13:00–18:00` window — without requiring separate variables per coverage block.
+
+### 9.4 Rating Constraint (per skill, per window)
 
 For each coverage window + skill:
 
