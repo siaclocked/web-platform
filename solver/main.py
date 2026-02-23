@@ -66,10 +66,12 @@ class Unavailability(BaseModel):
 
 
 class PlaceSettings(BaseModel):
-    max_hours_per_day: int = 12
-    min_hours_per_block: int = 2   # min shift length in hours (legacy name kept)
-    max_hours_per_block: int = 10  # max shift length in hours (legacy name kept)
-    min_rest_between_shifts: int = 8
+    max_hours_per_day: float = 12.0
+    min_hours_per_block: float = 2.0
+    max_hours_per_block: float = 12.0
+    soft_min_hours_per_block: float | None = None
+    soft_max_hours_per_block: float | None = None
+    min_rest_between_shifts: float = 8.0
     granularity_minutes: int = 15
 
 
@@ -84,6 +86,7 @@ class SolveRequest(BaseModel):
     settings: PlaceSettings = PlaceSettings()
     minimize_changes: bool = True
     balance_hours: bool = True
+    solver_timeout_seconds: float = 60.0
 
 
 class Assignment(BaseModel):
@@ -245,8 +248,10 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
                         continue
                     if not _is_shift_available(worker.id, day, s * g, e * g, unavail):
                         continue
-                    score = (sum(min(remaining.get((day, skill_id, t), 0), 1)
-                                 for t in range(s, e)) * 1000 + length)
+                    cov_score = sum(min(remaining.get((day, skill_id, t), 0), 1) for t in range(s, e)) * 100000
+                    overtime = max(0, length - soft_max_slots)
+                    undertime = max(0, soft_min_slots - length)
+                    score = cov_score + min(length, soft_max_slots) - (overtime * overtime * 100) - (undertime * undertime * 100)
                     if score > best_score:
                         best_score, best = score, (s, e)
 
@@ -298,9 +303,9 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
     - Locked existing assignments are pinned to their exact times
 
     Soft objectives (priority, highest first):
-    - P1 (×1000): Minimize coverage gap (unfilled demand slots)
-    - P2 (×50):   Balance assigned hours proportional to worker availability
-    - P3 (×1):    Prefer longer shifts — penalise shortfall from max length
+    - P1 (×100000): Minimize coverage gap (unfilled demand slots)
+    - P2 (×50):     Balance assigned hours proportional to worker availability
+    - P3:           Prefer longer shifts up to soft_max, penalize soft_min/soft_max violations
     - P4 (×5):    Minimise changes vs existing (repair mode only)
     """
     t0 = datetime.now()
@@ -310,10 +315,14 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
     if num_days <= 0 or num_days > 31:
         raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
 
-    g         = request.settings.granularity_minutes
-    min_slots = max(1, (request.settings.min_hours_per_block * 60) // g)
-    max_slots = max(min_slots, (request.settings.max_hours_per_block * 60) // g)
-    spd       = 24 * 60 // g
+    g         = int(request.settings.granularity_minutes)
+    min_slots = int(max(1, (request.settings.min_hours_per_block * 60) // g))
+    max_slots = int(max(min_slots, (request.settings.max_hours_per_block * 60) // g))
+    soft_min  = request.settings.soft_min_hours_per_block
+    soft_max  = request.settings.soft_max_hours_per_block
+    soft_min_slots = int(max(min_slots, (soft_min * 60) // g)) if soft_min else min_slots
+    soft_max_slots = int(max(min_slots, (soft_max * 60) // g)) if soft_max else max_slots
+    spd       = int(24 * 60 // g)
     workers   = request.workers
     model     = cp_model.CpModel()
 
@@ -393,7 +402,7 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
 
     # P1: Coverage gap penalty
     for slack in slack_vars.values():
-        objectives.append(slack * 1000)
+        objectives.append(slack * 100000)
 
     # P2: Balance hours proportional to availability
     if request.balance_hours and len(workers) > 1:
@@ -427,13 +436,28 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
                 model.Add(dev >= target - assigned_expr)
                 objectives.append(dev * 50)
 
-    # P3: Prefer longer shifts (penalise shortfall from demand length, not max_slots)
+    # P3: Prefer longer shifts (penalise shortfall from demand length, bounded by soft_max_slots)
+    # Also heavily penalise shifts extending beyond soft_max_slots
     for (w_idx, day, skill_id, s, e), var in shift_vars.items():
+        length = e - s
         demand_range = extent.get((day, skill_id), (s, e))
-        useful_max = min(max_slots, demand_range[1] - demand_range[0])
-        shortfall = useful_max - (e - s)
+        useful_max = min(soft_max_slots, demand_range[1] - demand_range[0])
+        
+        # Penalise shortfall to encourage combining shifts up to soft_max,
+        # using a quadratic penalty to naturally balance shift lengths (enforcing FIFO)
+        shortfall = useful_max - length
         if shortfall > 0:
-            objectives.append(var * shortfall)
+            objectives.append(var * (shortfall * shortfall * 5))
+            
+        # Heavily penalise shifts exceeding soft_max (quadratic overtime penalty)
+        if length > soft_max_slots:
+            overtime = length - soft_max_slots
+            objectives.append(var * (overtime * overtime * 100))
+
+        # Heavily penalise shifts under soft_min (quadratic undertime penalty)
+        if length < soft_min_slots:
+            undertime = soft_min_slots - length
+            objectives.append(var * (undertime * undertime * 100))
 
     # P4: Minimise changes (repair mode)
     if request.minimize_changes:
@@ -456,7 +480,7 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
 
     # ── Solve ─────────────────────────────────────────────────────────────────
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = request.solver_timeout_seconds
     solver.parameters.num_search_workers  = 4
     status = solver.Solve(model)
     solve_ms = int((datetime.now() - t0).total_seconds() * 1000)
