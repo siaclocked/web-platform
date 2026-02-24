@@ -30,6 +30,7 @@ interface Worker {
   first_name: string;
   last_name: string;
   email: string;
+  positions?: string[];
 }
 
 interface Place {
@@ -439,7 +440,14 @@ export default function ManagerPlacesPage() {
                                 <p className="text-sm font-medium text-foreground">
                                   {worker.first_name} {worker.last_name}
                                 </p>
-                                <p className="text-xs text-foreground-muted">{worker.email}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs text-foreground-muted">{worker.email}</p>
+                                  {worker.positions && worker.positions.length > 0 && (
+                                    <span className="text-xs text-primary font-medium">
+                                      · {worker.positions.join(', ')}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           ))}

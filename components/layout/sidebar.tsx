@@ -28,14 +28,14 @@ const managerNavItems = [
   { href: '/manager/worker-availability', icon: Eye, label: 'Worker Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
-  { href: '/manager/reports', icon: DollarSign, label: 'Reports' },
+  { href: '/manager/worker-tracking', icon: Clock, label: 'Worker Tracking' },
   { href: '/manager/notifications', icon: Bell, label: 'Notifications' },
 ];
 
 const workerNavItems = [
   { href: '/worker', icon: Home, label: 'Dashboard' },
   { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
-  { href: '/worker/time-tracking', icon: Clock, label: 'Time Tracking' },
+  { href: '/worker/clock-in', icon: Clock, label: 'Clock In' },
   { href: '/worker/set-availability', icon: ClipboardList, label: 'Availability' },
   { href: '/worker/hours', icon: DollarSign, label: 'My Hours' },
   { href: '/worker/notifications', icon: Bell, label: 'Notifications' },

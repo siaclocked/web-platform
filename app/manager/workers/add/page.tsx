@@ -26,7 +26,7 @@ export default function AddWorkerPage() {
     phone: '',
     hourlyRate: '',
     startDate: '',
-    workerRating: '3',
+    workerRating: '5',
   });
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
@@ -132,7 +132,7 @@ export default function AddWorkerPage() {
           placeIds: selectedPlaces,
           hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
           start_date: formData.startDate || null,
-          worker_rating: formData.workerRating ? parseInt(formData.workerRating) : 3,
+          worker_rating: formData.workerRating ? parseInt(formData.workerRating) : 5,
         }),
       });
 
@@ -352,20 +352,16 @@ export default function AddWorkerPage() {
                 <Star className="w-3.5 h-3.5 inline mr-1" />
                 Worker Rating
               </label>
-              <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map(star => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, workerRating: String(star) })}
-                    className="p-1 transition-colors"
-                  >
-                    <Star
-                      className={`w-6 h-6 ${parseInt(formData.workerRating) >= star ? 'text-warning fill-warning' : 'text-foreground-muted'}`}
-                    />
-                  </button>
-                ))}
-                <span className="text-sm text-foreground-muted ml-2">{formData.workerRating}/5</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.workerRating}
+                  onChange={(e) => setFormData({ ...formData, workerRating: e.target.value })}
+                  className="flex-1 accent-primary"
+                />
+                <span className="text-sm font-medium text-foreground w-10 text-center">{formData.workerRating}/10</span>
               </div>
               <p className="text-xs text-foreground-muted mt-1">Higher rated workers are preferred by the solver for balanced shifts.</p>
             </div>

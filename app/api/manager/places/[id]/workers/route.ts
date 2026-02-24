@@ -81,10 +81,33 @@ export async function GET(
       );
     }
 
-    // Extract and format worker data
+    // Extract worker IDs
+    const workerIds = (workerPlaces || []).map((wp: any) => wp.worker_id);
+
+    // Fetch worker_skills with skill names for all workers
+    let workerSkillsMap: Record<string, string[]> = {};
+    if (workerIds.length > 0) {
+      const { data: workerSkills } = await supabase
+        .from('worker_skills')
+        .select('worker_id, skills:skill_id (name)')
+        .in('worker_id', workerIds);
+
+      (workerSkills || []).forEach((ws: any) => {
+        const name = ws.skills?.name;
+        if (name) {
+          if (!workerSkillsMap[ws.worker_id]) workerSkillsMap[ws.worker_id] = [];
+          workerSkillsMap[ws.worker_id].push(name);
+        }
+      });
+    }
+
+    // Extract and format worker data with positions
     const workers = (workerPlaces || [])
-      .map((wp: any) => wp.users)
-      .filter((w: any) => w !== null);
+      .map((wp: any) => ({
+        ...wp.users,
+        positions: workerSkillsMap[wp.worker_id] || [],
+      }))
+      .filter((w: any) => w !== null && w.id);
 
     return NextResponse.json({ workers });
   } catch (err) {

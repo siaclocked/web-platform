@@ -2,7 +2,7 @@
 
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { Avatar, Button } from '@/components/ui';
-import { Bell, LogOut, ChevronDown, Search } from 'lucide-react';
+import { Bell, LogOut, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -34,17 +34,8 @@ export function Header() {
           </Link>
         </div>
 
-        {/* Desktop: search bar in header center area */}
-        <div className="hidden lg:flex items-center flex-1">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-            <input
-              type="text"
-              placeholder="Search employees etc."
-              className="w-full text-sm py-2 pl-9 pr-4 rounded-lg border border-border bg-background text-foreground placeholder:text-foreground-muted"
-            />
-          </div>
-        </div>
+        {/* Spacer for desktop layout */}
+        <div className="hidden lg:flex flex-1" />
 
         {/* Right side: notifications + avatar + logout */}
         <div className="flex items-center gap-2">

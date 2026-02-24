@@ -53,7 +53,7 @@ export default function ManagerWorkersPage() {
     hourly_rate: '',
     status: 'ACTIVE',
     start_date: '',
-    worker_rating: '3',
+    worker_rating: '5',
   });
   const [editPositions, setEditPositions] = useState<string[]>([]);
   const [editPlaces, setEditPlaces] = useState<string[]>([]);
@@ -187,7 +187,7 @@ export default function ManagerWorkersPage() {
       hourly_rate: worker.hourly_rate ? worker.hourly_rate.toString() : '',
       status: worker.status || 'ACTIVE',
       start_date: worker.start_date || '',
-      worker_rating: worker.worker_rating ? worker.worker_rating.toString() : '3',
+      worker_rating: worker.worker_rating ? worker.worker_rating.toString() : '5',
     });
     setEditPositions(worker.positions.map(p => p.id));
     setEditPlaces(worker.places.map(p => p.id));
@@ -229,7 +229,7 @@ export default function ManagerWorkersPage() {
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
         status: editForm.status,
         start_date: editForm.start_date || null,
-        worker_rating: editForm.worker_rating ? parseInt(editForm.worker_rating) : 3,
+        worker_rating: editForm.worker_rating ? parseInt(editForm.worker_rating) : 5,
       };
       
       const response = await fetch('/api/manager/workers/update', {
@@ -261,7 +261,7 @@ export default function ManagerWorkersPage() {
 
   const handleCancelEdit = () => {
     setEditingWorker(null);
-    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', worker_rating: '3' });
+    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', worker_rating: '5' });
     setEditPositions([]);
     setEditPlaces([]);
     setError('');
@@ -439,20 +439,16 @@ export default function ManagerWorkersPage() {
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-foreground-muted mb-1">Worker Rating</label>
-                            <div className="flex items-center gap-0.5 mt-1">
-                              {[1, 2, 3, 4, 5].map(star => (
-                                <button
-                                  key={star}
-                                  type="button"
-                                  onClick={() => setEditForm({ ...editForm, worker_rating: String(star) })}
-                                  className="p-0.5 transition-colors"
-                                >
-                                  <Star
-                                    className={`w-5 h-5 ${parseInt(editForm.worker_rating) >= star ? 'text-warning fill-warning' : 'text-foreground-muted'}`}
-                                  />
-                                </button>
-                              ))}
-                              <span className="text-xs text-foreground-muted ml-1">{editForm.worker_rating}/5</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <input
+                                type="range"
+                                min="1"
+                                max="10"
+                                value={editForm.worker_rating}
+                                onChange={(e) => setEditForm({ ...editForm, worker_rating: e.target.value })}
+                                className="flex-1 accent-primary"
+                              />
+                              <span className="text-xs font-medium text-foreground w-10 text-center">{editForm.worker_rating}/10</span>
                             </div>
                           </div>
                         </div>

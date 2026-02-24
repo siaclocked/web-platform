@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
+
+function getServiceSupabase() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
+    // Auth via cookie client
+    const authClient = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await authClient.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Use service role for data queries (bypasses RLS)
+    const supabase = getServiceSupabase();
 
     // Get active session
     const { data: activeSession } = await supabase
@@ -25,7 +37,23 @@ export async function GET(request: NextRequest) {
       .is('end_time', null)
       .single();
 
-    return NextResponse.json({ active_session: activeSession });
+    // Get worker's assigned places
+    const { data: workerPlaces, error: wpError } = await supabase
+      .from('worker_places')
+      .select('place_id, places:place_id (id, name)')
+      .eq('worker_id', user.id)
+      .eq('is_active', true);
+
+    if (wpError) {
+      console.error('Error fetching worker places:', wpError);
+    }
+
+    const places = (workerPlaces || []).map((wp: any) => ({
+      id: wp.places?.id || wp.place_id,
+      name: wp.places?.name || 'Unknown',
+    }));
+
+    return NextResponse.json({ active_session: activeSession, places });
   } catch (error) {
     console.error('Error fetching time tracking:', error);
     return NextResponse.json(
@@ -37,23 +65,26 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
+    // Auth via cookie client
+    const authClient = await createClient();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await authClient.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Use service role for data queries
+    const supabase = getServiceSupabase();
+
     const body = await request.json();
     const { action, place_id, skill_id, handoff_note, handoff_audience } = body;
 
     if (action === 'start') {
-      if (!place_id || !skill_id) {
+      if (!place_id) {
         return NextResponse.json(
-          { error: 'Missing place_id or skill_id' },
+          { error: 'Missing place_id' },
           { status: 400 }
         );
       }
@@ -79,15 +110,19 @@ export async function POST(request: NextRequest) {
       const windowStart = new Date(now.getTime() - graceMinutes * 60 * 1000);
       const windowEnd = new Date(now.getTime() + graceMinutes * 60 * 1000);
 
-      const { data: nearbyShift } = await supabase
+      let shiftQuery = supabase
         .from('shifts')
         .select('id')
         .eq('worker_id', user.id)
         .eq('place_id', place_id)
-        .eq('skill_id', skill_id)
         .gte('start_time', windowStart.toISOString())
-        .lte('start_time', windowEnd.toISOString())
-        .single();
+        .lte('start_time', windowEnd.toISOString());
+
+      if (skill_id) {
+        shiftQuery = shiftQuery.eq('skill_id', skill_id);
+      }
+
+      const { data: nearbyShift } = await shiftQuery.single();
 
       // Create work session
       const { data: session, error } = await supabase
@@ -95,7 +130,7 @@ export async function POST(request: NextRequest) {
         .insert({
           worker_id: user.id,
           place_id,
-          skill_id,
+          skill_id: skill_id || null,
           shift_id: nearbyShift?.id || null,
           start_time: now.toISOString(),
           is_scheduled: !!nearbyShift,
@@ -172,7 +207,7 @@ export async function POST(request: NextRequest) {
 }
 
 async function sendHandoffNotifications(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: ReturnType<typeof getServiceSupabase>,
   placeId: string,
   skillId: string,
   note: string,

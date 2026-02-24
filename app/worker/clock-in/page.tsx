@@ -9,7 +9,6 @@ import {
   Square,
   Clock,
   MapPin,
-  CheckSquare,
   MessageSquare,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -25,11 +24,6 @@ interface ActiveSession {
 }
 
 interface Place {
-  id: string;
-  name: string;
-}
-
-interface Skill {
   id: string;
   name: string;
 }
@@ -50,15 +44,13 @@ function formatElapsed(ms: number): string {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export default function WorkerTimeTrackingPage() {
+export default function WorkerClockInPage() {
   const router = useRouter();
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(
     null,
   );
   const [places, setPlaces] = useState<Place[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedPlace, setSelectedPlace] = useState("");
-  const [selectedSkill, setSelectedSkill] = useState("");
   const [sessionDuration, setSessionDuration] = useState(0);
   const [handoffNote, setHandoffNote] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -93,19 +85,11 @@ export default function WorkerTimeTrackingPage() {
         return;
       }
 
-      // Fetch active session, places, skills, and recent sessions in parallel
-      const [activeRes, placesRes, skillsRes, recentRes] = await Promise.all([
+      // Fetch active session + places, and recent sessions in parallel
+      const [activeRes, recentRes] = await Promise.all([
         fetch("/api/time-tracking", {
           headers: { Authorization: `Bearer ${session.access_token}` },
         }),
-        fetch("/api/worker/positions", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }),
-        // Fetch worker's places
-        fetch("/api/worker/timesheets", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }),
-        // Fetch recent completed sessions via profile API
         fetch("/api/profile/work-sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -118,29 +102,9 @@ export default function WorkerTimeTrackingPage() {
         if (data.active_session) {
           setActiveSession(data.active_session);
         }
-      }
-
-      if (skillsRes.ok) {
-        const data = await skillsRes.json();
-        setSkills(
-          (data.positions || []).map((p: any) => ({ id: p.id, name: p.name })),
-        );
-      }
-
-      // Get worker's places from the worker_places relationship
-      const { data: workerPlaces } = await supabase
-        .from("worker_places")
-        .select("place_id, places:place_id (id, name)")
-        .eq("worker_id", session.user.id)
-        .eq("is_active", true);
-
-      if (workerPlaces) {
-        setPlaces(
-          workerPlaces.map((wp: any) => ({
-            id: wp.places?.id || wp.place_id,
-            name: wp.places?.name || "Unknown",
-          })),
-        );
+        if (data.places) {
+          setPlaces(data.places);
+        }
       }
 
       if (recentRes.ok) {
@@ -155,8 +119,8 @@ export default function WorkerTimeTrackingPage() {
   };
 
   const handleClockIn = async () => {
-    if (!selectedPlace || !selectedSkill) {
-      alert("Please select a place and position");
+    if (!selectedPlace) {
+      alert("Please select a place");
       return;
     }
 
@@ -168,16 +132,12 @@ export default function WorkerTimeTrackingPage() {
         body: JSON.stringify({
           action: "start",
           place_id: selectedPlace,
-          skill_id: selectedSkill,
         }),
       });
 
       if (response.ok) {
-        const data = await response.json();
-        // Re-fetch to get full session with place/skill names
         await fetchInitialData();
         setSelectedPlace("");
-        setSelectedSkill("");
       } else {
         const error = await response.json();
         alert(error.error || "Failed to clock in");
@@ -244,8 +204,7 @@ export default function WorkerTimeTrackingPage() {
               Currently Working
             </h1>
             <p className="text-foreground-muted">
-              {activeSession.places?.name || "Unknown Place"} •{" "}
-              {activeSession.skills?.name || "Unknown Position"}
+              {activeSession.places?.name || "Unknown Place"}
             </p>
           </div>
 
@@ -298,9 +257,9 @@ export default function WorkerTimeTrackingPage() {
     <PageContainer>
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Time Tracking</h1>
+          <h1 className="text-2xl font-bold text-foreground">Clock In</h1>
           <p className="text-foreground-muted">
-            Start a work session to track your hours
+            Select your work location and start your shift
           </p>
         </div>
 
@@ -331,29 +290,10 @@ export default function WorkerTimeTrackingPage() {
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  <Clock className="w-4 h-4 inline mr-1" />
-                  Position
-                </label>
-                <select
-                  value={selectedSkill}
-                  onChange={(e) => setSelectedSkill(e.target.value)}
-                  className="w-full p-2 border border-border rounded-lg bg-background text-foreground"
-                >
-                  <option value="">Select a position</option>
-                  {skills.map((skill) => (
-                    <option key={skill.id} value={skill.id}>
-                      {skill.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <Button
                 onClick={handleClockIn}
                 isLoading={isClocking}
-                disabled={!selectedPlace || !selectedSkill}
+                disabled={!selectedPlace}
                 className="w-full"
               >
                 <Play className="w-4 h-4 mr-2" />

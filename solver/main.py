@@ -35,7 +35,7 @@ class Worker(BaseModel):
     skill_ids: list[str]
     place_ids: list[str]
     skill_ratings: dict[str, int] = {}
-    worker_rating: int = 3  # overall rating 1-5 set by manager
+    worker_rating: int = 5  # overall rating 1-10 set by manager
     start_date: Optional[str] = None
 
 

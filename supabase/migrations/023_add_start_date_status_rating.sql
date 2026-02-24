@@ -29,15 +29,15 @@ BEGIN
   END IF;
 END $$;
 
--- 4. Add worker_rating column (overall rating set by manager, 1-5)
+-- 4. Add worker_rating column (overall rating set by manager, 1-10)
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'users' AND column_name = 'worker_rating'
   ) THEN
-    ALTER TABLE users ADD COLUMN worker_rating INTEGER DEFAULT 3;
-    ALTER TABLE users ADD CONSTRAINT users_worker_rating_check CHECK (worker_rating >= 1 AND worker_rating <= 5);
+    ALTER TABLE users ADD COLUMN worker_rating INTEGER DEFAULT 5;
+    ALTER TABLE users ADD CONSTRAINT users_worker_rating_check CHECK (worker_rating >= 1 AND worker_rating <= 10);
   END IF;
 END $$;
 

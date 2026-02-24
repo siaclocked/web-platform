@@ -19,7 +19,7 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 const workerNavItems = [
   { href: '/worker', icon: Home, label: 'Home' },
   { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
-  { href: '/worker/time-tracking', icon: Clock, label: 'Clock In' },
+  { href: '/worker/clock-in', icon: Clock, label: 'Clock In' },
   { href: '/worker/profile', icon: User, label: 'Profile' },
 ];
 

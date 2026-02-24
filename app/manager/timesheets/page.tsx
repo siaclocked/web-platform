@@ -740,9 +740,17 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'published': return 'success';
+      case 'schedule_published': return 'success';
       case 'closed': return 'danger';
       case 'draft': return 'warning';
       default: return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'schedule_published': return 'Published';
+      default: return status;
     }
   };
 
@@ -1448,7 +1456,7 @@ const generateShiftTemplatesFromRange = (startDate: Date, endDate: Date) => {
                       {/* deadline hidden — workers set availability independently */}
                     </div>
                     <Badge variant={getStatusColor(timesheet.status)}>
-                      {timesheet.status}
+                      {getStatusLabel(timesheet.status)}
                     </Badge>
                   </div>
 
