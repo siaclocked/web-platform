@@ -72,7 +72,7 @@ export default function LoginPage() {
                   Manager
                 </h3>
                 <p className="text-sm text-foreground-muted">
-                  Sign in with email OTP code
+                  Sign in with email and password
                 </p>
               </div>
               <Button className="w-full" variant="outline">

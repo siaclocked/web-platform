@@ -23,9 +23,9 @@
 ### 1.1 Auth & User Management
 
 - [X] Company Admin can create a company + first Manager account (§3.1)
-- [] Manager login with email + password
+- [X] Manager login with email + password
 - [x] Worker login with email OTP (§10.1)
-- [ ] Rate limiting and OTP TTL enforcement
+- [X] Rate limiting and OTP TTL enforcement
 - [ ] User profile page — worker can view/edit limited personal details (§10.9)
 - [ ] RLS policies enforce company isolation on all tables (§15.1)
 

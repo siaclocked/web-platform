@@ -1,0 +1,18 @@
+-- ============================================
+-- Migration 026: OTP TTL Enforcement
+-- 
+-- Supabase OTP TTL is configured via the Supabase Dashboard:
+--   Authentication > Settings > Email OTP Expiration
+--   Recommended: 600 seconds (10 minutes)
+--
+-- This migration cannot change the OTP TTL directly (it's a Supabase Auth config),
+-- but documents the recommended setting and adds any supporting DB changes.
+--
+-- IMPORTANT: Go to your Supabase Dashboard and set:
+--   1. Auth > Settings > "OTP Expiration" = 600 (10 minutes)
+--   2. Auth > Rate Limits > "Rate limit for sending emails" = 4 per hour
+--   3. Auth > Rate Limits > "Rate limit for token verification" = 10 per hour
+-- ============================================
+
+-- No SQL changes needed — OTP TTL is a Supabase Auth config setting.
+-- This file serves as documentation for the required configuration.

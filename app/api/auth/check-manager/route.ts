@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
@@ -9,6 +10,21 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      );
+    }
+
+    // Rate limit: 5 attempts per email per 15 minutes
+    const rateCheck = checkRateLimit({
+      prefix: 'check-manager',
+      key: email,
+      maxAttempts: 5,
+      windowSeconds: 15 * 60,
+    });
+
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: `Too many attempts. Please try again in ${rateCheck.retryAfterSeconds} seconds.` },
+        { status: 429 }
       );
     }
 
@@ -32,6 +48,7 @@ export async function POST(request: Request) {
         first_name,
         last_name,
         company_id,
+        has_password,
         companies!inner(name)
       `)
       .eq('email', email.trim().toLowerCase())
@@ -48,8 +65,29 @@ export async function POST(request: Request) {
       );
     }
 
+    // Check has_password from DB; also check Supabase auth app_metadata as fallback
+    let hasPassword = managerData.has_password || false;
+
+    if (!hasPassword) {
+      // Fallback: check app_metadata in Supabase auth (set atomically with password)
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(managerData.id);
+        if (authUser?.user?.app_metadata?.has_password) {
+          hasPassword = true;
+          // Sync the DB flag if it's out of date
+          await supabase
+            .from('users')
+            .update({ has_password: true })
+            .eq('id', managerData.id);
+          console.log('Synced has_password from app_metadata for manager:', managerData.id);
+        }
+      } catch (metaErr) {
+        console.error('Error checking auth metadata:', metaErr);
+      }
+    }
+
     return NextResponse.json({ 
-      managerData,
+      managerData: { ...managerData, has_password: hasPassword },
       error: null 
     });
   } catch (err) {

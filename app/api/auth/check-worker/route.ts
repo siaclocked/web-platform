@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
@@ -9,6 +10,21 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
+      );
+    }
+
+    // Rate limit: 5 attempts per email per 15 minutes
+    const rateCheck = checkRateLimit({
+      prefix: 'check-worker',
+      key: email,
+      maxAttempts: 5,
+      windowSeconds: 15 * 60,
+    });
+
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: `Too many attempts. Please try again in ${rateCheck.retryAfterSeconds} seconds.` },
+        { status: 429 }
       );
     }
 

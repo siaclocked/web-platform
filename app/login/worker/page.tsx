@@ -1,7 +1,6 @@
 "use client";
 
-import React from "react";
-import { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Input, Card, CardContent, BackButton } from "@/components/ui";
@@ -32,6 +31,22 @@ export default function WorkerLoginPage() {
   const [workerInfo, setWorkerInfo] = useState<WorkerInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const cooldownRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startCooldown = useCallback(() => {
+    setCooldown(60);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          if (cooldownRef.current) clearInterval(cooldownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,6 +94,7 @@ export default function WorkerLoginPage() {
 
       if (otpError) throw otpError;
 
+      startCooldown();
       setStep("otp");
     } catch (err) {
       console.error("Worker login error:", err);
@@ -252,11 +268,11 @@ export default function WorkerLoginPage() {
                   <div className="flex flex-col gap-2">
                     <button
                       type="button"
-                      onClick={handleSendOTP}
-                      disabled={isLoading}
+                      onClick={() => { handleSendOTP({ preventDefault: () => {} } as React.FormEvent); }}
+                      disabled={isLoading || cooldown > 0}
                       className="w-full text-sm text-primary hover:text-primary-hover transition-colors disabled:opacity-50"
                     >
-                      Resend code
+                      {cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}
                     </button>
                     <button
                       type="button"
