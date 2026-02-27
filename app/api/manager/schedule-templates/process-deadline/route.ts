@@ -17,6 +17,13 @@ interface SolverRequest {
     skill_ids: string[];
     place_ids: string[];
     skill_ratings: Record<string, number>;
+    can_open: boolean;
+    can_close: boolean;
+  }>;
+  skill_constraints: Array<{
+    skill_id: string;
+    enforce_min_team_rating: boolean;
+    min_avg_rating: number | null;
   }>;
   coverage_windows: Array<{
     id: string;
@@ -130,7 +137,9 @@ export async function POST(request: Request) {
           first_name,
           last_name,
           start_date,
-          worker_rating
+          worker_rating,
+          can_open,
+          can_close
         )
       `)
       .eq('place_id', template.place_id)
@@ -170,7 +179,13 @@ export async function POST(request: Request) {
 
     // Build worker availability lookup: worker_id -> date -> entry
     const workerAvailMap: Record<string, Record<string, { type: string; start_time?: string; end_time?: string }>> = {};
-    (availEntries || []).forEach((entry: any) => {
+    (availEntries || []).forEach((entry: {
+      worker_id: string;
+      date: string;
+      availability_type: string;
+      start_time?: string;
+      end_time?: string;
+    }) => {
       if (!workerAvailMap[entry.worker_id]) {
         workerAvailMap[entry.worker_id] = {};
       }
@@ -182,9 +197,17 @@ export async function POST(request: Request) {
     });
 
     // Build workers array for solver
-    const workersMap: Record<string, any> = {};
+    type SolverWorker = SolverRequest['workers'][number];
+    const workersMap: Record<string, SolverWorker> = {};
     workerPlaces?.forEach(wp => {
-      const userData = wp.users as any;
+      const userData = wp.users as {
+        first_name?: string;
+        last_name?: string;
+        worker_rating?: number;
+        start_date?: string;
+        can_open?: boolean;
+        can_close?: boolean;
+      } | null;
       workersMap[wp.worker_id] = {
         id: wp.worker_id,
         name: `${userData?.first_name || ''} ${userData?.last_name || ''}`.trim() || 'Unknown',
@@ -193,6 +216,8 @@ export async function POST(request: Request) {
         skill_ratings: {},
         worker_rating: userData?.worker_rating || 3,
         start_date: userData?.start_date || null,
+        can_open: userData?.can_open ?? true,
+        can_close: userData?.can_close ?? true,
       };
     });
 
@@ -209,12 +234,13 @@ export async function POST(request: Request) {
     const coverageWindows: SolverRequest['coverage_windows'] = [];
     const startDateObj = new Date(template.start_date + 'T00:00:00');
 
-    (shiftTemplates || []).forEach((st, dayIndex) => {
+    (shiftTemplates || []).forEach((st) => {
       if (st.day_type === 'work' && st.shifts) {
         const shiftDate = new Date(st.date + 'T00:00:00');
         const dayOffset = Math.round((shiftDate.getTime() - startDateObj.getTime()) / (24 * 60 * 60 * 1000));
 
-        st.shifts.forEach((shift: any, shiftIndex: number) => {
+        const shifts = st.shifts as Array<{ startTime: string; endTime: string; position: string; workers?: number }>;
+        shifts.forEach((shift, shiftIndex: number) => {
           const [startH, startM] = shift.startTime.split(':').map(Number);
           const [endH, endM] = shift.endTime.split(':').map(Number);
 
@@ -229,6 +255,33 @@ export async function POST(request: Request) {
         });
       }
     });
+
+    const skillIdsInCoverage = [...new Set(coverageWindows.map((w) => w.skill_id))];
+    let skillConstraints: SolverRequest['skill_constraints'] = [];
+    if (skillIdsInCoverage.length > 0) {
+      const { data: placeSkillConfigs, error: placeSkillError } = await supabase
+        .from('place_skill_configs')
+        .select('skill_id, enforce_min_team_rating, min_avg_rating')
+        .eq('place_id', template.place_id)
+        .in('skill_id', skillIdsInCoverage);
+
+      if (placeSkillError) {
+        // Keep backward compatibility for environments without the new table yet.
+        if (!placeSkillError.message?.includes('does not exist') && placeSkillError.code !== '42P01') {
+          console.error('Error fetching place skill configs:', placeSkillError);
+        }
+      } else {
+        skillConstraints = (placeSkillConfigs || []).map((c: {
+          skill_id: string;
+          enforce_min_team_rating: boolean | null;
+          min_avg_rating: number | null;
+        }) => ({
+          skill_id: c.skill_id,
+          enforce_min_team_rating: c.enforce_min_team_rating ?? false,
+          min_avg_rating: c.min_avg_rating ?? null,
+        }));
+      }
+    }
 
     // Build unavailability from worker_availability calendar entries
     // Workers who have NO entry for a date are treated as unavailable (conservative).
@@ -294,6 +347,7 @@ export async function POST(request: Request) {
       start_date: template.start_date,
       end_date: template.end_date,
       workers: Object.values(workersMap),
+      skill_constraints: skillConstraints,
       coverage_windows: coverageWindows,
       unavailability,
       settings: {
@@ -426,7 +480,7 @@ export async function POST(request: Request) {
 }
 
 // GET endpoint to check for timesheets past deadline that need processing
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

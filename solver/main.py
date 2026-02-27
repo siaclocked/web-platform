@@ -37,6 +37,8 @@ class Worker(BaseModel):
     skill_ratings: dict[str, int] = {}
     worker_rating: int = 5  # overall rating 1-10 set by manager
     start_date: Optional[str] = None
+    can_open: bool = True
+    can_close: bool = True
 
 
 class CoverageWindow(BaseModel):
@@ -75,6 +77,12 @@ class PlaceSettings(BaseModel):
     granularity_minutes: int = 15
 
 
+class SkillConstraint(BaseModel):
+    skill_id: str
+    enforce_min_team_rating: bool = False
+    min_avg_rating: float | None = None
+
+
 class SolveRequest(BaseModel):
     place_id: str
     start_date: str
@@ -83,6 +91,7 @@ class SolveRequest(BaseModel):
     coverage_windows: list[CoverageWindow]
     existing_assignments: list[ExistingAssignment] = []
     unavailability: list[Unavailability] = []
+    skill_constraints: list[SkillConstraint] = []
     settings: PlaceSettings = PlaceSettings()
     minimize_changes: bool = True
     balance_hours: bool = True
@@ -176,6 +185,69 @@ def _coverage_gaps(coverage_windows: list, assignments: list,
     return gaps
 
 
+def _build_skill_thresholds(skill_constraints: list[SkillConstraint]) -> dict[str, int]:
+    """Returns {skill_id: min_avg_rating_scaled_by_100} for enabled constraints."""
+    thresholds: dict[str, int] = {}
+    for c in skill_constraints:
+        if c.enforce_min_team_rating and c.min_avg_rating is not None:
+            thresholds[c.skill_id] = int(round(float(c.min_avg_rating) * 100))
+    return thresholds
+
+
+def _recompute_remaining_demand(demand: dict, assignments: list[Assignment], granularity: int) -> dict:
+    remaining = dict(demand)
+    for a in assignments:
+        s = a.start_minutes // granularity
+        e = a.end_minutes // granularity
+        for t in range(s, e):
+            key = (a.day, a.skill_id, t)
+            if key in remaining:
+                remaining[key] = max(0, remaining[key] - 1)
+    return remaining
+
+
+def _enforce_open_close_greedy(assignments: list[Assignment], workers_by_id: dict[str, Worker]) -> tuple[list[Assignment], int]:
+    """
+    Enforces strict open/close eligibility in greedy fallback by pruning
+    assignments from violating day edges.
+    """
+    by_day: dict[int, list[Assignment]] = {}
+    for a in assignments:
+        by_day.setdefault(a.day, []).append(a)
+
+    kept: list[Assignment] = []
+    removed = 0
+
+    for day in sorted(by_day):
+        day_assignments = list(by_day[day])
+
+        # Earliest starter side must include at least one can_open worker.
+        while day_assignments:
+            earliest = min(a.start_minutes for a in day_assignments)
+            earliest_group = [a for a in day_assignments if a.start_minutes == earliest]
+            if any((workers_by_id.get(a.worker_id).can_open if workers_by_id.get(a.worker_id) else False)
+                   for a in earliest_group):
+                break
+            drop = sorted(earliest_group, key=lambda x: (x.worker_id, x.skill_id, x.end_minutes))[0]
+            day_assignments.remove(drop)
+            removed += 1
+
+        # Latest finisher side must include at least one can_close worker.
+        while day_assignments:
+            latest = max(a.end_minutes for a in day_assignments)
+            latest_group = [a for a in day_assignments if a.end_minutes == latest]
+            if any((workers_by_id.get(a.worker_id).can_close if workers_by_id.get(a.worker_id) else False)
+                   for a in latest_group):
+                break
+            drop = sorted(latest_group, key=lambda x: (x.worker_id, x.skill_id, x.start_minutes))[0]
+            day_assignments.remove(drop)
+            removed += 1
+
+        kept.extend(day_assignments)
+
+    return kept, removed
+
+
 # ── Greedy solver ──────────────────────────────────────────────────────────────
 
 def _solve_greedy(request: SolveRequest) -> SolveResponse:
@@ -192,18 +264,26 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
         raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
 
     g         = request.settings.granularity_minutes
-    min_slots = max(1, (request.settings.min_hours_per_block * 60) // g)
-    max_slots = max(min_slots, (request.settings.max_hours_per_block * 60) // g)
+    min_slots = int(max(1, (request.settings.min_hours_per_block * 60) // g))
+    max_slots = int(max(min_slots, (request.settings.max_hours_per_block * 60) // g))
+    soft_min  = request.settings.soft_min_hours_per_block
+    soft_max  = request.settings.soft_max_hours_per_block
+    soft_min_slots = int(max(min_slots, (soft_min * 60) // g)) if soft_min else int(min_slots)
+    soft_max_slots = int(max(min_slots, (soft_max * 60) // g)) if soft_max else int(max_slots)
     spd       = 24 * 60 // g  # slots per day
 
     unavail: dict = {}
     for ua in request.unavailability:
         unavail.setdefault((ua.worker_id, ua.day), []).append(ua)
 
+    skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     demand, extent = _build_demand(request.coverage_windows, g)
     remaining       = dict(demand)
     assigned_days: dict = {w.id: set() for w in request.workers}
     total_hours:   dict = {w.id: 0.0   for w in request.workers}
+    workers_by_id: dict = {w.id: w for w in request.workers}
+    slot_assigned_count: dict = {}
+    slot_rating_sum_scaled: dict = {}
     assignments:   list = []
     max_total = request.settings.max_hours_per_day * num_days
 
@@ -248,6 +328,19 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
                         continue
                     if not _is_shift_available(worker.id, day, s * g, e * g, unavail):
                         continue
+                    min_scaled = skill_thresholds.get(skill_id)
+                    if min_scaled is not None:
+                        rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
+                        violates_rating = False
+                        for t in range(s, e):
+                            key = (day, skill_id, t)
+                            new_count = slot_assigned_count.get(key, 0) + 1
+                            new_sum = slot_rating_sum_scaled.get(key, 0) + rating_scaled
+                            if new_sum < min_scaled * new_count:
+                                violates_rating = True
+                                break
+                        if violates_rating:
+                            continue
                     cov_score = sum(min(remaining.get((day, skill_id, t), 0), 1) for t in range(s, e)) * 100000
                     overtime = max(0, length - soft_max_slots)
                     undertime = max(0, soft_min_slots - length)
@@ -259,10 +352,13 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
                 continue
 
             s, e = best
+            rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
             for t in range(s, e):
                 k = (day, skill_id, t)
                 if k in remaining:
                     remaining[k] = max(0, remaining[k] - 1)
+                slot_assigned_count[k] = slot_assigned_count.get(k, 0) + 1
+                slot_rating_sum_scaled[k] = slot_rating_sum_scaled.get(k, 0) + rating_scaled
             hours = (e - s) * g / 60
             total_hours[worker.id] += hours
             assigned_days[worker.id].add(day)
@@ -272,6 +368,12 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
                 start_minutes=s * g, end_minutes=e * g,
             ))
 
+    assignments, removed_for_open_close = _enforce_open_close_greedy(assignments, workers_by_id)
+    remaining = _recompute_remaining_demand(demand, assignments, g)
+    total_hours = {w.id: 0.0 for w in request.workers}
+    for a in assignments:
+        total_hours[a.worker_id] += (a.end_minutes - a.start_minutes) / 60
+
     gaps      = _coverage_gaps(request.coverage_windows, assignments, remaining, g)
     solve_ms  = int((datetime.now() - t0).total_seconds() * 1000)
     status    = "OPTIMAL" if not gaps else ("FEASIBLE" if assignments else "INFEASIBLE")
@@ -280,6 +382,8 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
         f"Generated {len(assignments)} shifts (greedy)", f"Solve time: {solve_ms}ms",
         "100% coverage achieved" if not gaps else f"{len(gaps)} coverage gaps remaining",
     ]
+    if removed_for_open_close:
+        diag.append(f"Removed {removed_for_open_close} edge shifts to enforce can_open/can_close")
     if h:
         diag.append(f"Hours range: {min(h):.1f}h – {max(h):.1f}h")
     return SolveResponse(status=status, assignments=assignments, coverage_gaps=gaps,
@@ -326,6 +430,7 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
     workers   = request.workers
     model     = cp_model.CpModel()
 
+    skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     demand, extent = _build_demand(request.coverage_windows, g)
 
     unavail: dict = {}
@@ -362,14 +467,32 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
                         )
 
     # Build lookup indices for fast constraint building
-    # slot -> covering vars
+    # (day, skill, slot) -> covering vars
     slot_vars: dict = {}
+    # (day, skill, slot) -> [(var, rating_scaled)]
+    slot_rating_terms: dict = {}
+    # (day, slot) -> covering vars (across all skills)
+    day_slot_vars: dict = {}
+    # (day, slot) -> covering vars with can_open/can_close workers
+    day_open_slot_vars: dict = {}
+    day_close_slot_vars: dict = {}
     # (w_idx, day) -> all vars for that worker-day
     wd_vars: dict = {}
+    # day -> all vars in that day
+    day_vars: dict = {}
     for (w_idx, day, skill_id, s, e), var in shift_vars.items():
+        worker = workers[w_idx]
+        rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
         wd_vars.setdefault((w_idx, day), []).append(var)
+        day_vars.setdefault(day, []).append(var)
         for t in range(s, e):
             slot_vars.setdefault((day, skill_id, t), []).append(var)
+            slot_rating_terms.setdefault((day, skill_id, t), []).append((var, rating_scaled))
+            day_slot_vars.setdefault((day, t), []).append(var)
+            if worker.can_open:
+                day_open_slot_vars.setdefault((day, t), []).append(var)
+            if worker.can_close:
+                day_close_slot_vars.setdefault((day, t), []).append(var)
 
     # ── Hard: one shift per worker per day ────────────────────────────────────
     for (w_idx, day), dvars in wd_vars.items():
@@ -383,6 +506,76 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
         slack = model.NewIntVar(0, req, f"sl{day}_{t}")
         slack_vars[(day, skill_id, t)] = slack
         model.Add((sum(covering) if covering else 0) + slack >= req)
+
+    # ── Hard: slot-level minimum average rating (applies also to single worker) ──
+    for (day, skill_id, t), covering in slot_vars.items():
+        min_scaled = skill_thresholds.get(skill_id)
+        if min_scaled is None or not covering:
+            continue
+        rating_terms = slot_rating_terms.get((day, skill_id, t), [])
+        if not rating_terms:
+            continue
+        assigned_count = sum(covering)
+        rating_sum = sum(rating * var for var, rating in rating_terms)
+        model.Add(rating_sum >= min_scaled * assigned_count)
+
+    # ── Hard: day edge eligibility (can_open/can_close) ───────────────────────
+    day_to_slots: dict = {}
+    for (day, t) in day_slot_vars.keys():
+        day_to_slots.setdefault(day, []).append(t)
+
+    for day, slots in day_to_slots.items():
+        unique_slots = sorted(set(slots))
+        dvars = day_vars.get(day, [])
+        if not dvars:
+            continue
+
+        day_has_assignments = model.NewBoolVar(f"day_has_{day}")
+        model.Add(sum(dvars) >= 1).OnlyEnforceIf(day_has_assignments)
+        model.Add(sum(dvars) == 0).OnlyEnforceIf(day_has_assignments.Not())
+
+        slot_staffed: dict = {}
+        for t in unique_slots:
+            staffed = model.NewBoolVar(f"staffed_{day}_{t}")
+            slot_staffed[t] = staffed
+            covering = day_slot_vars.get((day, t), [])
+            if covering:
+                model.Add(sum(covering) >= 1).OnlyEnforceIf(staffed)
+                model.Add(sum(covering) == 0).OnlyEnforceIf(staffed.Not())
+            else:
+                model.Add(staffed == 0)
+
+        first_slot_flags: dict = {}
+        for t in unique_slots:
+            first = model.NewBoolVar(f"first_{day}_{t}")
+            first_slot_flags[t] = first
+            model.Add(first <= slot_staffed[t])
+            for u in unique_slots:
+                if u >= t:
+                    break
+                model.Add(first + slot_staffed[u] <= 1)
+            open_covering = day_open_slot_vars.get((day, t), [])
+            if open_covering:
+                model.Add(sum(open_covering) >= 1).OnlyEnforceIf(first)
+            else:
+                model.Add(first == 0)
+        model.Add(sum(first_slot_flags.values()) == day_has_assignments)
+
+        last_slot_flags: dict = {}
+        for t in unique_slots:
+            last = model.NewBoolVar(f"last_{day}_{t}")
+            last_slot_flags[t] = last
+            model.Add(last <= slot_staffed[t])
+            for u in unique_slots:
+                if u <= t:
+                    continue
+                model.Add(last + slot_staffed[u] <= 1)
+            close_covering = day_close_slot_vars.get((day, t), [])
+            if close_covering:
+                model.Add(sum(close_covering) >= 1).OnlyEnforceIf(last)
+            else:
+                model.Add(last == 0)
+        model.Add(sum(last_slot_flags.values()) == day_has_assignments)
 
     # ── Locked existing assignments ───────────────────────────────────────────
     w_id_to_idx = {w.id: i for i, w in enumerate(workers)}

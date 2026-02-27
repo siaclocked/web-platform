@@ -141,7 +141,7 @@ A staffing location (e.g., restaurant). A worker is eligible for a place if assi
 A time interval at a place for a specific skill with required headcount:
 
 - minCount ≤ assignedCount ≤ maxCount
-- optional minAvgRating threshold (per place+skill)
+- optional minAvgRating threshold (per place+skill, enforced per staffed slot when enabled)
 
 ### 4.4 Block (Bloks)
 
@@ -198,9 +198,11 @@ Inputs:
 - place, interval
 - coverage windows — each defines **required headcount during a time interval** (staffing demand); they are **not** boundaries constraining individual shift start/end times
 - workers (eligibility, start date, skill ratings, total available minutes in horizon)
+- workers (`canOpen`, `canClose` flags per worker)
 - unavailability (per-day or time-ranged)
 - existing assignments (previous schedule for minimal change)
 - locked assignments (manual overrides)
+- place+skill constraints (`enforceMinTeamRating`, `minAvgRating`)
 - place settings: `minShiftMinutes`, `maxShiftMinutes`, max hours/day, min rest between shifts, granularity
 
 Outputs:
@@ -258,7 +260,8 @@ Manager can create/edit skills (names).
 
 Manager selects enabled skills for the place and configures per-skill thresholds:
 
-- `minAvgRating` (nullable)
+- `enforceMinTeamRating` (boolean, default false)
+- `minAvgRating` (nullable, required when enforcement is enabled)
 
 ### 7.4 Weekly Coverage Template (per Place + Skill)
 
@@ -290,6 +293,8 @@ Create/edit:
 - place scope: ALL or selected places
 - start date (solver eligibility begins on/after this date)
 - skills + rating per skill (scale defined by company; e.g., 1–10)
+- `canOpen` (boolean): eligible to be among earliest starters on a day
+- `canClose` (boolean): eligible to be among latest finishers on a day
 - hourly rate (for pay estimate)
 
 ---
@@ -332,7 +337,7 @@ After any override, draft must be revalidated.
 ### 8.5 Revalidation Rules (Hard)
 
 - Coverage min/max per window+skill
-- Avg rating threshold per place+skill per window (if set)
+- Avg rating threshold per place+skill per staffed slot (if enabled)
 - Worker availability
 - No overlap
 - One place per day per worker
@@ -376,6 +381,8 @@ If solver returns INFEASIBLE:
 - Shift duration: each shift must be ≥ `minShiftMinutes` and ≤ `maxShiftMinutes`
 - Hours: total assigned hours within configured max per day
 - Rest: min rest between a worker's shifts on consecutive days (`minRestMinutesBetweenShifts`)
+- Opening eligibility: if a day has assignments, earliest starter group must include at least one worker with `canOpen=true`
+- Closing eligibility: if a day has assignments, latest finisher group must include at least one worker with `canClose=true`
 
 ### 9.2 Soft Objectives (optimize)
 
@@ -399,11 +406,19 @@ The solver internally uses a **slot-demand model**:
 
 This allows the solver to assign a worker `10:00–18:00` that covers part of an `08:00–13:00` window and all of a `13:00–18:00` window — without requiring separate variables per coverage block.
 
-### 9.4 Rating Constraint (per skill, per window)
+### 9.4 Rating Constraint (per skill, per staffed slot)
 
-For each coverage window + skill:
+If `enforceMinTeamRating=true` for a place+skill, then for each staffed slot `(day, skill, slot)`:
 
-- average(skillRating) among assigned workers must be ≥ minAvgRating (if configured for the place+skill)
+- `assignedCount(slot) > 0` implies `avg(skillRating of assigned workers at slot) ≥ minAvgRating`
+- Equivalent linear form in solver: `ratingSumScaled(slot) ≥ minAvgRatingScaled * assignedCount(slot)`
+
+This applies to:
+
+- single-worker slots (the worker's rating must be ≥ threshold)
+- multi-worker slots (group average must be ≥ threshold)
+
+If `enforceMinTeamRating=false`, no minimum average rating rule is applied for that skill.
 
 ---
 

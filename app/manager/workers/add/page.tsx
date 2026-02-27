@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input, Select } from '@/components/ui';
-import { Mail, User, Phone, Building2, Briefcase, DollarSign, MapPin, X, Plus, Star, Calendar } from 'lucide-react';
+import { Card, CardContent, Button, Input, Toggle } from '@/components/ui';
+import { Briefcase, MapPin, Star, Calendar } from 'lucide-react';
 
 interface Position {
   id: string;
@@ -27,6 +27,8 @@ export default function AddWorkerPage() {
     hourlyRate: '',
     startDate: '',
     workerRating: '5',
+    canOpen: true,
+    canClose: true,
   });
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
@@ -133,6 +135,8 @@ export default function AddWorkerPage() {
           hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
           start_date: formData.startDate || null,
           worker_rating: formData.workerRating ? parseInt(formData.workerRating) : 5,
+          can_open: formData.canOpen,
+          can_close: formData.canClose,
         }),
       });
 
@@ -197,6 +201,8 @@ export default function AddWorkerPage() {
                   hourlyRate: '',
                   startDate: '',
                   workerRating: '3',
+                  canOpen: true,
+                  canClose: true,
                 });
                 setSelectedPositions([]);
                 setSelectedPlaces([]);
@@ -364,6 +370,25 @@ export default function AddWorkerPage() {
                 <span className="text-sm font-medium text-foreground w-10 text-center">{formData.workerRating}/10</span>
               </div>
               <p className="text-xs text-foreground-muted mt-1">Higher rated workers are preferred by the solver for balanced shifts.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-sm font-medium mb-2">Opening</p>
+                <Toggle
+                  checked={formData.canOpen}
+                  onChange={(checked) => setFormData({ ...formData, canOpen: checked })}
+                  label="Can open"
+                />
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-sm font-medium mb-2">Closing</p>
+                <Toggle
+                  checked={formData.canClose}
+                  onChange={(checked) => setFormData({ ...formData, canClose: checked })}
+                  label="Can close"
+                />
+              </div>
             </div>
 
             {error && (
