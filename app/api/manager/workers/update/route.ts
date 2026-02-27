@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function PUT(request: Request) {
   try {
-    const { workerId, positionIds, placeIds, hourly_rate, positionRatings, status, start_date } =
+    const { workerId, positionIds, placeIds, hourly_rate, positionRatings, status, start_date, can_open, can_close } =
       await request.json();
 
     if (!workerId) {
@@ -71,7 +71,7 @@ export async function PUT(request: Request) {
     }
 
     // Update worker fields
-    const updateFields: Record<string, any> = {
+    const updateFields: Record<string, unknown> = {
       hourly_rate: hourly_rate || null,
       updated_at: new Date().toISOString(),
     };
@@ -83,6 +83,14 @@ export async function PUT(request: Request) {
 
     if (start_date !== undefined) {
       updateFields.start_date = start_date || null;
+    }
+
+    if (can_open !== undefined) {
+      updateFields.can_open = can_open;
+    }
+
+    if (can_close !== undefined) {
+      updateFields.can_close = can_close;
     }
 
     const { error: updateError } = await supabase

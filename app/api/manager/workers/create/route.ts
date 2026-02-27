@@ -13,6 +13,8 @@ export async function POST(request: Request) {
       hourlyRate,
       positionRatings,
       start_date,
+      can_open,
+      can_close,
     } = await request.json();
 
     if (!email || !firstName || !lastName) {
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
     if (!authData.user) throw new Error("Failed to create worker account");
 
     // Create user profile (without position_id since we use worker_skills)
-    const profileData: Record<string, any> = {
+    const profileData: Record<string, unknown> = {
       id: authData.user.id,
       company_id: manager.company_id,
       email: email.trim().toLowerCase(),
@@ -99,6 +101,8 @@ export async function POST(request: Request) {
       status: "ACTIVE",
       manager_id: user.id,
       hourly_rate: hourlyRate || null,
+      can_open: can_open ?? true,
+      can_close: can_close ?? true,
     };
 
     if (start_date) profileData.start_date = start_date;
@@ -157,14 +161,15 @@ export async function POST(request: Request) {
       success: true,
       userId: authData.user.id,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Error creating worker:", err);
 
     // Provide user-friendly error messages for common issues
     let message = "Failed to create worker account";
     let status = 500;
 
-    const errMsg = err?.message || err?.code || "";
+    const errObj = err as { message?: string; code?: string };
+    const errMsg = errObj?.message || errObj?.code || "";
     if (errMsg.includes("duplicate") && errMsg.includes("phone")) {
       message = "A user with this phone number already exists.";
       status = 409;

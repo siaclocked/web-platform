@@ -52,8 +52,22 @@ export async function GET(request: Request) {
 
     // Get workers for this manager's company
     // Try with status/start_date first, fall back to basic columns if those don't exist
-    let workers: any[] | null = null;
-    let error: any = null;
+    type WorkerRow = {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone?: string | null;
+      is_active: boolean;
+      hourly_rate?: number | null;
+      status?: string;
+      start_date?: string | null;
+      can_open?: boolean;
+      can_close?: boolean;
+    };
+
+    let workers: WorkerRow[] | null = null;
+    let error: { message?: string } | null = null;
 
     const result = await supabase
       .from('users')
@@ -66,13 +80,23 @@ export async function GET(request: Request) {
         is_active,
         hourly_rate,
         status,
-        start_date
+        start_date,
+        can_open,
+        can_close
       `)
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)
       .order('created_at', { ascending: false });
 
-    if (result.error && (result.error.message?.includes('status') || result.error.message?.includes('start_date'))) {
+    if (
+      result.error &&
+      (
+        result.error.message?.includes('status') ||
+        result.error.message?.includes('start_date') ||
+        result.error.message?.includes('can_open') ||
+        result.error.message?.includes('can_close')
+      )
+    ) {
       // Fallback: new columns may not exist yet — query without them
       const fallback = await supabase
         .from('users')
@@ -89,10 +113,10 @@ export async function GET(request: Request) {
         .eq('company_id', userData.company_id)
         .order('created_at', { ascending: false });
 
-      workers = fallback.data;
+      workers = fallback.data as WorkerRow[] | null;
       error = fallback.error;
     } else {
-      workers = result.data;
+      workers = result.data as WorkerRow[] | null;
       error = result.error;
     }
 
@@ -129,8 +153,8 @@ export async function GET(request: Request) {
     // Get worker skills (positions) and places for all workers
     const workerIds = (workers || []).map(w => w.id);
     
-    let workerSkillsMap: { [key: string]: Array<{ id: string; name: string; rating: number }> } = {};
-    let workerPlacesMap: { [key: string]: Array<{ id: string; name: string }> } = {};
+    const workerSkillsMap: { [key: string]: Array<{ id: string; name: string; rating: number }> } = {};
+    const workerPlacesMap: { [key: string]: Array<{ id: string; name: string }> } = {};
 
     if (workerIds.length > 0) {
       // Get worker skills

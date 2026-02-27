@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Input, Badge } from '@/components/ui';
+import { Card, CardContent, Button, Input, Toggle } from '@/components/ui';
 
 import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -43,6 +43,13 @@ interface Place {
   workers?: Worker[];
 }
 
+interface PlaceSkillRule {
+  skill_id: string;
+  skill_name: string;
+  enforce_min_team_rating: boolean;
+  min_avg_rating: number | null;
+}
+
 export default function ManagerPlacesPage() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,8 +64,10 @@ export default function ManagerPlacesPage() {
   const [settingsForm, setSettingsForm] = useState<PlaceSettings>(DEFAULT_SETTINGS);
   const [expandedSettings, setExpandedSettings] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingSkillRules, setSavingSkillRules] = useState(false);
   const [expandedWorkers, setExpandedWorkers] = useState<string | null>(null);
   const [loadingWorkers, setLoadingWorkers] = useState<string | null>(null);
+  const [skillRules, setSkillRules] = useState<PlaceSkillRule[]>([]);
 
   useEffect(() => {
     fetchPlaces();
@@ -180,18 +189,43 @@ export default function ManagerPlacesPage() {
     setIsAddingPlace(true);
   };
 
-  const toggleSettings = (placeId: string) => {
+  const fetchSkillRules = async (placeId: string) => {
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/manager/places/${placeId}/skill-configs`, {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSkillRules(data.skill_configs || []);
+      } else {
+        setSkillRules([]);
+      }
+    } catch (err) {
+      console.error('Error loading skill rules:', err);
+      setSkillRules([]);
+    }
+  };
+
+  const toggleSettings = async (placeId: string) => {
     if (expandedSettings === placeId) {
       setExpandedSettings(null);
+      setSkillRules([]);
     } else {
       const place = places.find(p => p.id === placeId);
       setSettingsForm({ ...DEFAULT_SETTINGS, ...(place?.settings || {}) });
       setExpandedSettings(placeId);
+      await fetchSkillRules(placeId);
     }
   };
 
   const saveSettings = async (placeId: string) => {
     setSavingSettings(true);
+    setSavingSkillRules(true);
     setError('');
     try {
       const supabase = createClient();
@@ -213,8 +247,28 @@ export default function ManagerPlacesPage() {
       });
 
       if (response.ok) {
-        setSuccess('Settings saved!');
-        fetchPlaces();
+        const rulesResponse = await fetch(`/api/manager/places/${placeId}/skill-configs`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || ''}`,
+          },
+          body: JSON.stringify({
+            skill_configs: skillRules.map((r) => ({
+              skill_id: r.skill_id,
+              enforce_min_team_rating: r.enforce_min_team_rating,
+              min_avg_rating: r.min_avg_rating,
+            })),
+          }),
+        });
+
+        if (!rulesResponse.ok) {
+          const rulesErrorData = await rulesResponse.json();
+          throw new Error(rulesErrorData.error || 'Failed to save skill rules');
+        }
+
+        setSuccess('Settings and skill rules saved!');
+        await fetchPlaces();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save settings');
@@ -223,7 +277,33 @@ export default function ManagerPlacesPage() {
       setError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
       setSavingSettings(false);
+      setSavingSkillRules(false);
     }
+  };
+
+  const setSkillRuleEnforcement = (skillId: string, enforce: boolean) => {
+    setSkillRules((prev) =>
+      prev.map((rule) =>
+        rule.skill_id === skillId
+          ? {
+              ...rule,
+              enforce_min_team_rating: enforce,
+              min_avg_rating: enforce ? (rule.min_avg_rating ?? 5) : null,
+            }
+          : rule
+      )
+    );
+  };
+
+  const setSkillRuleMinAvg = (skillId: string, value: string) => {
+    const parsed = value === '' ? null : Number(value);
+    setSkillRules((prev) =>
+      prev.map((rule) =>
+        rule.skill_id === skillId
+          ? { ...rule, min_avg_rating: parsed !== null && !Number.isNaN(parsed) ? parsed : null }
+          : rule
+      )
+    );
   };
 
   const handleDelete = async (placeId: string) => {
@@ -549,9 +629,45 @@ export default function ManagerPlacesPage() {
                           />
                         </div>
                       </div>
+                      <div className="mt-5 border-t border-border pt-4">
+                        <h5 className="text-xs font-semibold text-foreground mb-3">Skill Mix Rules</h5>
+                        {skillRules.length === 0 ? (
+                          <p className="text-xs text-foreground-muted">No skills configured yet.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {skillRules.map((rule) => (
+                              <div key={rule.skill_id} className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-lg border border-border p-3">
+                                <div className="text-sm font-medium text-foreground">{rule.skill_name}</div>
+                                <div>
+                                  <Toggle
+                                    checked={rule.enforce_min_team_rating}
+                                    onChange={(checked) => setSkillRuleEnforcement(rule.skill_id, checked)}
+                                    label="Enforce min team rating"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-foreground-muted mb-1">
+                                    Min Average Rating
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0.1"
+                                    max="10"
+                                    step="0.1"
+                                    disabled={!rule.enforce_min_team_rating}
+                                    value={rule.min_avg_rating ?? ''}
+                                    onChange={(e) => setSkillRuleMinAvg(rule.skill_id, e.target.value)}
+                                    className="w-full p-2 border border-border rounded-lg text-sm disabled:opacity-50"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div className="mt-4 flex gap-2">
-                        <Button size="sm" onClick={() => saveSettings(place.id)} isLoading={savingSettings}>
-                          Save Settings
+                        <Button size="sm" onClick={() => saveSettings(place.id)} isLoading={savingSettings || savingSkillRules}>
+                          Save Settings & Rules
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setExpandedSettings(null)}>
                           Cancel

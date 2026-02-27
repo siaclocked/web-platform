@@ -34,13 +34,14 @@
 - [x] CRUD places (name, address) (§7.1)
 - [X] Place scheduling settings: granularity, min/max hours per day, block limits, rest between shifts (§7.5)
 - [x] Global skills catalog — Manager can create/edit skill names (§7.2)
-- [ ] Place skills config — enable skills per place, optional `minAvgRating` threshold (§7.3)
+- [ ] Place skills config — enable skills per place, `enforceMinTeamRating` toggle + optional `minAvgRating` (§7.3)
 
 ### 1.3 Worker Management (Manager)
 
 - [X] CRUD workers: name, email, status (INVITED/ACTIVE/DISABLED) (§7.6)
 - [x] Assign workers to places (place scope: ALL or selected) (§7.6)
 - [X] Assign skills to workers with rating per skill (§7.6)
+- [ ] Set worker `canOpen` and `canClose` flags (§7.6)
 - [x] Set worker hourly rate (§7.6)
 - [X] Set worker start date (solver eligibility) (§7.6)
 
@@ -60,7 +61,7 @@
 ### 1.6 Schedule Generation (Solver Integration)
 
 - [ ] Manager selects date range and triggers "Generate Schedule" (§8.1)
-- [ ] Backend builds solver request from: workers, skills, coverage templates, availability, place settings
+- [ ] Backend builds solver request from: workers (+ `can_open`/`can_close`), skills, coverage templates, availability, place settings, place+skill constraints
 - [ ] Call Python CP-SAT solver service `/solve` endpoint (§5.2)
 - [ ] Receive assignments + diagnostics (coverage gaps, constraint violations)
 - [ ] Store result as DRAFT schedule
@@ -79,6 +80,9 @@
 - [ ] Hard constraint: `sum(x for worker on day across all skills)` ≤ 1 (one shift per day)
 - [ ] Hard constraint: shift must not overlap worker unavailability
 - [ ] Hard constraint: locked existing assignments fixed to their exact `(start, end)`
+- [ ] Hard constraint: slot-level min average rating per place+skill when enabled (`rating_sum_scaled >= min_avg_scaled * assigned_count`) — applies to single-worker and multi-worker slots
+- [ ] Hard constraint: if a day has assignments, earliest starter group must include at least one `can_open=true` worker
+- [ ] Hard constraint: if a day has assignments, latest finisher group must include at least one `can_close=true` worker
 
 **Objective (priority order):**
 
@@ -96,6 +100,7 @@
 - [ ] Rename `min_hours_per_block` → `min_shift_minutes` and `max_hours_per_block` → `max_shift_minutes` in `PlaceSettings` (keep old names as aliases for backwards compat)
 - [ ] `Assignment` response already carries free `start_minutes`/`end_minutes` — no schema change needed
 - [ ] Update `process-deadline/route.ts` to pass `min_shift_minutes` / `max_shift_minutes` from place settings
+- [ ] Update `process-deadline/route.ts` to pass worker `can_open`/`can_close` and `skill_constraints` from `place_skill_configs`
 
 **Regression tests (`solver/test_solver.py` — new tests):**
 
@@ -104,6 +109,12 @@
 - [ ] T-F3: Min-length fallback — 4-worker day with only 2h of demand left; solver assigns a `minShiftMinutes` shift rather than leaving a gap
 - [ ] T-F4: Long-shift preference — when two plans are equally valid, solver prefers the one with longer shifts
 - [ ] T-F5: Max-1-shift-per-day preserved — worker with availability across 3 coverage windows gets exactly 1 shift
+- [ ] T-R1: Rating threshold single-worker slot — worker below threshold is not scheduled when enforcement is enabled
+- [ ] T-R2: Rating threshold multi-worker average — group assignment allowed when average meets threshold
+- [ ] T-R3: Rating enforcement disabled — low-rated worker can be scheduled
+- [ ] T-R4: Locked low-rated assignment under enforced threshold is INFEASIBLE
+- [ ] T-O1: `can_open` enforced — day opener must include at least one `can_open=true`
+- [ ] T-C1: `can_close` enforced — day closer must include at least one `can_close=true`
 
 ### 1.7 Schedule Publish & History
 

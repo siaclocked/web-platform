@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Badge, Input, Select } from '@/components/ui';
-import { Users, Plus, Edit2, Trash2, Mail, Phone, Search, MapPin, Calendar, ChevronRight, Filter, Star } from 'lucide-react';
+import { Card, CardContent, Button, Badge, Input, Toggle } from '@/components/ui';
+import { Users, Plus, Trash2, Search, ChevronRight, Filter } from 'lucide-react';
 
 interface PositionItem {
   id: string;
@@ -28,6 +28,8 @@ interface Worker {
   hourly_rate?: number;
   status?: string;
   start_date?: string;
+  can_open?: boolean;
+  can_close?: boolean;
   positions: PositionItem[];
   places: PlaceItem[];
 }
@@ -53,6 +55,8 @@ export default function ManagerWorkersPage() {
     hourly_rate: '',
     status: 'ACTIVE',
     start_date: '',
+    can_open: true,
+    can_close: true,
   });
   const [editPositionRatings, setEditPositionRatings] = useState<Record<string, number>>({});
   const [editPositions, setEditPositions] = useState<string[]>([]);
@@ -187,6 +191,8 @@ export default function ManagerWorkersPage() {
       hourly_rate: worker.hourly_rate ? worker.hourly_rate.toString() : '',
       status: worker.status || 'ACTIVE',
       start_date: worker.start_date || '',
+      can_open: worker.can_open ?? true,
+      can_close: worker.can_close ?? true,
     });
     setEditPositions(worker.positions.map(p => p.id));
     // Initialize per-position ratings from existing worker data
@@ -241,6 +247,8 @@ export default function ManagerWorkersPage() {
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
         status: editForm.status,
         start_date: editForm.start_date || null,
+        can_open: editForm.can_open,
+        can_close: editForm.can_close,
       };
       
       const response = await fetch('/api/manager/workers/update', {
@@ -272,7 +280,7 @@ export default function ManagerWorkersPage() {
 
   const handleCancelEdit = () => {
     setEditingWorker(null);
-    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '' });
+    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', can_open: true, can_close: true });
     setEditPositionRatings({});
     setEditPositions([]);
     setEditPlaces([]);
@@ -439,9 +447,9 @@ export default function ManagerWorkersPage() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date</label>
+	                        <div className="grid grid-cols-2 gap-3">
+	                          <div>
+	                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date</label>
                             <input
                               type="date"
                               value={editForm.start_date}
@@ -454,7 +462,6 @@ export default function ManagerWorkersPage() {
                         {editPositions.length > 0 && (
                           <div>
                             <label className="block text-xs font-medium text-foreground-muted mb-1">
-                              <Star className="w-3.5 h-3.5 inline mr-1" />
                               Position Ratings
                             </label>
                             <div className="space-y-2 border rounded-lg p-2 bg-background">
@@ -484,6 +491,25 @@ export default function ManagerWorkersPage() {
                             </div>
                           </div>
                         )}
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-lg border border-border p-2">
+                            <p className="text-xs font-medium text-foreground-muted mb-2">Opening Eligibility</p>
+                            <Toggle
+                              checked={editForm.can_open}
+                              onChange={(checked) => setEditForm({ ...editForm, can_open: checked })}
+                              label="Can open"
+                            />
+                          </div>
+                          <div className="rounded-lg border border-border p-2">
+                            <p className="text-xs font-medium text-foreground-muted mb-2">Closing Eligibility</p>
+                            <Toggle
+                              checked={editForm.can_close}
+                              onChange={(checked) => setEditForm({ ...editForm, can_close: checked })}
+                              label="Can close"
+                            />
+                          </div>
+                        </div>
                         
                         {error && (
                           <div className="p-2 bg-danger-muted border border-danger/30 rounded">

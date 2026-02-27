@@ -21,6 +21,8 @@ export interface User {
   company_id: string;
   avatar_url?: string;
   hourly_rate?: number;
+  can_open?: boolean;
+  can_close?: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -186,6 +188,16 @@ export interface CoverageTemplate {
   start_time: string;
   end_time: string;
   min_workers: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlaceSkillConfig {
+  id: string;
+  place_id: string;
+  skill_id: string;
+  enforce_min_team_rating: boolean;
+  min_avg_rating?: number | null;
   created_at: string;
   updated_at: string;
 }

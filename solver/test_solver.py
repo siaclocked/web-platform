@@ -27,14 +27,14 @@ T-F5: Max-1-shift-per-day preserved
 """
 
 import pytest
-from main_v2 import (
+from main import (
     SolveRequest, SolveResponse,
-    Worker, CoverageWindow, Unavailability, PlaceSettings,
+    Worker, CoverageWindow, Unavailability, PlaceSettings, SkillConstraint,
     _solve_greedy, ORTOOLS_AVAILABLE,
 )
 
 if ORTOOLS_AVAILABLE:
-    from main_v2 import _solve_cpsat
+    from main import _solve_cpsat
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -52,14 +52,19 @@ SETTINGS_30 = PlaceSettings(
 
 def make_worker(wid: str, name: str, skill: str = "sk1",
                 avail_start: int | None = None,
-                avail_end:   int | None = None) -> tuple[Worker, list[Unavailability]]:
+                avail_end:   int | None = None,
+                rating: int = 5,
+                can_open: bool = True,
+                can_close: bool = True) -> tuple[Worker, list[Unavailability]]:
     """
     Returns (Worker, unavailability_list).
     avail_start/end are minutes from midnight defining the AVAILABLE window.
     Unavailability is created for the blocks OUTSIDE that window on day 0.
     """
-    worker = Worker(id=wid, name=name, skill_ids=[skill],
-                    place_ids=["p1"], skill_ratings={skill: 5})
+    worker = Worker(
+        id=wid, name=name, skill_ids=[skill], place_ids=["p1"],
+        skill_ratings={skill: rating}, can_open=can_open, can_close=can_close
+    )
     unavails: list[Unavailability] = []
     if avail_start is not None and avail_end is not None:
         if avail_start > 0:
@@ -296,3 +301,151 @@ def test_max_one_shift_per_day(solver_fn):
     worker_day_shifts = [a for a in result.assignments if a.worker_id == "w1" and a.day == 0]
     assert len(worker_day_shifts) <= 1, \
         f"Max-1-shift-per-day violated: worker got {len(worker_day_shifts)} shifts"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_rating_constraint_single_worker_threshold(solver_fn):
+    """When min average is enforced, a single low-rated worker must not be assigned."""
+    worker, unavails = make_worker("w1", "Low", rating=6, avail_start=9 * 60, avail_end=13 * 60)
+
+    request = SolveRequest(
+        place_id="p1", start_date=BASE_DATE, end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        skill_constraints=[
+            SkillConstraint(skill_id="sk1", enforce_min_team_rating=True, min_avg_rating=7.0),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False, minimize_changes=False,
+    )
+
+    result: SolveResponse = solver_fn(request)
+    assert all(a.worker_id != "w1" for a in result.assignments), "Low-rated single worker should not be scheduled"
+    assert result.coverage_gaps, "Coverage gap expected because only ineligible worker is available"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_rating_constraint_multi_worker_average(solver_fn):
+    """Parallel workers can satisfy min average as a group (e.g., 6 + 8 >= avg 7)."""
+    low, ua_low = make_worker("w1", "Low", rating=6, avail_start=9 * 60, avail_end=13 * 60)
+    high, ua_high = make_worker("w2", "High", rating=8, avail_start=9 * 60, avail_end=13 * 60)
+
+    request = SolveRequest(
+        place_id="p1", start_date=BASE_DATE, end_date=END_1DAY,
+        workers=[low, high],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=2),
+        ],
+        skill_constraints=[
+            SkillConstraint(skill_id="sk1", enforce_min_team_rating=True, min_avg_rating=7.0),
+        ],
+        unavailability=ua_low + ua_high,
+        settings=SETTINGS_30,
+        balance_hours=False, minimize_changes=False,
+    )
+
+    result: SolveResponse = solver_fn(request)
+    assigned = {a.worker_id for a in result.assignments}
+    assert "w1" in assigned and "w2" in assigned, "Both workers should be assigned to satisfy avg rating and coverage"
+    assert len(result.coverage_gaps) == 0, f"Expected full coverage, got gaps: {result.coverage_gaps}"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_rating_constraint_disabled_allows_low_rating(solver_fn):
+    """If enforcement is disabled, low-rated worker assignment is allowed."""
+    worker, unavails = make_worker("w1", "Low", rating=4, avail_start=9 * 60, avail_end=13 * 60)
+
+    request = SolveRequest(
+        place_id="p1", start_date=BASE_DATE, end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        skill_constraints=[
+            SkillConstraint(skill_id="sk1", enforce_min_team_rating=False, min_avg_rating=7.0),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False, minimize_changes=False,
+    )
+
+    result: SolveResponse = solver_fn(request)
+    assert any(a.worker_id == "w1" for a in result.assignments), "Worker should be assignable when rating rule is disabled"
+
+
+def test_locked_low_rating_under_enforcement_is_infeasible():
+    """A locked shift below min average must make the model infeasible if no compensating worker exists."""
+    if not ORTOOLS_AVAILABLE:
+        pytest.skip("Locked-assignment infeasibility check requires CP-SAT path")
+
+    worker, unavails = make_worker("w1", "Low", rating=6, avail_start=9 * 60, avail_end=13 * 60)
+
+    request = SolveRequest(
+        place_id="p1", start_date=BASE_DATE, end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        existing_assignments=[
+            {
+                "worker_id": "w1",
+                "skill_id": "sk1",
+                "day": 0,
+                "start_minutes": 9 * 60,
+                "end_minutes": 13 * 60,
+                "is_locked": True,
+            }
+        ],
+        skill_constraints=[
+            SkillConstraint(skill_id="sk1", enforce_min_team_rating=True, min_avg_rating=7.0),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False, minimize_changes=False,
+    )
+
+    result: SolveResponse = _solve_cpsat(request)
+    assert result.status == "INFEASIBLE", "Locked low-rating shift should be infeasible under enforced threshold"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_can_open_required_for_single_worker_day(solver_fn):
+    """Single worker without can_open must not be scheduled as day opener."""
+    worker, unavails = make_worker("w1", "Alice", avail_start=9 * 60, avail_end=13 * 60, can_open=False, can_close=True)
+
+    request = SolveRequest(
+        place_id="p1", start_date=BASE_DATE, end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False, minimize_changes=False,
+    )
+
+    result: SolveResponse = solver_fn(request)
+    assert all(a.worker_id != "w1" for a in result.assignments), "Worker without can_open must not be scheduled first"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_can_close_required_for_single_worker_day(solver_fn):
+    """Single worker without can_close must not be scheduled as day closer."""
+    worker, unavails = make_worker("w1", "Alice", avail_start=9 * 60, avail_end=13 * 60, can_open=True, can_close=False)
+
+    request = SolveRequest(
+        place_id="p1", start_date=BASE_DATE, end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False, minimize_changes=False,
+    )
+
+    result: SolveResponse = solver_fn(request)
+    assert all(a.worker_id != "w1" for a in result.assignments), "Worker without can_close must not be scheduled last"
