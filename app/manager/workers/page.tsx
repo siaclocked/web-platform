@@ -10,6 +10,7 @@ import { Users, Plus, Edit2, Trash2, Mail, Phone, Search, MapPin, Calendar, Chev
 interface PositionItem {
   id: string;
   name: string;
+  rating: number;
 }
 
 interface PlaceItem {
@@ -27,7 +28,6 @@ interface Worker {
   hourly_rate?: number;
   status?: string;
   start_date?: string;
-  worker_rating?: number;
   positions: PositionItem[];
   places: PlaceItem[];
 }
@@ -53,8 +53,8 @@ export default function ManagerWorkersPage() {
     hourly_rate: '',
     status: 'ACTIVE',
     start_date: '',
-    worker_rating: '5',
   });
+  const [editPositionRatings, setEditPositionRatings] = useState<Record<string, number>>({});
   const [editPositions, setEditPositions] = useState<string[]>([]);
   const [editPlaces, setEditPlaces] = useState<string[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -187,20 +187,31 @@ export default function ManagerWorkersPage() {
       hourly_rate: worker.hourly_rate ? worker.hourly_rate.toString() : '',
       status: worker.status || 'ACTIVE',
       start_date: worker.start_date || '',
-      worker_rating: worker.worker_rating ? worker.worker_rating.toString() : '5',
     });
     setEditPositions(worker.positions.map(p => p.id));
+    // Initialize per-position ratings from existing worker data
+    const ratings: Record<string, number> = {};
+    worker.positions.forEach(p => { ratings[p.id] = p.rating ?? 5; });
+    setEditPositionRatings(ratings);
     setEditPlaces(worker.places.map(p => p.id));
     setError('');
     setSuccess('');
   };
 
   const toggleEditPosition = (positionId: string) => {
-    setEditPositions(prev => 
-      prev.includes(positionId) 
-        ? prev.filter(id => id !== positionId)
-        : [...prev, positionId]
-    );
+    setEditPositions(prev => {
+      if (prev.includes(positionId)) {
+        // Remove position and its rating
+        const newRatings = { ...editPositionRatings };
+        delete newRatings[positionId];
+        setEditPositionRatings(newRatings);
+        return prev.filter(id => id !== positionId);
+      } else {
+        // Add position with default rating
+        setEditPositionRatings(prev => ({ ...prev, [positionId]: 5 }));
+        return [...prev, positionId];
+      }
+    });
   };
 
   const toggleEditPlace = (placeId: string) => {
@@ -225,11 +236,11 @@ export default function ManagerWorkersPage() {
       const updateData = {
         workerId: editingWorker.id,
         positionIds: editPositions,
+        positionRatings: editPositionRatings,
         placeIds: editPlaces,
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
         status: editForm.status,
         start_date: editForm.start_date || null,
-        worker_rating: editForm.worker_rating ? parseInt(editForm.worker_rating) : 5,
       };
       
       const response = await fetch('/api/manager/workers/update', {
@@ -261,7 +272,8 @@ export default function ManagerWorkersPage() {
 
   const handleCancelEdit = () => {
     setEditingWorker(null);
-    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', worker_rating: '5' });
+    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '' });
+    setEditPositionRatings({});
     setEditPositions([]);
     setEditPlaces([]);
     setError('');
@@ -437,21 +449,41 @@ export default function ManagerWorkersPage() {
                               className="w-full p-2 border border-border rounded-lg bg-background text-foreground text-sm"
                             />
                           </div>
+                        </div>
+
+                        {editPositions.length > 0 && (
                           <div>
-                            <label className="block text-xs font-medium text-foreground-muted mb-1">Worker Rating</label>
-                            <div className="flex items-center gap-2 mt-1">
-                              <input
-                                type="range"
-                                min="1"
-                                max="10"
-                                value={editForm.worker_rating}
-                                onChange={(e) => setEditForm({ ...editForm, worker_rating: e.target.value })}
-                                className="flex-1 accent-primary"
-                              />
-                              <span className="text-xs font-medium text-foreground w-10 text-center">{editForm.worker_rating}/10</span>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">
+                              <Star className="w-3.5 h-3.5 inline mr-1" />
+                              Position Ratings
+                            </label>
+                            <div className="space-y-2 border rounded-lg p-2 bg-background">
+                              {editPositions.map(posId => {
+                                const pos = positions.find(p => p.id === posId);
+                                if (!pos) return null;
+                                return (
+                                  <div key={posId} className="flex items-center gap-2">
+                                    <span className="text-sm min-w-[80px] truncate">{pos.name}</span>
+                                    <input
+                                      type="range"
+                                      min="1"
+                                      max="10"
+                                      value={editPositionRatings[posId] ?? 5}
+                                      onChange={(e) => setEditPositionRatings(prev => ({
+                                        ...prev,
+                                        [posId]: parseInt(e.target.value)
+                                      }))}
+                                      className="flex-1 accent-primary"
+                                    />
+                                    <span className="text-xs font-medium text-foreground w-10 text-center">
+                                      {editPositionRatings[posId] ?? 5}/10
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-                        </div>
+                        )}
                         
                         {error && (
                           <div className="p-2 bg-danger-muted border border-danger/30 rounded">

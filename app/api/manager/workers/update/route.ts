@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function PUT(request: Request) {
   try {
-    const { workerId, positionIds, placeIds, hourly_rate, positionRatings, status, start_date, worker_rating } =
+    const { workerId, positionIds, placeIds, hourly_rate, positionRatings, status, start_date } =
       await request.json();
 
     if (!workerId) {
@@ -85,10 +85,6 @@ export async function PUT(request: Request) {
       updateFields.start_date = start_date || null;
     }
 
-    if (worker_rating !== undefined) {
-      updateFields.worker_rating = worker_rating;
-    }
-
     const { error: updateError } = await supabase
       .from("users")
       .update(updateFields)
@@ -109,7 +105,7 @@ export async function PUT(request: Request) {
         const skillInserts = positionIds.map((positionId: string) => ({
           worker_id: workerId,
           skill_id: positionId,
-          rating: positionRatings?.[positionId] ?? 3,
+          rating: positionRatings?.[positionId] ?? 5,
         }));
 
         const { error: skillsError } = await supabase

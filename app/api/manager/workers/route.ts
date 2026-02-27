@@ -66,14 +66,13 @@ export async function GET(request: Request) {
         is_active,
         hourly_rate,
         status,
-        start_date,
-        worker_rating
+        start_date
       `)
       .eq('role', 'worker')
       .eq('company_id', userData.company_id)
       .order('created_at', { ascending: false });
 
-    if (result.error && (result.error.message?.includes('status') || result.error.message?.includes('start_date') || result.error.message?.includes('worker_rating'))) {
+    if (result.error && (result.error.message?.includes('status') || result.error.message?.includes('start_date'))) {
       // Fallback: new columns may not exist yet — query without them
       const fallback = await supabase
         .from('users')
@@ -130,14 +129,14 @@ export async function GET(request: Request) {
     // Get worker skills (positions) and places for all workers
     const workerIds = (workers || []).map(w => w.id);
     
-    let workerSkillsMap: { [key: string]: Array<{ id: string; name: string }> } = {};
+    let workerSkillsMap: { [key: string]: Array<{ id: string; name: string; rating: number }> } = {};
     let workerPlacesMap: { [key: string]: Array<{ id: string; name: string }> } = {};
 
     if (workerIds.length > 0) {
       // Get worker skills
       const { data: workerSkills } = await supabase
         .from('worker_skills')
-        .select('worker_id, skill_id')
+        .select('worker_id, skill_id, rating')
         .in('worker_id', workerIds);
       
       (workerSkills || []).forEach(ws => {
@@ -147,7 +146,8 @@ export async function GET(request: Request) {
         if (positionMap[ws.skill_id]) {
           workerSkillsMap[ws.worker_id].push({
             id: ws.skill_id,
-            name: positionMap[ws.skill_id]
+            name: positionMap[ws.skill_id],
+            rating: ws.rating ?? 5
           });
         }
       });

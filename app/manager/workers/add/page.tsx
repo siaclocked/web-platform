@@ -26,8 +26,8 @@ export default function AddWorkerPage() {
     phone: '',
     hourlyRate: '',
     startDate: '',
-    workerRating: '5',
   });
+  const [positionRatings, setPositionRatings] = useState<Record<string, number>>({});
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -91,11 +91,17 @@ export default function AddWorkerPage() {
   };
 
   const togglePosition = (positionId: string) => {
-    setSelectedPositions(prev => 
-      prev.includes(positionId) 
-        ? prev.filter(id => id !== positionId)
-        : [...prev, positionId]
-    );
+    setSelectedPositions(prev => {
+      if (prev.includes(positionId)) {
+        const newRatings = { ...positionRatings };
+        delete newRatings[positionId];
+        setPositionRatings(newRatings);
+        return prev.filter(id => id !== positionId);
+      } else {
+        setPositionRatings(prev => ({ ...prev, [positionId]: 5 }));
+        return [...prev, positionId];
+      }
+    });
   };
 
   const togglePlace = (placeId: string) => {
@@ -129,10 +135,10 @@ export default function AddWorkerPage() {
           lastName: formData.lastName.trim(),
           phone: formData.phone.trim() || null,
           positionIds: selectedPositions,
+          positionRatings,
           placeIds: selectedPlaces,
           hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
           start_date: formData.startDate || null,
-          worker_rating: formData.workerRating ? parseInt(formData.workerRating) : 5,
         }),
       });
 
@@ -196,8 +202,8 @@ export default function AddWorkerPage() {
                   phone: '',
                   hourlyRate: '',
                   startDate: '',
-                  workerRating: '3',
                 });
+                setPositionRatings({});
                 setSelectedPositions([]);
                 setSelectedPlaces([]);
               }}>
@@ -346,25 +352,41 @@ export default function AddWorkerPage() {
               <p className="text-xs text-foreground-muted mt-1">Date the worker starts. Used by the solver for scheduling eligibility.</p>
             </div>
 
-            {/* Worker Rating */}
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                <Star className="w-3.5 h-3.5 inline mr-1" />
-                Worker Rating
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={formData.workerRating}
-                  onChange={(e) => setFormData({ ...formData, workerRating: e.target.value })}
-                  className="flex-1 accent-primary"
-                />
-                <span className="text-sm font-medium text-foreground w-10 text-center">{formData.workerRating}/10</span>
+            {/* Per-Position Ratings */}
+            {selectedPositions.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  <Star className="w-3.5 h-3.5 inline mr-1" />
+                  Position Ratings
+                </label>
+                <div className="space-y-2 border rounded-lg p-3 bg-background">
+                  {selectedPositions.map(posId => {
+                    const pos = positions.find(p => p.id === posId);
+                    if (!pos) return null;
+                    return (
+                      <div key={posId} className="flex items-center gap-2">
+                        <span className="text-sm min-w-[80px] truncate">{pos.name}</span>
+                        <input
+                          type="range"
+                          min="1"
+                          max="10"
+                          value={positionRatings[posId] ?? 5}
+                          onChange={(e) => setPositionRatings(prev => ({
+                            ...prev,
+                            [posId]: parseInt(e.target.value)
+                          }))}
+                          className="flex-1 accent-primary"
+                        />
+                        <span className="text-sm font-medium text-foreground w-10 text-center">
+                          {positionRatings[posId] ?? 5}/10
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-foreground-muted mt-1">Rate the worker's skill level for each position. Higher rated workers are preferred by the solver.</p>
               </div>
-              <p className="text-xs text-foreground-muted mt-1">Higher rated workers are preferred by the solver for balanced shifts.</p>
-            </div>
+            )}
 
             {error && (
               <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg">

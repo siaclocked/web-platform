@@ -27,22 +27,22 @@
 - [x] Worker login with email OTP (§10.1)
 - [X] Rate limiting and OTP TTL enforcement
 - [ ] User profile page — worker can view/edit limited personal details (§10.9)
-- [ ] RLS policies enforce company isolation on all tables (§15.1)
+- [X] RLS policies enforce company isolation on all tables (§15.1)
 
 ### 1.2 Place Setup (Manager)
 
 - [x] CRUD places (name, address) (§7.1)
-- [ ] Place scheduling settings: granularity, min/max hours per day, block limits, rest between shifts (§7.5)
+- [X] Place scheduling settings: granularity, min/max hours per day, block limits, rest between shifts (§7.5)
 - [x] Global skills catalog — Manager can create/edit skill names (§7.2)
 - [ ] Place skills config — enable skills per place, optional `minAvgRating` threshold (§7.3)
 
 ### 1.3 Worker Management (Manager)
 
-- [ ] CRUD workers: name, email, status (INVITED/ACTIVE/DISABLED) (§7.6)
+- [X] CRUD workers: name, email, status (INVITED/ACTIVE/DISABLED) (§7.6)
 - [x] Assign workers to places (place scope: ALL or selected) (§7.6)
-- [ ] Assign skills to workers with rating per skill (§7.6)
+- [X] Assign skills to workers with rating per skill (§7.6)
 - [x] Set worker hourly rate (§7.6)
-- [ ] Set worker start date (solver eligibility) (§7.6)
+- [X] Set worker start date (solver eligibility) (§7.6)
 
 ### 1.4 Coverage Templates (Manager)
 

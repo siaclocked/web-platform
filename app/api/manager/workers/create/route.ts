@@ -13,7 +13,6 @@ export async function POST(request: Request) {
       hourlyRate,
       positionRatings,
       start_date,
-      worker_rating,
     } = await request.json();
 
     if (!email || !firstName || !lastName) {
@@ -103,7 +102,6 @@ export async function POST(request: Request) {
     };
 
     if (start_date) profileData.start_date = start_date;
-    if (worker_rating) profileData.worker_rating = worker_rating;
 
     const { error: profileError } = await supabase.from("users").insert(profileData);
 
@@ -118,7 +116,7 @@ export async function POST(request: Request) {
       const skillInserts = positionIds.map((positionId: string) => ({
         worker_id: authData.user.id,
         skill_id: positionId,
-        rating: positionRatings?.[positionId] ?? 3,
+        rating: positionRatings?.[positionId] ?? 5,
       }));
 
       const { error: skillsError } = await supabase

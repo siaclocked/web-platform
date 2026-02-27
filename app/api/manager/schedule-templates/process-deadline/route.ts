@@ -129,8 +129,7 @@ export async function POST(request: Request) {
           id,
           first_name,
           last_name,
-          start_date,
-          worker_rating
+          start_date
         )
       `)
       .eq('place_id', template.place_id)
@@ -191,7 +190,6 @@ export async function POST(request: Request) {
         skill_ids: [],
         place_ids: [template.place_id],
         skill_ratings: {},
-        worker_rating: userData?.worker_rating || 3,
         start_date: userData?.start_date || null,
       };
     });
