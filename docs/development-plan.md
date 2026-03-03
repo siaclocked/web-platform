@@ -26,7 +26,7 @@
 - [X] Manager login with email + password
 - [x] Worker login with email OTP (§10.1)
 - [X] Rate limiting and OTP TTL enforcement
-- [ ] User profile page — worker can view/edit limited personal details (§10.9)
+- [X] User profile page — worker can view/edit limited personal details (§10.9)
 - [X] RLS policies enforce company isolation on all tables (§15.1)
 
 ### 1.2 Place Setup (Manager)
@@ -41,7 +41,7 @@
 - [X] CRUD workers: name, email, status (INVITED/ACTIVE/DISABLED) (§7.6)
 - [x] Assign workers to places (place scope: ALL or selected) (§7.6)
 - [X] Assign skills to workers with rating per skill (§7.6)
-- [ ] Set worker `canOpen` and `canClose` flags (§7.6)
+- [X] Set worker `canOpen` and `canClose` flags (§7.6)
 - [x] Set worker hourly rate (§7.6)
 - [X] Set worker start date (solver eligibility) (§7.6)
 
