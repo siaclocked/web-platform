@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button } from '@/components/ui';
-import { ChevronLeft, ChevronRight, Check, X, Clock, Copy, Sun } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, X, Clock, Copy, Sun, Palmtree } from 'lucide-react';
 
-type AvailabilityType = 'available_all_day' | 'available_range' | 'unavailable';
+type AvailabilityType = 'available_all_day' | 'available_range' | 'unavailable' | 'vacation';
 
 interface AvailabilityEntry {
   date: string;
@@ -264,6 +264,7 @@ export default function SetAvailabilityPage() {
       case 'available_all_day': return 'bg-success/15 border-success';
       case 'available_range': return 'bg-accent/15 border-accent';
       case 'unavailable': return 'bg-danger/10 border-danger/50';
+      case 'vacation': return 'bg-purple-500/15 border-purple-500/50';
     }
   };
 
@@ -274,6 +275,7 @@ export default function SetAvailabilityPage() {
       case 'available_all_day': return 'All day';
       case 'available_range': return `${entry.start_time?.slice(0, 5)} – ${entry.end_time?.slice(0, 5)}`;
       case 'unavailable': return 'Off';
+      case 'vacation': return 'Vacation';
     }
   };
 
@@ -356,7 +358,7 @@ export default function SetAvailabilityPage() {
                       key={idx}
                       onClick={() => cell.isCurrentMonth && handleSelectDate(cell.dateStr)}
                       disabled={!cell.isCurrentMonth}
-                      className={`relative flex flex-col items-start p-1.5 min-h-[64px] sm:min-h-[76px] border text-left transition-all text-xs
+                      className={`relative flex flex-col items-start p-2 min-h-[72px] sm:min-h-[80px] border text-left transition-all text-xs
                         ${cell.isCurrentMonth ? 'cursor-pointer hover:bg-background-secondary' : 'opacity-30 cursor-default'}
                         ${isSelected ? 'ring-2 ring-primary' : ''}
                         ${isCopyTarget ? 'ring-2 ring-accent' : ''}
@@ -395,6 +397,10 @@ export default function SetAvailabilityPage() {
                 Not available
               </div>
               <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-purple-500/20 border border-purple-500/50" />
+                Vacation
+              </div>
+              <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" />
                 Unsaved
               </div>
@@ -416,7 +422,7 @@ export default function SetAvailabilityPage() {
               </div>
 
               {/* Type selector */}
-              <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="grid grid-cols-4 gap-2 mb-4">
                 <button
                   onClick={() => setPanelType('available_all_day')}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-sm transition-all
@@ -440,6 +446,14 @@ export default function SetAvailabilityPage() {
                 >
                   <X className="w-5 h-5" />
                   Off
+                </button>
+                <button
+                  onClick={() => setPanelType('vacation')}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-sm transition-all
+                    ${panelType === 'vacation' ? 'border-purple-500 bg-purple-500/10 text-purple-600 font-semibold' : 'border-border hover:bg-background-secondary text-foreground'}`}
+                >
+                  <Palmtree className="w-5 h-5" />
+                  Vacation
                 </button>
               </div>
 

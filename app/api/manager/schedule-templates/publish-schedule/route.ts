@@ -127,10 +127,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Schedule not found or access denied' }, { status: 404 });
     }
 
-    // Must be closed with solver results
-    if (template.status !== 'closed' || template.solver_status !== 'completed' || !template.solver_result) {
+    // Must be closed with solver results (or manually edited assignments)
+    if (template.status !== 'closed' || !template.solver_result) {
       return NextResponse.json(
-        { error: 'Schedule must be generated (closed with solver results) before publishing' },
+        { error: 'Schedule must be closed with assignments before publishing' },
+        { status: 400 }
+      );
+    }
+
+    // Ensure there are actual assignments to publish
+    const solverResultData = template.solver_result as any;
+    if (!solverResultData.assignments || solverResultData.assignments.length === 0) {
+      return NextResponse.json(
+        { error: 'Schedule has no assignments. Add shifts before publishing.' },
         { status: 400 }
       );
     }

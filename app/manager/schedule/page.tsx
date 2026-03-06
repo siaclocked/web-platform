@@ -105,6 +105,16 @@ export default function ManagerSchedulePage() {
     start_minutes: 540,
     end_minutes: 1020,
   });
+  const [editingShift, setEditingShift] = useState<{
+    scheduleId: string;
+    workerId: string;
+    day: number;
+    origStart: number;
+    origEnd: number;
+    skillId: string;
+    newStart: number;
+    newEnd: number;
+  } | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -271,58 +281,119 @@ export default function ManagerSchedulePage() {
     setAddShiftForm({ worker_id: '', skill_id: '', start_minutes: 540, end_minutes: 1020 });
   };
 
-  const removeShift = (scheduleId: string, workerIdToRemove: string, dayToRemove: number, startMinToRemove: number) => {
+  const removeShift = (scheduleId: string, workerIdToRemove: string, dayToRemove: number, startMinToRemove: number, endMinToRemove: number, skillIdToRemove: string) => {
+    let removed = false;
     setSchedules(prev => prev.map(s => {
       if (s.id === scheduleId && s.solver_result) {
-        const filtered = s.solver_result.assignments.filter(a =>
-          !(a.worker_id === workerIdToRemove && a.day === dayToRemove && a.start_minutes === startMinToRemove)
-        );
+        const filtered = (s.solver_result.assignments || []).filter(a => {
+          if (!removed && a.worker_id === workerIdToRemove && a.day === dayToRemove && a.start_minutes === startMinToRemove && a.end_minutes === endMinToRemove && a.skill_id === skillIdToRemove) {
+            removed = true;
+            return false;
+          }
+          return true;
+        });
         return { ...s, solver_result: { ...s.solver_result, assignments: filtered } };
       }
       return s;
     }));
   };
 
-  const saveEdits = async () => {
+  const updateShiftTimes = (scheduleId: string, workerId: string, day: number, origStart: number, origEnd: number, skillId: string, newStart: number, newEnd: number) => {
+    // Use functional update to ensure we have latest state
+    setSchedules(prevSchedules => {
+      const scheduleIndex = prevSchedules.findIndex(s => s.id === scheduleId);
+      if (scheduleIndex === -1) {
+        console.error('Schedule not found:', scheduleId);
+        return prevSchedules;
+      }
+      
+      const schedule = prevSchedules[scheduleIndex];
+      if (!schedule.solver_result?.assignments) {
+        console.error('No assignments in schedule');
+        return prevSchedules;
+      }
+      
+      // Find the assignment to update
+      const assignmentIndex = schedule.solver_result.assignments.findIndex(a => 
+        a.worker_id === workerId && 
+        a.day === day && 
+        a.start_minutes === origStart && 
+        a.end_minutes === origEnd && 
+        a.skill_id === skillId
+      );
+      
+      if (assignmentIndex === -1) {
+        console.error('Assignment not found:', { workerId, day, origStart, origEnd, skillId });
+        console.log('Available assignments:', schedule.solver_result.assignments);
+        return prevSchedules;
+      }
+      
+      // Create new assignments array with the updated assignment
+      const newAssignments = [...schedule.solver_result.assignments];
+      newAssignments[assignmentIndex] = {
+        ...newAssignments[assignmentIndex],
+        start_minutes: newStart,
+        end_minutes: newEnd,
+      };
+      
+      // Create new schedules array with the updated schedule
+      const newSchedules = [...prevSchedules];
+      newSchedules[scheduleIndex] = {
+        ...schedule,
+        solver_result: {
+          ...schedule.solver_result,
+          assignments: newAssignments,
+        },
+      };
+      
+      return newSchedules;
+    });
+    setEditingShift(null);
+  };
+
+  const saveEdits = async (silent = false): Promise<boolean> => {
     setSavingEdits(true);
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      if (!session) return false;
 
-      // Save all schedules that have solver results
-      const schedulesToSave = schedules.filter(s => s.solver_result);
-      let allOk = true;
-
-      for (const schedule of schedulesToSave) {
-        const response = await fetch('/api/manager/schedule-templates/edit-assignments', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            schedule_template_id: schedule.id,
-            assignments: schedule.solver_result!.assignments,
-          }),
-        });
-
-        if (!response.ok) {
-          const err = await response.json();
-          alert(err.error || `Failed to save changes for "${schedule.name}"`);
-          allOk = false;
-          break;
-        }
+      // Only save the schedule currently being edited
+      const schedule = schedules.find(s => s.id === editingScheduleId);
+      if (!schedule || !schedule.solver_result) {
+        if (!silent) alert('No schedule selected for editing');
+        setSavingEdits(false);
+        return false;
       }
 
-      if (allOk) {
-        alert('Schedule changes saved!');
-        stopEditing();
-        fetchSchedules();
+      const response = await fetch('/api/manager/schedule-templates/edit-assignments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          schedule_template_id: schedule.id,
+          assignments: schedule.solver_result.assignments || [],
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        alert(err.error || `Failed to save changes for "${schedule.name}"`);
+        return false;
+      } else {
+        if (!silent) {
+          alert('Schedule changes saved!');
+          stopEditing();
+          fetchSchedules();
+        }
+        return true;
       }
     } catch (err) {
       console.error('Error saving edits:', err);
       alert('Failed to save changes');
+      return false;
     } finally {
       setSavingEdits(false);
     }
@@ -616,7 +687,7 @@ export default function ManagerSchedulePage() {
             )}
             {isEditing && (
               <>
-                <Button onClick={saveEdits} isLoading={savingEdits}>
+                <Button onClick={() => saveEdits()} isLoading={savingEdits}>
                   <Save className="w-4 h-4 mr-1" />
                   Save Changes
                 </Button>
@@ -650,14 +721,43 @@ export default function ManagerSchedulePage() {
           </div>
         </div>
 
-        {isEditing && (
-          <div className="mb-4 p-3 bg-primary-muted/30 border border-primary/20 rounded-lg flex items-center gap-2">
-            <Edit2 className="w-4 h-4 text-primary" />
-            <span className="text-sm text-foreground">
-              <strong>Editing mode:</strong> Click a day to add/remove shifts. You can add any worker, including those on their day off.
-            </span>
-          </div>
-        )}
+        {isEditing && (() => {
+          const editSchedule = schedules.find(s => s.id === editingScheduleId);
+          const gapCount = editSchedule?.solver_result?.coverage_gaps?.length || 0;
+          const assignmentCount = editSchedule?.solver_result?.assignments?.length || 0;
+          const isReady = gapCount === 0 && assignmentCount > 0;
+
+          return (
+            <div className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-2 border ${isReady ? 'bg-success/10 border-success/40' : 'bg-primary-muted/30 border-primary/20'}`}>
+              <div className="flex items-center gap-2">
+                {isReady ? (
+                  <CheckCircle className="w-4 h-4 text-success" />
+                ) : (
+                  <Edit2 className="w-4 h-4 text-primary" />
+                )}
+                <span className="text-sm text-foreground">
+                  {isReady ? (
+                    <><strong>Schedule is ready to be published!</strong> {assignmentCount} shift{assignmentCount !== 1 ? 's' : ''} assigned, no coverage gaps.</>
+                  ) : (
+                    <><strong>Editing mode:</strong> Click a day to add/remove shifts. {gapCount > 0 && <span className="text-warning">{gapCount} coverage gap{gapCount !== 1 ? 's' : ''} remaining.</span>}</>
+                  )}
+                </span>
+              </div>
+              {isReady && editSchedule?.status === 'closed' && (
+                <Button size="sm" onClick={async () => {
+                  const saved = await saveEdits(true);
+                  if (saved) {
+                    stopEditing();
+                    handlePublish(editSchedule.id);
+                  }
+                }} isLoading={savingEdits || publishingId === editSchedule.id}>
+                  <Send className="w-3.5 h-3.5 mr-1" />
+                  Publish to Employees
+                </Button>
+              )}
+            </div>
+          );
+        })()}
 
         {schedules.length === 0 ? (
           <Card>
@@ -822,29 +922,113 @@ export default function ManagerSchedulePage() {
                         <p className="text-sm text-foreground-muted py-2">No shifts scheduled.</p>
                       ) : (
                         <div className="space-y-2">
-                          {selectedDayShifts.map((shift, idx) => (
-                            <div key={idx} className="flex items-center gap-3 p-3 bg-background-secondary rounded-lg text-sm">
-                              <div className="flex items-center gap-1.5 text-foreground-muted">
-                                <Clock className="w-3.5 h-3.5" />
-                                <span>{formatMinutesToTime(shift.start_minutes)} – {formatMinutesToTime(shift.end_minutes)}</span>
+                          {selectedDayShifts.map((shift, idx) => {
+                            const isEditingThis = editingShift &&
+                              editingShift.scheduleId === shift.schedule_id &&
+                              editingShift.workerId === shift.worker_id &&
+                              editingShift.day === shift.day &&
+                              editingShift.origStart === shift.start_minutes &&
+                              editingShift.origEnd === shift.end_minutes &&
+                              editingShift.skillId === shift.skill_id;
+
+                            return (
+                              <div key={`${shift.worker_id}-${shift.start_minutes}-${shift.end_minutes}-${shift.skill_id}-${idx}`}>
+                                <div className="flex items-center gap-3 p-3 bg-background-secondary rounded-lg text-sm">
+                                  <div className="flex items-center gap-1.5 text-foreground-muted">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{formatMinutesToTime(shift.start_minutes)} – {formatMinutesToTime(shift.end_minutes)}</span>
+                                  </div>
+                                  <span className="font-medium text-foreground">{shift.worker_name}</span>
+                                  <Badge variant="info" className="text-xs">{getPositionName(shift.skill_id)}</Badge>
+                                  {isEditing ? (
+                                    <div className="ml-auto flex items-center gap-1">
+                                      <button
+                                        onClick={() => setEditingShift({
+                                          scheduleId: shift.schedule_id,
+                                          workerId: shift.worker_id,
+                                          day: shift.day,
+                                          origStart: shift.start_minutes,
+                                          origEnd: shift.end_minutes,
+                                          skillId: shift.skill_id,
+                                          newStart: shift.start_minutes,
+                                          newEnd: shift.end_minutes,
+                                        })}
+                                        className="p-1 text-primary hover:bg-primary/10 rounded transition-colors"
+                                        title="Edit shift times"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => removeShift(shift.schedule_id, shift.worker_id, shift.day, shift.start_minutes, shift.end_minutes, shift.skill_id)}
+                                        className="p-1 text-danger hover:bg-danger-muted rounded transition-colors"
+                                        title="Remove shift"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-foreground-muted ml-auto flex items-center gap-1">
+                                      <MapPin className="w-3 h-3" />{shift.place_name}
+                                    </span>
+                                  )}
+                                </div>
+                                {isEditing && isEditingThis && editingShift && (
+                                  <div className="mt-1 p-3 border border-primary/30 bg-primary-muted/10 rounded-lg">
+                                    <h4 className="text-xs font-medium text-foreground mb-2">Edit Shift Times — {shift.worker_name}</h4>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <div>
+                                        <label className="block text-xs text-foreground-muted mb-1">Start</label>
+                                        <input
+                                          type="time"
+                                          value={formatMinutesToTime(editingShift.newStart)}
+                                          onChange={(e) => {
+                                            const [h, m] = e.target.value.split(':').map(Number);
+                                            if (!isNaN(h) && !isNaN(m)) {
+                                              setEditingShift(prev => prev ? { ...prev, newStart: h * 60 + m } : null);
+                                            }
+                                          }}
+                                          className="p-1.5 border border-border rounded text-sm bg-background text-foreground"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-xs text-foreground-muted mb-1">End</label>
+                                        <input
+                                          type="time"
+                                          value={formatMinutesToTime(editingShift.newEnd)}
+                                          onChange={(e) => {
+                                            const [h, m] = e.target.value.split(':').map(Number);
+                                            if (!isNaN(h) && !isNaN(m)) {
+                                              setEditingShift(prev => prev ? { ...prev, newEnd: h * 60 + m } : null);
+                                            }
+                                          }}
+                                          className="p-1.5 border border-border rounded text-sm bg-background text-foreground"
+                                        />
+                                      </div>
+                                      <div className="flex items-end gap-1 pb-0.5">
+                                        <Button size="sm" onClick={() => {
+                                          if (editingShift.newEnd <= editingShift.newStart) {
+                                            alert('End time must be after start time');
+                                            return;
+                                          }
+                                          updateShiftTimes(
+                                            editingShift.scheduleId, editingShift.workerId, editingShift.day,
+                                            editingShift.origStart, editingShift.origEnd, editingShift.skillId,
+                                            editingShift.newStart, editingShift.newEnd
+                                          );
+                                        }}>
+                                          <Save className="w-3 h-3 mr-1" />
+                                          Apply
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={() => setEditingShift(null)}>
+                                          Cancel
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              <span className="font-medium text-foreground">{shift.worker_name}</span>
-                              <Badge variant="info" className="text-xs">{getPositionName(shift.skill_id)}</Badge>
-                              {isEditing ? (
-                                <button
-                                  onClick={() => removeShift(shift.schedule_id, shift.worker_id, shift.day, shift.start_minutes)}
-                                  className="ml-auto p-1 text-danger hover:bg-danger-muted rounded transition-colors"
-                                  title="Remove shift"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <span className="text-xs text-foreground-muted ml-auto flex items-center gap-1">
-                                  <MapPin className="w-3 h-3" />{shift.place_name}
-                                </span>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </CardContent>

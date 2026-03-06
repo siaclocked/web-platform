@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { Calendar, ChevronLeft, ChevronRight, Users, Clock, ArrowLeft } from 'lucide-react';
+import { Card, CardContent, Button, Badge, Input } from '@/components/ui';
+import { Calendar, ChevronLeft, ChevronRight, Users, Clock, ArrowLeft, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface WorkerItem {
@@ -15,13 +15,15 @@ interface AvailabilityEntry {
   id: string;
   worker_id: string;
   date: string;
-  availability_type: 'available_all_day' | 'available_range' | 'unavailable';
+  availability_type: 'available_all_day' | 'available_range' | 'unavailable' | 'vacation';
   start_time?: string | null;
   end_time?: string | null;
+  is_paid_leave?: boolean;
 }
 
 export default function ManagerWorkerAvailabilityPage() {
   const [workers, setWorkers] = useState<WorkerItem[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedWorker, setSelectedWorker] = useState<WorkerItem | null>(null);
   const [entries, setEntries] = useState<AvailabilityEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -122,6 +124,7 @@ export default function ManagerWorkerAvailabilityPage() {
       case 'available_all_day': return 'bg-success/20 border-success/40';
       case 'available_range': return 'bg-warning/20 border-warning/40';
       case 'unavailable': return 'bg-danger/20 border-danger/40';
+      case 'vacation': return 'bg-purple-500/20 border-purple-500/40';
       default: return '';
     }
   };
@@ -133,6 +136,7 @@ export default function ManagerWorkerAvailabilityPage() {
       case 'available_range':
         return `${entry.start_time?.slice(0, 5) || '?'} – ${entry.end_time?.slice(0, 5) || '?'}`;
       case 'unavailable': return 'Unavailable';
+      case 'vacation': return entry.is_paid_leave ? 'Paid Leave' : 'Vacation';
       default: return null;
     }
   };
@@ -157,6 +161,19 @@ export default function ManagerWorkerAvailabilityPage() {
               <p className="text-foreground-muted">Select a worker to view their availability calendar</p>
             </div>
 
+            <div className="mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
+                <Input
+                  type="text"
+                  placeholder="Search workers..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
             {workers.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-8">
@@ -167,7 +184,7 @@ export default function ManagerWorkerAvailabilityPage() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {workers.map(worker => (
+                {workers.filter(w => w.name.toLowerCase().includes(searchTerm.toLowerCase())).map(worker => (
                   <Card
                     key={worker.id}
                     className="cursor-pointer hover:border-primary/40 transition-colors"
@@ -198,10 +215,11 @@ export default function ManagerWorkerAvailabilityPage() {
               <p className="text-foreground-muted">Availability calendar (read-only)</p>
             </div>
 
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
               <Badge variant="success" className="text-xs">Available all day</Badge>
               <Badge variant="warning" className="text-xs">Available (time range)</Badge>
               <Badge variant="danger" className="text-xs">Unavailable</Badge>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-600">Vacation</span>
               <span className="text-xs text-foreground-muted">No color = no availability set</span>
             </div>
 

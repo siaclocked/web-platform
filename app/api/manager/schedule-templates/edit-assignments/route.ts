@@ -21,10 +21,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const { schedule_template_id, assignments } = await request.json();
+    const body = await request.json();
+    const { schedule_template_id } = body;
+    const assignments = Array.isArray(body.assignments) ? body.assignments : [];
 
-    if (!schedule_template_id || !assignments) {
-      return NextResponse.json({ error: 'schedule_template_id and assignments are required' }, { status: 400 });
+    if (!schedule_template_id) {
+      return NextResponse.json({ error: 'schedule_template_id is required' }, { status: 400 });
     }
 
     // Fetch the template to verify ownership and get current solver_result

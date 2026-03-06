@@ -216,7 +216,7 @@ export default function WorkerClockInPage() {
                 </div>
                 <p className="text-foreground-muted">
                   Started at{" "}
-                  {new Date(activeSession.start_time).toLocaleTimeString()}
+                  {new Date(activeSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                 </p>
                 {activeSession.is_scheduled && (
                   <Badge variant="success" className="mt-2">
@@ -307,7 +307,7 @@ export default function WorkerClockInPage() {
           <Card className="mt-6">
             <CardContent className="p-6">
               <h3 className="font-medium text-foreground mb-4">
-                Recent Sessions
+                Session History
               </h3>
               <div className="space-y-3">
                 {recentSessions.map((session) => (
@@ -324,9 +324,10 @@ export default function WorkerClockInPage() {
                         {new Date(session.start_time).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
+                          hour12: false,
                         })}
                         {session.end_time &&
-                          ` - ${new Date(session.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+                          ` \u2013 ${new Date(session.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`}
                       </p>
                     </div>
                     <div className="text-right">
@@ -353,10 +354,10 @@ export default function WorkerClockInPage() {
           <Card className="mt-6">
             <CardContent className="p-6">
               <h3 className="font-medium text-foreground mb-4">
-                Recent Sessions
+                Session History
               </h3>
               <p className="text-foreground-muted text-center py-4">
-                No recent sessions
+                No sessions yet
               </p>
             </CardContent>
           </Card>

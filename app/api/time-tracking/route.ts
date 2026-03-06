@@ -104,25 +104,68 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Check if there's a scheduled shift nearby
+      // Check if there's a scheduled shift for this worker at this place
       const now = new Date();
-      const graceMinutes = 15;
-      const windowStart = new Date(now.getTime() - graceMinutes * 60 * 1000);
-      const windowEnd = new Date(now.getTime() + graceMinutes * 60 * 1000);
+      const todayStr = now.toISOString().split('T')[0];
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const EARLY_MARGIN = 15; // Worker can clock in 15 min early
 
-      let shiftQuery = supabase
-        .from('shifts')
-        .select('id')
-        .eq('worker_id', user.id)
-        .eq('place_id', place_id)
-        .gte('start_time', windowStart.toISOString())
-        .lte('start_time', windowEnd.toISOString());
+      // Get worker's company_id
+      const { data: workerData } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
 
-      if (skill_id) {
-        shiftQuery = shiftQuery.eq('skill_id', skill_id);
+      // Find published schedules that include today and this place
+      let isScheduled = false;
+      let matchedShiftEnd: number | null = null;
+
+      if (workerData) {
+        const { data: templates } = await supabase
+          .from('schedule_templates')
+          .select('id, start_date, end_date, solver_result, place_id')
+          .eq('company_id', workerData.company_id)
+          .eq('place_id', place_id)
+          .in('status', ['schedule_published', 'closed'])
+          .lte('start_date', todayStr)
+          .gte('end_date', todayStr);
+
+        if (templates && templates.length > 0) {
+          for (const template of templates) {
+            const result = template.solver_result as any;
+            if (!result?.assignments) continue;
+
+            const startDate = new Date(template.start_date + 'T00:00:00');
+            const dayOffset = Math.round(
+              (new Date(todayStr + 'T00:00:00').getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)
+            );
+
+            const workerShifts = result.assignments.filter(
+              (a: any) => a.worker_id === user.id && a.day === dayOffset
+            );
+
+            for (const shift of workerShifts) {
+              // Allow clock-in up to 15 min before shift start, and anytime during shift
+              if (currentMinutes >= shift.start_minutes - EARLY_MARGIN && currentMinutes <= shift.end_minutes) {
+                isScheduled = true;
+                matchedShiftEnd = shift.end_minutes;
+                break;
+              }
+            }
+            if (isScheduled) break;
+          }
+
+          // If no matching shift found, reject clock-in
+          if (!isScheduled) {
+            return NextResponse.json(
+              { error: 'You do not have a scheduled shift at this location right now. You can clock in up to 15 minutes before your shift starts.' },
+              { status: 400 }
+            );
+          }
+        }
+        // If no published schedules exist at all for this place/date, allow clock-in (no schedule to enforce)
       }
-
-      const { data: nearbyShift } = await shiftQuery.single();
 
       // Create work session
       const { data: session, error } = await supabase
@@ -131,14 +174,37 @@ export async function POST(request: NextRequest) {
           worker_id: user.id,
           place_id,
           skill_id: skill_id || null,
-          shift_id: nearbyShift?.id || null,
           start_time: now.toISOString(),
-          is_scheduled: !!nearbyShift,
+          is_scheduled: isScheduled,
+          scheduled_end_minutes: matchedShiftEnd,
         })
         .select()
         .single();
 
       if (error) {
+        // If scheduled_end_minutes column doesn't exist yet, retry without it
+        if (error.message?.includes('scheduled_end_minutes')) {
+          const { data: session2, error: error2 } = await supabase
+            .from('work_sessions')
+            .insert({
+              worker_id: user.id,
+              place_id,
+              skill_id: skill_id || null,
+              start_time: now.toISOString(),
+              is_scheduled: isScheduled,
+            })
+            .select()
+            .single();
+
+          if (error2) {
+            return NextResponse.json(
+              { error: 'Failed to start session' },
+              { status: 500 }
+            );
+          }
+          return NextResponse.json({ session: session2 });
+        }
+
         return NextResponse.json(
           { error: 'Failed to start session' },
           { status: 500 }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input, Toggle } from '@/components/ui';
-import { Users, Plus, Trash2, Search, ChevronRight, Filter } from 'lucide-react';
+import { Users, Plus, Trash2, Search, ChevronRight, Filter, Palmtree, CalendarDays } from 'lucide-react';
 
 interface PositionItem {
   id: string;
@@ -66,6 +66,13 @@ export default function ManagerWorkersPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Paid leave state
+  const [showPaidLeave, setShowPaidLeave] = useState<string | null>(null);
+  const [paidLeaveForm, setPaidLeaveForm] = useState({ start_date: '', end_date: '', notes: '' });
+  const [paidLeaveRecords, setPaidLeaveRecords] = useState<any[]>([]);
+  const [isSubmittingLeave, setIsSubmittingLeave] = useState(false);
+  const [isLoadingLeave, setIsLoadingLeave] = useState(false);
 
   useEffect(() => {
     fetchWorkers();
@@ -278,6 +285,93 @@ export default function ManagerWorkersPage() {
     }
   };
 
+  const fetchPaidLeave = async (workerId: string) => {
+    setIsLoadingLeave(true);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/manager/paid-leave?worker_id=${workerId}`, {
+        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPaidLeaveRecords(data.paid_leave || []);
+      }
+    } catch (err) {
+      console.error('Error fetching paid leave:', err);
+    } finally {
+      setIsLoadingLeave(false);
+    }
+  };
+
+  const handleGrantPaidLeave = async (workerId: string) => {
+    if (!paidLeaveForm.start_date || !paidLeaveForm.end_date) {
+      setError('Start and end dates are required');
+      return;
+    }
+    setIsSubmittingLeave(true);
+    setError('');
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/manager/paid-leave', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({
+          worker_id: workerId,
+          start_date: paidLeaveForm.start_date,
+          end_date: paidLeaveForm.end_date,
+          notes: paidLeaveForm.notes || null,
+        }),
+      });
+      if (res.ok) {
+        setSuccess('Paid leave granted successfully!');
+        setPaidLeaveForm({ start_date: '', end_date: '', notes: '' });
+        await fetchPaidLeave(workerId);
+        setTimeout(() => setSuccess(''), 3000);
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Failed to grant paid leave');
+      }
+    } catch (err) {
+      setError('Failed to grant paid leave');
+    } finally {
+      setIsSubmittingLeave(false);
+    }
+  };
+
+  const handleDeletePaidLeave = async (leaveId: string, workerId: string) => {
+    if (!confirm('Remove this paid leave? The vacation days will be cleared.')) return;
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/manager/paid-leave?id=${leaveId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` },
+      });
+      if (res.ok) {
+        setSuccess('Paid leave removed');
+        await fetchPaidLeave(workerId);
+        setTimeout(() => setSuccess(''), 3000);
+      }
+    } catch (err) {
+      console.error('Error deleting paid leave:', err);
+    }
+  };
+
+  const togglePaidLeave = async (workerId: string) => {
+    if (showPaidLeave === workerId) {
+      setShowPaidLeave(null);
+      setPaidLeaveRecords([]);
+    } else {
+      setShowPaidLeave(workerId);
+      await fetchPaidLeave(workerId);
+    }
+  };
+
   const handleCancelEdit = () => {
     setEditingWorker(null);
     setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', can_open: true, can_close: true });
@@ -286,6 +380,8 @@ export default function ManagerWorkersPage() {
     setEditPlaces([]);
     setError('');
     setSuccess('');
+    setShowPaidLeave(null);
+    setPaidLeaveRecords([]);
   };
 
   return (
@@ -522,6 +618,85 @@ export default function ManagerWorkersPage() {
                             <p className="text-xs text-success">{success}</p>
                           </div>
                         )}
+
+                        {/* Paid Leave Section */}
+                        <div className="border-t border-border pt-3">
+                          <button
+                            onClick={() => togglePaidLeave(worker.id)}
+                            className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-primary transition-colors w-full"
+                          >
+                            <Palmtree className="w-4 h-4" />
+                            Paid Leave
+                            <ChevronRight className={`w-4 h-4 ml-auto transition-transform ${showPaidLeave === worker.id ? 'rotate-90' : ''}`} />
+                          </button>
+
+                          {showPaidLeave === worker.id && (
+                            <div className="mt-3 space-y-3">
+                              {/* Grant form */}
+                              <div className="p-3 bg-background-secondary rounded-lg space-y-2">
+                                <p className="text-xs font-medium text-foreground-muted">Grant Paid Leave</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-xs text-foreground-muted mb-1">Start Date</label>
+                                    <input
+                                      type="date"
+                                      value={paidLeaveForm.start_date}
+                                      onChange={(e) => setPaidLeaveForm(f => ({ ...f, start_date: e.target.value }))}
+                                      className="w-full p-2 border border-border rounded-lg bg-background text-foreground text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-foreground-muted mb-1">End Date</label>
+                                    <input
+                                      type="date"
+                                      value={paidLeaveForm.end_date}
+                                      onChange={(e) => setPaidLeaveForm(f => ({ ...f, end_date: e.target.value }))}
+                                      className="w-full p-2 border border-border rounded-lg bg-background text-foreground text-sm"
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-foreground-muted mb-1">Notes (optional)</label>
+                                  <Input
+                                    value={paidLeaveForm.notes}
+                                    onChange={(e) => setPaidLeaveForm(f => ({ ...f, notes: e.target.value }))}
+                                    placeholder="e.g., Annual vacation"
+                                  />
+                                </div>
+                                <Button size="sm" onClick={() => handleGrantPaidLeave(worker.id)} isLoading={isSubmittingLeave}>
+                                  <CalendarDays className="w-3.5 h-3.5 mr-1" />
+                                  Grant Paid Leave
+                                </Button>
+                              </div>
+
+                              {/* Existing records */}
+                              {isLoadingLeave ? (
+                                <div className="flex items-center justify-center py-3">
+                                  <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+                                </div>
+                              ) : paidLeaveRecords.length > 0 ? (
+                                <div className="space-y-1">
+                                  <p className="text-xs font-medium text-foreground-muted">Active Paid Leave</p>
+                                  {paidLeaveRecords.map((pl: any) => (
+                                    <div key={pl.id} className="flex items-center justify-between p-2 bg-background-secondary rounded-lg">
+                                      <div>
+                                        <p className="text-sm font-medium text-foreground">
+                                          {new Date(pl.start_date).toLocaleDateString()} – {new Date(pl.end_date).toLocaleDateString()}
+                                        </p>
+                                        {pl.notes && <p className="text-xs text-foreground-muted">{pl.notes}</p>}
+                                      </div>
+                                      <Button variant="danger" size="sm" onClick={() => handleDeletePaidLeave(pl.id, worker.id)}>
+                                        <Trash2 className="w-3 h-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-foreground-muted">No paid leave records</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
 
                         <div className="flex gap-2">
                           <Button size="sm" onClick={handleUpdateWorker} isLoading={isUpdating}>Save</Button>

@@ -298,8 +298,8 @@ export async function POST(request: Request) {
           const dateStr = st.date; // YYYY-MM-DD
           const entry = workerAvail[dateStr];
 
-          if (!entry || entry.type === 'unavailable') {
-            // No availability set or explicitly unavailable → full day off
+          if (!entry || entry.type === 'unavailable' || entry.type === 'vacation') {
+            // No availability set, explicitly unavailable, or on vacation → full day off
             unavailability.push({
               worker_id: workerId,
               day: dayOffset,

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent, Button, Input, Badge } from "@/components/ui";
-import { Briefcase, Plus, Edit2, Trash2, Users } from "lucide-react";
+import { Briefcase, Plus, Edit2, Trash2, Users, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface PositionWorker {
@@ -31,6 +31,7 @@ export default function ManagerPositionsPage() {
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     fetchPositions();
@@ -256,6 +257,20 @@ export default function ManagerPositionsPage() {
           </div>
         )}
 
+        {/* Search Bar */}
+        <div className="mb-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
+            <Input
+              type="text"
+              placeholder="Search positions..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        </div>
+
         {/* Positions List */}
         <div className="space-y-4">
           {positions.length === 0 ? (
@@ -273,7 +288,7 @@ export default function ManagerPositionsPage() {
               </CardContent>
             </Card>
           ) : (
-            positions.map((position) => (
+            positions.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || (p.description || '').toLowerCase().includes(searchTerm.toLowerCase())).map((position) => (
               <Card key={position.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">

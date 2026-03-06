@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
-import { Card, CardContent, Button, Badge } from '@/components/ui';
-import { Clock, Users, MapPin, ChevronRight, ChevronDown, ChevronUp, DollarSign, ArrowLeft } from 'lucide-react';
+import { Card, CardContent, Button, Badge, Input } from '@/components/ui';
+import { Clock, Users, MapPin, ChevronRight, ChevronDown, ChevronUp, DollarSign, ArrowLeft, Search } from 'lucide-react';
 
 interface ActiveSession {
   id: string;
@@ -73,6 +73,8 @@ export default function ManagerWorkerTrackingPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Detail view state
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
@@ -360,6 +362,20 @@ export default function ManagerWorkerTrackingPage() {
             <Users className="w-5 h-5 text-foreground-muted" />
             All Workers ({workers.length})
           </h2>
+
+          <div className="mb-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
+              <Input
+                type="text"
+                placeholder="Search workers..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+
           {workers.length === 0 ? (
             <Card>
               <CardContent className="py-6 text-center">
@@ -369,7 +385,11 @@ export default function ManagerWorkerTrackingPage() {
             </Card>
           ) : (
             <div className="space-y-1">
-              {workers.map((worker) => {
+              {workers.filter(w => {
+                const searchLower = searchTerm.toLowerCase();
+                const fullName = `${w.first_name} ${w.last_name}`.toLowerCase();
+                return fullName.includes(searchLower) || w.email.toLowerCase().includes(searchLower) || w.places.some(p => p.name.toLowerCase().includes(searchLower));
+              }).map((worker) => {
                 const isActive = activeSessions.some(s => s.worker_id === worker.id);
                 return (
                   <div

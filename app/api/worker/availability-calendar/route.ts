@@ -4,7 +4,7 @@ import { createBulkNotifications, NOTIFICATION_TYPES } from '@/lib/notifications
 
 interface AvailabilityEntry {
   date: string;
-  availability_type: 'available_all_day' | 'available_range' | 'unavailable';
+  availability_type: 'available_all_day' | 'available_range' | 'unavailable' | 'vacation';
   start_time?: string | null;
   end_time?: string | null;
 }

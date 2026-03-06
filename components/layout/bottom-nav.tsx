@@ -16,6 +16,7 @@ import {
   DollarSign,
   X,
   MoreHorizontal,
+  LayoutGrid,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -27,21 +28,22 @@ const workerNavItems = [
   { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
   { href: '/worker/clock-in', icon: Clock, label: 'Clock In' },
   { href: '/worker/set-availability', icon: ClipboardList, label: 'Availability' },
-  { href: '/worker/hours', icon: DollarSign, label: 'My Hours' },
-  { href: '/worker/notifications', icon: Bell, label: 'Notifications' },
+  { href: '/worker/hours', icon: DollarSign, label: 'Hours' },
+  { href: '/worker/notifications', icon: Bell, label: 'Alerts' },
   { href: '/worker/profile', icon: User, label: 'Profile' },
 ];
 
 const managerNavItems = [
   { href: '/manager', icon: Home, label: 'Home' },
-  { href: '/manager/schedule', icon: Calendar, label: 'Scheduling' },
-  { href: '/manager/workers', icon: Users, label: 'Employees' },
-  { href: '/manager/timesheets', icon: ClipboardList, label: 'Create Schedule' },
-  { href: '/manager/worker-availability', icon: Eye, label: 'Worker Availability' },
+  { href: '/manager/schedule', icon: Calendar, label: 'Schedule' },
+  { href: '/manager/workers', icon: Users, label: 'Team' },
+  { href: '/manager/timesheets', icon: ClipboardList, label: 'Create' },
+  { href: '/manager/worker-availability', icon: Eye, label: 'Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
-  { href: '/manager/worker-tracking', icon: Clock, label: 'Worker Tracking' },
-  { href: '/manager/notifications', icon: Bell, label: 'Notifications' },
+  { href: '/manager/coverage-templates', icon: LayoutGrid, label: 'Coverage' },
+  { href: '/manager/worker-tracking', icon: Clock, label: 'Tracking' },
+  { href: '/manager/notifications', icon: Bell, label: 'Alerts' },
 ];
 
 const adminNavItems = [
@@ -100,7 +102,7 @@ export function BottomNav() {
         key={item.href}
         href={item.href}
         className={cn(
-          'flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[64px] relative',
+          'flex flex-col items-center justify-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors min-w-[56px] relative',
           isActive
             ? 'text-primary'
             : 'text-foreground-muted hover:text-foreground'
@@ -114,7 +116,7 @@ export function BottomNav() {
             </span>
           )}
         </div>
-        <span className={cn('font-medium', opts?.compact ? 'text-xs' : 'text-sm')}>{item.label}</span>
+        <span className={cn('font-medium leading-tight text-center', opts?.compact ? 'text-[10px]' : 'text-xs')}>{item.label}</span>
       </Link>
     );
   };
@@ -167,7 +169,7 @@ export function BottomNav() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-4 gap-2 py-4">
+              <div className="grid grid-cols-4 gap-3 py-4">
                 {navItems.map((item) => renderNavLink(item))}
               </div>
             </div>

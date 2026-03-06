@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Toggle } from '@/components/ui';
 
-import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface PlaceSettings {
@@ -68,6 +68,7 @@ export default function ManagerPlacesPage() {
   const [expandedWorkers, setExpandedWorkers] = useState<string | null>(null);
   const [loadingWorkers, setLoadingWorkers] = useState<string | null>(null);
   const [skillRules, setSkillRules] = useState<PlaceSkillRule[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchPlaces();
@@ -427,6 +428,20 @@ export default function ManagerPlacesPage() {
           </Card>
         )}
 
+        {/* Search Bar */}
+        <div className="mb-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
+            <Input
+              type="text"
+              placeholder="Search places..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+        </div>
+
         {/* Places List */}
         <div className="space-y-4">
           {places.length === 0 ? (
@@ -444,7 +459,7 @@ export default function ManagerPlacesPage() {
               </CardContent>
             </Card>
           ) : (
-            places.map((place) => (
+            places.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || (p.address || '').toLowerCase().includes(searchTerm.toLowerCase())).map((place) => (
               <Card key={place.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">

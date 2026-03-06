@@ -34,7 +34,7 @@
 - [x] CRUD places (name, address) (§7.1)
 - [X] Place scheduling settings: granularity, min/max hours per day, block limits, rest between shifts (§7.5)
 - [x] Global skills catalog — Manager can create/edit skill names (§7.2)
-- [ ] Place skills config — enable skills per place, `enforceMinTeamRating` toggle + optional `minAvgRating` (§7.3)
+- [x] Place skills config — enable skills per place, `enforceMinTeamRating` toggle + optional `minAvgRating` (§7.3)
 
 ### 1.3 Worker Management (Manager)
 
@@ -47,16 +47,16 @@
 
 ### 1.4 Coverage Templates (Manager)
 
-- [ ] Weekly coverage template per place + skill (§7.4)
-- [ ] Define: dayOfWeek, startTime, endTime, minCount, maxCount
-- [ ] Multiple windows per day per skill supported
-- [ ] No overlap validation within same skill/day/place
+- [x] Weekly coverage template per place + skill (§7.4)
+- [x] Define: dayOfWeek, startTime, endTime, minCount, maxCount
+- [x] Multiple windows per day per skill supported
+- [x] No overlap validation within same skill/day/place
 
 ### 1.5 Availability Submission (Worker)
 
-- [ ] Worker submits availability: full-day, time-range, or vacation flag (§10.5)
+- [x] Worker submits availability: full-day, time-range, or vacation flag (§10.5)
 - [ ] Availability restricted to published schedule horizon only (§10.5)
-- [ ] Calendar UI for selecting dates and time ranges
+- [x] Calendar UI for selecting dates and time ranges
 
 ### 1.6 Schedule Generation (Solver Integration)
 
