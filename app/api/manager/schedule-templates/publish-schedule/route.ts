@@ -2,6 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { createBulkNotifications, NOTIFICATION_TYPES } from '@/lib/notifications';
 
+type SolverResultData = {
+  assignments?: Array<{ worker_id: string }>;
+  validation_status?: 'VALID' | 'INVALID';
+  constraint_violations?: unknown[];
+  coverage_gaps?: unknown[];
+};
+
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -136,10 +143,30 @@ export async function POST(request: Request) {
     }
 
     // Ensure there are actual assignments to publish
-    const solverResultData = template.solver_result as any;
+    const solverResultData = template.solver_result as SolverResultData;
     if (!solverResultData.assignments || solverResultData.assignments.length === 0) {
       return NextResponse.json(
         { error: 'Schedule has no assignments. Add shifts before publishing.' },
+        { status: 400 }
+      );
+    }
+
+    if (solverResultData.validation_status === 'INVALID') {
+      return NextResponse.json(
+        {
+          error: 'Schedule has hard-constraint violations and cannot be published.',
+          constraint_violations: solverResultData.constraint_violations || [],
+        },
+        { status: 400 }
+      );
+    }
+
+    if ((solverResultData.coverage_gaps || []).length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Schedule still has coverage gaps and cannot be published.',
+          coverage_gaps: solverResultData.coverage_gaps || [],
+        },
         { status: 400 }
       );
     }
@@ -186,7 +213,7 @@ export async function POST(request: Request) {
 
     // Update template status — also ensure the constraint allows this value
     // Try schedule_published first; fall back to closed if constraint rejects it
-    let { error: updateError } = await supabase
+    const { error: initialUpdateError } = await supabase
       .from('schedule_templates')
       .update({
         status: 'schedule_published',
@@ -195,8 +222,8 @@ export async function POST(request: Request) {
       })
       .eq('id', schedule_template_id);
 
-    if (updateError) {
-      console.warn('[publish] status update to schedule_published failed, trying closed:', updateError.message);
+    if (initialUpdateError) {
+      console.warn('[publish] status update to schedule_published failed, trying closed:', initialUpdateError.message);
       // Fallback: don't set schedule_published_at (column may not exist)
       const fallback = await supabase
         .from('schedule_templates')
@@ -213,8 +240,8 @@ export async function POST(request: Request) {
     }
 
     // Notify affected workers
-    const solverResult = template.solver_result as any;
-    const workerIds: string[] = [...new Set((solverResult?.assignments || []).map((a: any) => a.worker_id))] as string[];
+    const solverResult = template.solver_result as SolverResultData;
+    const workerIds: string[] = [...new Set((solverResult?.assignments || []).map((assignment) => assignment.worker_id))];
 
     if (workerIds.length > 0) {
       await createBulkNotifications({

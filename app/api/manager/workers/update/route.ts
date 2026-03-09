@@ -3,12 +3,54 @@ import { createClient } from "@supabase/supabase-js";
 
 export async function PUT(request: Request) {
   try {
-    const { workerId, positionIds, placeIds, hourly_rate, positionRatings, status, start_date, can_open, can_close } =
+    const {
+      workerId,
+      positionIds,
+      placeIds,
+      hourly_rate,
+      positionRatings,
+      status,
+      start_date,
+      can_open,
+      can_close,
+      monthly_min_hours,
+      monthly_optimal_hours,
+    } =
       await request.json();
 
     if (!workerId) {
       return NextResponse.json(
         { error: "Worker ID is required" },
+        { status: 400 },
+      );
+    }
+
+    const normalizedMonthlyMin =
+      monthly_min_hours === null || monthly_min_hours === undefined || monthly_min_hours === ""
+        ? null
+        : Number(monthly_min_hours);
+    const normalizedMonthlyOptimal =
+      monthly_optimal_hours === null || monthly_optimal_hours === undefined || monthly_optimal_hours === ""
+        ? null
+        : Number(monthly_optimal_hours);
+
+    if (
+      (normalizedMonthlyMin !== null && (!Number.isFinite(normalizedMonthlyMin) || normalizedMonthlyMin < 0)) ||
+      (normalizedMonthlyOptimal !== null && (!Number.isFinite(normalizedMonthlyOptimal) || normalizedMonthlyOptimal < 0))
+    ) {
+      return NextResponse.json(
+        { error: "Monthly hour targets must be non-negative numbers" },
+        { status: 400 },
+      );
+    }
+
+    if (
+      normalizedMonthlyMin !== null &&
+      normalizedMonthlyOptimal !== null &&
+      normalizedMonthlyMin > normalizedMonthlyOptimal
+    ) {
+      return NextResponse.json(
+        { error: "Monthly minimum hours cannot exceed monthly optimal hours" },
         { status: 400 },
       );
     }
@@ -73,6 +115,8 @@ export async function PUT(request: Request) {
     // Update worker fields
     const updateFields: Record<string, unknown> = {
       hourly_rate: hourly_rate || null,
+      monthly_min_hours: normalizedMonthlyMin,
+      monthly_optimal_hours: normalizedMonthlyOptimal,
       updated_at: new Date().toISOString(),
     };
 

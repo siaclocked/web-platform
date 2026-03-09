@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 
-import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, Send, CheckCircle, ChevronLeft, ChevronRight, List, LayoutGrid, Plus, Trash2, Edit2, Save } from 'lucide-react';
+import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, Send, CheckCircle, ChevronLeft, ChevronRight, Plus, Trash2, Edit2, Save } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 
@@ -23,8 +23,11 @@ interface SolverAssignment {
 interface SolverResult {
   status: string;
   assignments: SolverAssignment[];
-  coverage_gaps: any[];
+  coverage_gaps: Array<{ skill_id: string; day: number; start_minutes: number; end_minutes: number }>;
   diagnostics: string[];
+  constraint_violations?: Array<{ code: string; message: string }>;
+  validation_status?: 'VALID' | 'INVALID';
+  manual_locked_assignments?: Array<{ worker_id: string; skill_id: string; day: number; start_minutes: number; end_minutes: number }>;
   solve_time_ms: number;
   total_hours_by_worker: Record<string, number>;
 }
@@ -70,6 +73,19 @@ interface AvailableWorker {
   id: string;
   name: string;
   skill_ids: string[];
+}
+
+interface ScheduleTemplateResponse {
+  templates: ScheduleTemplate[];
+}
+
+interface PlaceWorkersResponse {
+  workers: Array<{
+    id: string;
+    first_name?: string;
+    last_name?: string;
+    skills?: Array<{ skill_id?: string; id?: string }>;
+  }>;
 }
 
 export default function ManagerSchedulePage() {
@@ -148,10 +164,10 @@ export default function ManagerSchedulePage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data = (await response.json()) as ScheduleTemplateResponse;
         // Show templates that have been solved or published
         const solvedTemplates = (data.templates || []).filter(
-          (t: any) => (t.status === 'closed' || t.status === 'schedule_published') && t.solver_status && t.solver_result
+          (template) => (template.status === 'closed' || template.status === 'schedule_published') && template.solver_status && template.solver_result
         );
         setSchedules(solvedTemplates);
       }
@@ -226,14 +242,16 @@ export default function ManagerSchedulePage() {
           headers: { 'Authorization': `Bearer ${session.access_token}` },
         });
         if (response.ok) {
-          const data = await response.json();
-          (data.workers || []).forEach((w: any) => {
-            if (seenIds.has(w.id)) return;
-            seenIds.add(w.id);
+          const data = (await response.json()) as PlaceWorkersResponse;
+          (data.workers || []).forEach((worker) => {
+            if (seenIds.has(worker.id)) return;
+            seenIds.add(worker.id);
             allWorkers.push({
-              id: w.id,
-              name: `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Unknown',
-              skill_ids: (w.skills || []).map((s: any) => s.skill_id || s.id),
+              id: worker.id,
+              name: `${worker.first_name || ''} ${worker.last_name || ''}`.trim() || 'Unknown',
+              skill_ids: (worker.skills || [])
+                .map((skill) => skill.skill_id || skill.id || '')
+                .filter(Boolean),
             });
           });
         }
@@ -383,9 +401,14 @@ export default function ManagerSchedulePage() {
         alert(err.error || `Failed to save changes for "${schedule.name}"`);
         return false;
       } else {
+        const data = await response.json();
         if (!silent) {
-          alert('Schedule changes saved!');
-          stopEditing();
+          if (data.is_valid) {
+            alert('Schedule changes saved!');
+            stopEditing();
+          } else {
+            alert('Schedule changes saved, but the draft is invalid and cannot be published until the violations are fixed.');
+          }
           fetchSchedules();
         }
         return true;

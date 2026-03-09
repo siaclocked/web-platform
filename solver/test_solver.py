@@ -29,7 +29,7 @@ T-F5: Max-1-shift-per-day preserved
 import pytest
 from main import (
     SolveRequest, SolveResponse,
-    Worker, CoverageWindow, Unavailability, PlaceSettings, SkillConstraint,
+    Worker, CoverageWindow, ExistingAssignment, Unavailability, PlaceSettings, SkillConstraint,
     _solve_greedy, ORTOOLS_AVAILABLE,
 )
 
@@ -55,15 +55,21 @@ def make_worker(wid: str, name: str, skill: str = "sk1",
                 avail_end:   int | None = None,
                 rating: int = 5,
                 can_open: bool = True,
-                can_close: bool = True) -> tuple[Worker, list[Unavailability]]:
+                can_close: bool = True,
+                place_ids: list[str] | None = None,
+                start_date: str | None = None,
+                monthly_min_hours: float | None = None,
+                monthly_optimal_hours: float | None = None) -> tuple[Worker, list[Unavailability]]:
     """
     Returns (Worker, unavailability_list).
     avail_start/end are minutes from midnight defining the AVAILABLE window.
     Unavailability is created for the blocks OUTSIDE that window on day 0.
     """
     worker = Worker(
-        id=wid, name=name, skill_ids=[skill], place_ids=["p1"],
-        skill_ratings={skill: rating}, can_open=can_open, can_close=can_close
+        id=wid, name=name, skill_ids=[skill], place_ids=place_ids or ["p1"],
+        skill_ratings={skill: rating}, can_open=can_open, can_close=can_close,
+        start_date=start_date, monthly_min_hours=monthly_min_hours,
+        monthly_optimal_hours=monthly_optimal_hours,
     )
     unavails: list[Unavailability] = []
     if avail_start is not None and avail_end is not None:
@@ -449,3 +455,190 @@ def test_can_close_required_for_single_worker_day(solver_fn):
 
     result: SolveResponse = solver_fn(request)
     assert all(a.worker_id != "w1" for a in result.assignments), "Worker without can_close must not be scheduled last"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_shift_can_extend_beyond_single_window_extent(solver_fn):
+    """A long preferred shift may start before or end after a single demand window."""
+    worker, unavails = make_worker("w1", "Alice", avail_start=8 * 60, avail_end=18 * 60)
+
+    request = SolveRequest(
+        place_id="p1",
+        start_date=BASE_DATE,
+        end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=10 * 60, end_minutes=14 * 60, min_workers=1),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False,
+        minimize_changes=False,
+    )
+
+    result = solver_fn(request)
+    assert result.assignments, "Expected an assignment"
+    assignment = result.assignments[0]
+    assert assignment.start_minutes < 10 * 60 or assignment.end_minutes > 14 * 60, \
+        "Expected the solver to allow a shift extending around the demand window"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_place_scope_is_enforced(solver_fn):
+    """Workers assigned to another place must not be scheduled."""
+    worker, unavails = make_worker("w1", "Alice", avail_start=9 * 60, avail_end=13 * 60, place_ids=["other"])
+
+    request = SolveRequest(
+        place_id="p1",
+        start_date=BASE_DATE,
+        end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False,
+        minimize_changes=False,
+    )
+
+    result = solver_fn(request)
+    assert not result.assignments, "Worker outside the place scope should not be scheduled"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_start_date_is_enforced(solver_fn):
+    """Workers cannot be scheduled before their employment start date."""
+    worker, unavails = make_worker("w1", "Alice", avail_start=9 * 60, avail_end=13 * 60, start_date="2025-01-07")
+
+    request = SolveRequest(
+        place_id="p1",
+        start_date=BASE_DATE,
+        end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=9 * 60, end_minutes=13 * 60, min_workers=1),
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False,
+        minimize_changes=False,
+    )
+
+    result = solver_fn(request)
+    assert not result.assignments, "Worker should not be scheduled before start_date"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_min_rest_between_days_is_enforced(solver_fn):
+    """Consecutive-day shifts must leave enough rest between end and next start."""
+    worker, _ = make_worker("w1", "Alice")
+    unavails = [
+        Unavailability(worker_id="w1", day=0, start_minutes=0, end_minutes=20 * 60, is_full_day=False),
+        Unavailability(worker_id="w1", day=0, start_minutes=22 * 60, end_minutes=24 * 60, is_full_day=False),
+        Unavailability(worker_id="w1", day=1, start_minutes=0, end_minutes=5 * 60, is_full_day=False),
+        Unavailability(worker_id="w1", day=1, start_minutes=7 * 60, end_minutes=24 * 60, is_full_day=False),
+    ]
+
+    request = SolveRequest(
+            place_id="p1",
+            start_date=BASE_DATE,
+            end_date="2025-01-07",
+                workers=[worker],
+                coverage_windows=[
+                    CoverageWindow(id="late", skill_id="sk1", day=0, start_minutes=20 * 60, end_minutes=22 * 60, min_workers=1),
+                    CoverageWindow(id="early", skill_id="sk1", day=1, start_minutes=5 * 60, end_minutes=7 * 60, min_workers=1),
+                ],
+        unavailability=unavails,
+        settings=PlaceSettings(
+            max_hours_per_day=12,
+            min_hours_per_block=2,
+            max_hours_per_block=8,
+            min_rest_between_shifts=8,
+            granularity_minutes=30,
+        ),
+        balance_hours=False,
+        minimize_changes=False,
+    )
+
+    result = solver_fn(request)
+    assert len(result.assignments) <= 1, "Expected rest rule to prevent both consecutive-day shifts"
+
+
+def test_locked_assignment_outside_window_is_preserved():
+    """Locked assignments outside the raw window extent should still be honored when they overlap demand."""
+    if not ORTOOLS_AVAILABLE:
+        pytest.skip("Locked assignment preservation check requires CP-SAT path")
+
+    worker, unavails = make_worker("w1", "Alice", avail_start=8 * 60, avail_end=18 * 60)
+    request = SolveRequest(
+        place_id="p1",
+        start_date=BASE_DATE,
+        end_date=END_1DAY,
+        workers=[worker],
+        coverage_windows=[
+            CoverageWindow(id="cov", skill_id="sk1", day=0, start_minutes=10 * 60, end_minutes=14 * 60, min_workers=1),
+        ],
+        existing_assignments=[
+            ExistingAssignment(
+                worker_id="w1",
+                skill_id="sk1",
+                day=0,
+                start_minutes=8 * 60,
+                end_minutes=16 * 60,
+                is_locked=True,
+            )
+        ],
+        unavailability=unavails,
+        settings=SETTINGS_30,
+        balance_hours=False,
+        minimize_changes=True,
+    )
+
+    result = _solve_cpsat(request)
+    assert any(a.worker_id == "w1" and a.start_minutes == 8 * 60 and a.end_minutes == 16 * 60 for a in result.assignments), \
+        "Locked assignment should be preserved exactly"
+
+
+@pytest.mark.parametrize("solver_fn", _solvers())
+def test_monthly_targets_prioritize_worker_with_larger_deficit(solver_fn):
+    """Monthly hour targets should prefer the worker with the larger remaining monthly deficit."""
+    full_time, ua_full = make_worker(
+        "w1",
+        "Full",
+        avail_start=8 * 60,
+        avail_end=16 * 60,
+        monthly_min_hours=160,
+        monthly_optimal_hours=160,
+    )
+    part_time, ua_part = make_worker(
+        "w2",
+        "Part",
+        avail_start=8 * 60,
+        avail_end=16 * 60,
+        monthly_min_hours=80,
+        monthly_optimal_hours=80,
+    )
+
+    request = SolveRequest(
+        place_id="p1",
+        start_date=BASE_DATE,
+        end_date="2025-01-10",
+        workers=[full_time, part_time],
+        coverage_windows=[
+            CoverageWindow(id=f"cov-{day}", skill_id="sk1", day=day, start_minutes=8 * 60, end_minutes=16 * 60, min_workers=1)
+            for day in range(5)
+        ],
+        worker_month_context=[
+            {"worker_id": "w1", "month_start": "2025-01-01", "worked_hours": 120, "scheduled_hours_outside_interval": 0},
+            {"worker_id": "w2", "month_start": "2025-01-01", "worked_hours": 72, "scheduled_hours_outside_interval": 0},
+        ],
+        unavailability=ua_full + ua_part,
+        settings=SETTINGS_30,
+        balance_hours=True,
+        minimize_changes=False,
+    )
+
+    result = solver_fn(request)
+    assert result.total_hours_by_worker["w1"] > result.total_hours_by_worker["w2"], \
+        "Expected the worker with the larger remaining monthly deficit to receive more hours"

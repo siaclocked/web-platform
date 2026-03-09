@@ -1,6 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { createBulkNotifications, NOTIFICATION_TYPES } from '@/lib/notifications';
+import { buildSolverRequest } from '../solver-payload';
+
+const SOLVER_URL = process.env.SOLVER_URL || 'http://localhost:8000';
+
+type ScheduleAssignment = {
+  worker_id: string;
+  skill_id: string;
+  day: number;
+  start_minutes: number;
+  end_minutes: number;
+  is_locked?: boolean;
+};
+
+type SolverResultShape = {
+  assignments?: ScheduleAssignment[];
+  diagnostics?: string[];
+  coverage_gaps?: unknown[];
+  constraint_violations?: unknown[];
+  total_hours_by_worker?: Record<string, number>;
+};
 
 export async function POST(request: Request) {
   try {
@@ -32,7 +52,12 @@ export async function POST(request: Request) {
     // Fetch the template to verify ownership and get current solver_result
     const { data: template, error: fetchError } = await supabase
       .from('schedule_templates')
-      .select('*')
+      .select(`
+        *,
+        places:place_id (
+          settings
+        )
+      `)
       .eq('id', schedule_template_id)
       .eq('manager_id', user.id)
       .single();
@@ -51,25 +76,68 @@ export async function POST(request: Request) {
 
     // Get previous worker IDs before edit
     const prevWorkerIds = new Set<string>(
-      ((template.solver_result as any)?.assignments || []).map((a: any) => a.worker_id)
+      ((template.solver_result as SolverResultShape | null)?.assignments || []).map((assignment) => assignment.worker_id)
     );
 
-    // Rebuild total_hours_by_worker from new assignments
-    const totalHours: Record<string, number> = {};
-    for (const a of assignments) {
-      const hours = (a.end_minutes - a.start_minutes) / 60;
-      totalHours[a.worker_id] = (totalHours[a.worker_id] || 0) + hours;
+    const { data: shiftTemplates, error: shiftsError } = await supabase
+      .from('shift_templates')
+      .select('*')
+      .eq('schedule_template_id', schedule_template_id)
+      .order('date', { ascending: true });
+
+    if (shiftsError) {
+      return NextResponse.json({ error: 'Failed to load schedule structure for validation' }, { status: 500 });
     }
 
-    // Update solver_result with new assignments
+    const editedAssignments = (assignments as ScheduleAssignment[]).map((assignment) => ({
+      worker_id: assignment.worker_id,
+      skill_id: assignment.skill_id,
+      day: assignment.day,
+      start_minutes: assignment.start_minutes,
+      end_minutes: assignment.end_minutes,
+      is_locked: assignment.is_locked ?? true,
+    }));
+
+    const solverRequest = await buildSolverRequest({
+      supabase,
+      template: template,
+      shiftTemplates: (shiftTemplates || []) as Array<{
+        id: string;
+        date: string;
+        day_type: string;
+        shifts: Array<{ startTime: string; endTime: string; position: string; workers?: number }> | null;
+      }>,
+      existingAssignmentsOverride: editedAssignments,
+      minimizeChanges: true,
+      balanceHours: true,
+    });
+
+    const validateResponse = await fetch(`${SOLVER_URL}/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(solverRequest),
+    });
+
+    if (!validateResponse.ok) {
+      return NextResponse.json({ error: 'Failed to validate edited schedule' }, { status: 502 });
+    }
+
+    const validationResult = await validateResponse.json();
+
     const updatedResult = {
       ...template.solver_result,
       assignments,
-      total_hours_by_worker: totalHours,
+      coverage_gaps: validationResult.coverage_gaps || [],
       diagnostics: [
-        ...(template.solver_result.diagnostics || []),
+        ...(validationResult.diagnostics || []),
         `Manually edited by manager (${assignments.length} shifts)`,
       ],
+      constraint_violations: validationResult.constraint_violations || [],
+      total_hours_by_worker: validationResult.total_hours_by_worker || {},
+      validation_status: validationResult.is_valid ? 'VALID' : 'INVALID',
+      manual_locked_assignments: editedAssignments.filter((assignment) => assignment.is_locked),
     };
 
     const { error: updateError } = await supabase
@@ -87,7 +155,7 @@ export async function POST(request: Request) {
 
     // If the schedule is already published, notify affected workers about the change
     if (template.status === 'schedule_published') {
-      const newWorkerIds = new Set<string>(assignments.map((a: any) => a.worker_id));
+      const newWorkerIds = new Set<string>((assignments as ScheduleAssignment[]).map((assignment) => assignment.worker_id));
       // Notify all workers who are in the new or old assignments
       const allAffectedIds = [...new Set([...prevWorkerIds, ...newWorkerIds])];
 
@@ -108,8 +176,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      is_valid: validationResult.is_valid,
       assignments_count: assignments.length,
-      total_hours_by_worker: totalHours,
+      total_hours_by_worker: validationResult.total_hours_by_worker || {},
+      coverage_gaps: validationResult.coverage_gaps || [],
+      constraint_violations: validationResult.constraint_violations || [],
     });
   } catch (err) {
     console.error('API error:', err);

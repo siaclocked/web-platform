@@ -21,9 +21,13 @@ export interface User {
   company_id: string;
   avatar_url?: string;
   hourly_rate?: number;
+  monthly_min_hours?: number | null;
+  monthly_optimal_hours?: number | null;
   can_open?: boolean;
   can_close?: boolean;
   is_active: boolean;
+  status?: 'INVITED' | 'ACTIVE' | 'DISABLED';
+  start_date?: string | null;
   created_at: string;
   updated_at: string;
 }

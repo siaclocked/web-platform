@@ -188,7 +188,7 @@ Worker can see:
   - Realtime: optional for live updates
 - **Python Solver Service**
   - OR-Tools CP-SAT
-  - Endpoint: `/solve` (and optional `/validate`)
+  - Endpoints: `/solve` and `/validate`
   - Returns assignments + diagnostics
 
 ### 5.2 Scheduler Contract (High-Level)
@@ -267,9 +267,10 @@ Manager selects enabled skills for the place and configures per-skill thresholds
 
 Manager defines weekly windows per skill:
 
-- dayOfWeek, startTime, endTime, minCount, maxCount
+- dayOfWeek, startTime, endTime, minCount
 - multiple windows/day supported (chunks)
 - MVP: no overlap within the same skill/day for a place
+- `maxCount` is deferred in the current solver contract and is not enforced by the MVP solver
 
 > **Important:** Coverage windows define **required headcount** during that interval — they are staffing demand requirements, not shift boundaries. A worker's shift may start before a window, end after, or span across multiple adjacent windows. The solver determines actual shift start/end times freely within worker availability and place settings.
 
@@ -278,8 +279,8 @@ Manager defines weekly windows per skill:
 Per place:
 
 - `timeGranularityMinutes` (15/30/60) — resolution for shift start/end snapping
-- `minHoursPerDay`, `maxHoursPerDay`
-- optional `minHoursPerWeek`, `maxHoursPerWeek`
+- `maxHoursPerDay`
+- optional `minHoursPerDay`, `minHoursPerWeek`, `maxHoursPerWeek` are deferred in the current solver contract
 - `minShiftMinutes` — minimum shift length (hard constraint). Solver never schedules a shift shorter than this. Example: 120 min (2 h). Short shifts near this value are discouraged by the soft objective and only appear when understaffing forces it.
 - `maxShiftMinutes` — maximum shift length (hard upper bound + soft target). Solver prefers shifts close to this value. Example: 480 min (8 h).
 - `minRestMinutesBetweenShifts` — minimum rest between a worker's shifts across consecutive days
@@ -296,6 +297,7 @@ Create/edit:
 - `canOpen` (boolean): eligible to be among earliest starters on a day
 - `canClose` (boolean): eligible to be among latest finishers on a day
 - hourly rate (for pay estimate)
+- optional `monthlyMinHours` and `monthlyOptimalHours` — worker-level monthly hour targets used as soft scheduling targets
 
 ---
 
@@ -336,14 +338,15 @@ After any override, draft must be revalidated.
 
 ### 8.5 Revalidation Rules (Hard)
 
-- Coverage min/max per window+skill
+- Coverage minimum per window+skill
 - Avg rating threshold per place+skill per staffed slot (if enabled)
 - Worker availability
 - No overlap
 - One place per day per worker
-- Hours/day/week limits
+- Hours/day limits
 - Block duration limits
 - Min rest between blocks
+- `maxCount` coverage and optional day/week minimum-hour settings are deferred and do not participate in current draft validation
 
 If invalid:
 
@@ -356,7 +359,7 @@ If invalid:
 When repairing (due to availability change or manager action):
 
 - previous baseline = current published (or current draft if in draft mode)
-- objective: minimize changes (highest weight), while satisfying hard constraints
+- objective order: minimize coverage gaps first, then minimize changes, then apply other soft preferences
 - locked overrides are treated as hard constraints
 
 ### 8.7 Infeasible Handling
@@ -373,7 +376,7 @@ If solver returns INFEASIBLE:
 
 ### 9.1 Hard Constraints (must always hold)
 
-- Coverage: min ≤ assignedCount for every place+window+skill (max is soft in MVP)
+- Coverage: min ≤ assignedCount for every place+window+skill (`maxCount` is deferred in the current solver contract)
 - Eligibility: worker has skill rating, is assigned to place (or ALL), startDate reached
 - Availability: shift must fall entirely within worker's available window(s) for that day
 - One shift per day: max one shift per worker per day (shift may span multiple coverage windows)
@@ -389,22 +392,31 @@ If solver returns INFEASIBLE:
 Priority order (highest weight first):
 
 1. **Minimize coverage gaps** — penalize every unfilled required headcount slot heavily
-2. **Balance hours proportionally to availability** — workers with more available hours in the planning horizon should receive proportionally more assigned hours
-3. **Prefer longer shifts** — penalize the shortfall `(maxShiftMinutes − actualShiftMinutes)` per assignment; short shifts are a last resort for understaffing situations only
-4. **Minimize changes vs previous schedule** — used as primary objective during repair/regeneration
+2. **Minimize changes vs previous schedule** — primary repair objective once coverage is satisfied
+3. **Monthly hour targets** — `monthlyMinHours` is a stronger soft target; `monthlyOptimalHours` is a weaker soft target
+4. **Balance hours proportionally to availability** — mainly a later tie-breaker for workers without monthly hour targets
+5. **Prefer longer shifts** — penalize the shortfall `(maxShiftMinutes − actualShiftMinutes)` per assignment; short shifts are a last resort for understaffing situations only
 
 ### 9.3 Flexible Shift Model (Solver v2)
 
 The solver internally uses a **slot-demand model**:
 
 1. Coverage windows are decomposed into time-slot demand: `required_workers[day, skill, slot]`
-2. For each worker/day/skill, candidate shifts are generated with all valid `(start, end)` pairs where `minShiftMinutes ≤ (end − start) ≤ maxShiftMinutes`, start/end snap to `timeGranularityMinutes`, and the window is inside the worker's availability
+2. For each worker/day/skill, candidate shifts are generated with all valid `(start, end)` pairs where `minShiftMinutes ≤ (end − start) ≤ maxShiftMinutes`, start/end snap to `timeGranularityMinutes`, the shift stays inside the worker's availability, and the shift overlaps at least one demanded slot for that day+skill
 3. Decision variable: `x[worker, day, skill, start, end]` ∈ {0, 1}
 4. Coverage constraint: for each slot `(day, skill, t)`, `sum(x where shift covers t)` + slack ≥ required
 5. One-shift constraint: `sum(x for worker on day)` ≤ 1
-6. Objective: weighted sum of gap penalty + hours-balance deviation + shift-length shortfall
+6. Objective: weighted sum of coverage gap penalty + repair stability + monthly hour targets + hours-balance deviation + shift-length shortfall
 
 This allows the solver to assign a worker `10:00–18:00` that covers part of an `08:00–13:00` window and all of a `13:00–18:00` window — without requiring separate variables per coverage block.
+
+### 9.5 Monthly Hour Targets
+
+- `monthlyMinHours` and `monthlyOptimalHours` are global per-worker monthly targets, not per-place targets
+- the solver scores targets separately per worker-month bucket, even when the generation interval spans multiple calendar months
+- projected month hours are calculated as worked hours already completed in the month + already-published scheduled hours outside the current generation interval + solver-assigned hours inside the generation interval
+- monthly minimum is a strong soft target; monthly optimal is a weaker soft target
+- if both fields are unset, the worker falls back to availability-based balancing only
 
 ### 9.4 Rating Constraint (per skill, per staffed slot)
 

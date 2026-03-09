@@ -7,8 +7,8 @@ A Python-based schedule optimization service using Google OR-Tools CP-SAT solver
 This service generates optimal work schedules based on:
 - Worker skills and availability
 - Coverage requirements
-- Hard constraints (max hours, rest periods, etc.)
-- Soft objectives (minimize changes, balance hours)
+- Hard constraints (place eligibility, start date, max daily hours, rest periods, locks, etc.)
+- Soft objectives (coverage, repair stability, monthly hour targets, balance, shift length)
 
 ## Running Locally
 
@@ -73,6 +73,7 @@ Generate an optimized schedule.
   "coverage_windows": [...],
   "existing_assignments": [...],
   "unavailability": [...],
+  "worker_month_context": [...],
   "settings": {...},
   "minimize_changes": true,
   "balance_hours": true
@@ -86,6 +87,7 @@ Generate an optimized schedule.
   "assignments": [...],
   "coverage_gaps": [...],
   "diagnostics": [...],
+  "constraint_violations": [...],
   "solve_time_ms": 150,
   "total_hours_by_worker": {...}
 }
@@ -93,7 +95,7 @@ Generate an optimized schedule.
 
 ### POST /validate
 
-Validate a schedule without solving.
+Validate a schedule without solving. Uses `existing_assignments` from the request as the schedule under validation and returns `is_valid` plus structured `constraint_violations`.
 
 ### GET /health
 
@@ -103,11 +105,16 @@ Health check endpoint.
 
 ### Hard Constraints
 - Workers can only work skills they have
+- Workers must be eligible for the place being solved
+- Workers cannot be scheduled before `start_date`
 - Workers cannot work when unavailable
 - Maximum one shift per worker per day
+- Minimum rest between consecutive-day shifts
 - Locked assignments must be honored
 
 ### Soft Objectives (Minimized)
 1. Coverage gaps (highest priority)
-2. Hour imbalance between workers
-3. Changes from existing assignments
+2. Repair stability / minimal changes
+3. Monthly minimum and optimal hour targets
+4. Hour imbalance between workers without monthly targets
+5. Shift-length preferences

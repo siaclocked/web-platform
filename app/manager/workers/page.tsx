@@ -26,6 +26,8 @@ interface Worker {
   phone?: string;
   is_active: boolean;
   hourly_rate?: number;
+  monthly_min_hours?: number | null;
+  monthly_optimal_hours?: number | null;
   status?: string;
   start_date?: string;
   can_open?: boolean;
@@ -44,6 +46,13 @@ interface Place {
   name: string;
 }
 
+interface PaidLeaveRecord {
+  id: string;
+  start_date: string;
+  end_date: string;
+  notes?: string | null;
+}
+
 export default function ManagerWorkersPage() {
   const router = useRouter();
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -53,6 +62,8 @@ export default function ManagerWorkersPage() {
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [editForm, setEditForm] = useState({
     hourly_rate: '',
+    monthly_min_hours: '',
+    monthly_optimal_hours: '',
     status: 'ACTIVE',
     start_date: '',
     can_open: true,
@@ -70,7 +81,7 @@ export default function ManagerWorkersPage() {
   // Paid leave state
   const [showPaidLeave, setShowPaidLeave] = useState<string | null>(null);
   const [paidLeaveForm, setPaidLeaveForm] = useState({ start_date: '', end_date: '', notes: '' });
-  const [paidLeaveRecords, setPaidLeaveRecords] = useState<any[]>([]);
+  const [paidLeaveRecords, setPaidLeaveRecords] = useState<PaidLeaveRecord[]>([]);
   const [isSubmittingLeave, setIsSubmittingLeave] = useState(false);
   const [isLoadingLeave, setIsLoadingLeave] = useState(false);
 
@@ -196,6 +207,8 @@ export default function ManagerWorkersPage() {
     setEditingWorker(worker);
     setEditForm({
       hourly_rate: worker.hourly_rate ? worker.hourly_rate.toString() : '',
+      monthly_min_hours: worker.monthly_min_hours ? worker.monthly_min_hours.toString() : '',
+      monthly_optimal_hours: worker.monthly_optimal_hours ? worker.monthly_optimal_hours.toString() : '',
       status: worker.status || 'ACTIVE',
       start_date: worker.start_date || '',
       can_open: worker.can_open ?? true,
@@ -252,6 +265,8 @@ export default function ManagerWorkersPage() {
         positionRatings: editPositionRatings,
         placeIds: editPlaces,
         hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate) : null,
+        monthly_min_hours: editForm.monthly_min_hours ? parseFloat(editForm.monthly_min_hours) : null,
+        monthly_optimal_hours: editForm.monthly_optimal_hours ? parseFloat(editForm.monthly_optimal_hours) : null,
         status: editForm.status,
         start_date: editForm.start_date || null,
         can_open: editForm.can_open,
@@ -336,7 +351,7 @@ export default function ManagerWorkersPage() {
         const data = await res.json();
         setError(data.error || 'Failed to grant paid leave');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to grant paid leave');
     } finally {
       setIsSubmittingLeave(false);
@@ -374,7 +389,15 @@ export default function ManagerWorkersPage() {
 
   const handleCancelEdit = () => {
     setEditingWorker(null);
-    setEditForm({ hourly_rate: '', status: 'ACTIVE', start_date: '', can_open: true, can_close: true });
+    setEditForm({
+      hourly_rate: '',
+      monthly_min_hours: '',
+      monthly_optimal_hours: '',
+      status: 'ACTIVE',
+      start_date: '',
+      can_open: true,
+      can_close: true,
+    });
     setEditPositionRatings({});
     setEditPositions([]);
     setEditPlaces([]);
@@ -543,6 +566,31 @@ export default function ManagerWorkersPage() {
                           </div>
                         </div>
 
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Monthly Min Hours</label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.25"
+                              placeholder="80"
+                              value={editForm.monthly_min_hours}
+                              onChange={(e) => setEditForm({ ...editForm, monthly_min_hours: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Monthly Optimal Hours</label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.25"
+                              placeholder="160"
+                              value={editForm.monthly_optimal_hours}
+                              onChange={(e) => setEditForm({ ...editForm, monthly_optimal_hours: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
 	                        <div className="grid grid-cols-2 gap-3">
 	                          <div>
 	                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date</label>
@@ -677,7 +725,7 @@ export default function ManagerWorkersPage() {
                               ) : paidLeaveRecords.length > 0 ? (
                                 <div className="space-y-1">
                                   <p className="text-xs font-medium text-foreground-muted">Active Paid Leave</p>
-                                  {paidLeaveRecords.map((pl: any) => (
+                                  {paidLeaveRecords.map((pl) => (
                                     <div key={pl.id} className="flex items-center justify-between p-2 bg-background-secondary rounded-lg">
                                       <div>
                                         <p className="text-sm font-medium text-foreground">

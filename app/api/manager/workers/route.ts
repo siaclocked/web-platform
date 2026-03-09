@@ -60,6 +60,8 @@ export async function GET(request: Request) {
       phone?: string | null;
       is_active: boolean;
       hourly_rate?: number | null;
+      monthly_min_hours?: number | null;
+      monthly_optimal_hours?: number | null;
       status?: string;
       start_date?: string | null;
       can_open?: boolean;
@@ -79,6 +81,8 @@ export async function GET(request: Request) {
         phone,
         is_active,
         hourly_rate,
+        monthly_min_hours,
+        monthly_optimal_hours,
         status,
         start_date,
         can_open,
@@ -89,10 +93,12 @@ export async function GET(request: Request) {
       .order('created_at', { ascending: false });
 
     if (
-      result.error &&
+        result.error &&
       (
         result.error.message?.includes('status') ||
         result.error.message?.includes('start_date') ||
+        result.error.message?.includes('monthly_min_hours') ||
+        result.error.message?.includes('monthly_optimal_hours') ||
         result.error.message?.includes('can_open') ||
         result.error.message?.includes('can_close')
       )

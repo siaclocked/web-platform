@@ -1,33 +1,39 @@
 """
 Clocked Schedule Solver Service — v2 (Flexible Shift Model)
 
-Coverage windows define slot-level staffing DEMAND only; a single worker
-shift may span across multiple windows. Solver freely picks shift
-start/end within [min_shift_minutes, max_shift_minutes] bounds.
+Coverage windows define slot-level staffing demand only; a single worker
+shift may span across multiple windows and extend around them so long as the
+shift still overlaps demanded time and respects worker/place constraints.
 """
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
 
 ORTOOLS_AVAILABLE = False
 try:
     from ortools.sat.python import cp_model
+
     ORTOOLS_AVAILABLE = True
     print("[solver-v2] OR-Tools loaded — using CP-SAT solver")
 except (ImportError, OSError) as e:
     print(f"[solver-v2] OR-Tools unavailable ({e}) — using greedy fallback")
 
-app = FastAPI(title="Clocked Solver v2", version="2.0.0")
+
+app = FastAPI(title="Clocked Solver v2", version="2.1.0")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-
-# ── Models ────────────────────────────────────────────────────────────────────
 
 class Worker(BaseModel):
     id: str
@@ -36,8 +42,11 @@ class Worker(BaseModel):
     place_ids: list[str]
     skill_ratings: dict[str, int] = {}
     start_date: Optional[str] = None
+    status: Optional[str] = "ACTIVE"
     can_open: bool = True
     can_close: bool = True
+    monthly_min_hours: float | None = None
+    monthly_optimal_hours: float | None = None
 
 
 class CoverageWindow(BaseModel):
@@ -68,18 +77,53 @@ class Unavailability(BaseModel):
 
 class PlaceSettings(BaseModel):
     max_hours_per_day: float = 12.0
-    min_hours_per_block: float = 2.0
-    max_hours_per_block: float = 12.0
+    min_shift_minutes: int | None = None
+    max_shift_minutes: int | None = None
+    min_hours_per_block: float | None = 2.0
+    max_hours_per_block: float | None = 12.0
+    soft_min_shift_minutes: int | None = None
+    soft_max_shift_minutes: int | None = None
     soft_min_hours_per_block: float | None = None
     soft_max_hours_per_block: float | None = None
     min_rest_between_shifts: float = 8.0
     granularity_minutes: int = 15
+
+    def resolved_min_shift_minutes(self) -> int:
+        if self.min_shift_minutes is not None:
+            return int(self.min_shift_minutes)
+        return int((self.min_hours_per_block or 2.0) * 60)
+
+    def resolved_max_shift_minutes(self) -> int:
+        if self.max_shift_minutes is not None:
+            return int(self.max_shift_minutes)
+        return int((self.max_hours_per_block or 12.0) * 60)
+
+    def resolved_soft_min_shift_minutes(self) -> int | None:
+        if self.soft_min_shift_minutes is not None:
+            return int(self.soft_min_shift_minutes)
+        if self.soft_min_hours_per_block is not None:
+            return int(self.soft_min_hours_per_block * 60)
+        return None
+
+    def resolved_soft_max_shift_minutes(self) -> int | None:
+        if self.soft_max_shift_minutes is not None:
+            return int(self.soft_max_shift_minutes)
+        if self.soft_max_hours_per_block is not None:
+            return int(self.soft_max_hours_per_block * 60)
+        return None
 
 
 class SkillConstraint(BaseModel):
     skill_id: str
     enforce_min_team_rating: bool = False
     min_avg_rating: float | None = None
+
+
+class WorkerMonthContext(BaseModel):
+    worker_id: str
+    month_start: str
+    worked_hours: float = 0.0
+    scheduled_hours_outside_interval: float = 0.0
 
 
 class SolveRequest(BaseModel):
@@ -91,6 +135,7 @@ class SolveRequest(BaseModel):
     existing_assignments: list[ExistingAssignment] = []
     unavailability: list[Unavailability] = []
     skill_constraints: list[SkillConstraint] = []
+    worker_month_context: list[WorkerMonthContext] = []
     settings: PlaceSettings = PlaceSettings()
     minimize_changes: bool = True
     balance_hours: bool = True
@@ -104,6 +149,7 @@ class Assignment(BaseModel):
     day: int
     start_minutes: int
     end_minutes: int
+    is_locked: bool = False
 
 
 class CoverageGap(BaseModel):
@@ -115,20 +161,85 @@ class CoverageGap(BaseModel):
     assigned: int
 
 
+class ConstraintViolation(BaseModel):
+    code: str
+    message: str
+    worker_id: str | None = None
+    skill_id: str | None = None
+    day: int | None = None
+    start_minutes: int | None = None
+    end_minutes: int | None = None
+
+
 class SolveResponse(BaseModel):
     status: str
     assignments: list[Assignment]
     coverage_gaps: list[CoverageGap]
     diagnostics: list[str]
+    constraint_violations: list[ConstraintViolation]
     solve_time_ms: int
     total_hours_by_worker: dict[str, float]
 
 
-# ── Shared helpers ─────────────────────────────────────────────────────────────
+class ValidationResponse(BaseModel):
+    status: str
+    is_valid: bool
+    assignments: list[Assignment]
+    coverage_gaps: list[CoverageGap]
+    diagnostics: list[str]
+    constraint_violations: list[ConstraintViolation]
+    total_hours_by_worker: dict[str, float]
 
-def _is_shift_available(worker_id: str, day: int, start_min: int, end_min: int,
-                         unavail_lookup: dict) -> bool:
-    """True if shift [start_min, end_min) does not overlap any unavailability."""
+
+def _parse_day_dates(request: SolveRequest) -> list[date]:
+    start = datetime.fromisoformat(request.start_date).date()
+    end = datetime.fromisoformat(request.end_date).date()
+    num_days = (end - start).days + 1
+    if num_days <= 0 or num_days > 31:
+        raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
+    return [start + timedelta(days=offset) for offset in range(num_days)]
+
+
+def _month_start_for_date(day_date: date) -> str:
+    return day_date.replace(day=1).isoformat()
+
+
+def _build_worker_month_baseline(request: SolveRequest, granularity: int) -> dict[tuple[str, str], int]:
+    baseline: dict[tuple[str, str], int] = {}
+    for entry in request.worker_month_context:
+        hours = float(entry.worked_hours) + float(entry.scheduled_hours_outside_interval)
+        baseline[(entry.worker_id, entry.month_start)] = int(round(hours * 60 / granularity))
+    return baseline
+
+
+def _settings_slots(settings: PlaceSettings) -> dict[str, int]:
+    granularity = int(settings.granularity_minutes)
+    min_shift_minutes = settings.resolved_min_shift_minutes()
+    max_shift_minutes = settings.resolved_max_shift_minutes()
+    soft_min_minutes = settings.resolved_soft_min_shift_minutes()
+    soft_max_minutes = settings.resolved_soft_max_shift_minutes()
+
+    min_slots = max(1, min_shift_minutes // granularity)
+    max_slots = max(min_slots, max_shift_minutes // granularity)
+    daily_max_slots = max(1, int((settings.max_hours_per_day * 60) // granularity))
+    max_slots = min(max_slots, daily_max_slots)
+    soft_min_slots = max(min_slots, (soft_min_minutes // granularity) if soft_min_minutes is not None else min_slots)
+    soft_max_slots = max(min_slots, (soft_max_minutes // granularity) if soft_max_minutes is not None else max_slots)
+    rest_slots = max(0, int((settings.min_rest_between_shifts * 60) // granularity))
+
+    return {
+        "granularity": granularity,
+        "min_slots": min_slots,
+        "max_slots": max_slots,
+        "soft_min_slots": soft_min_slots,
+        "soft_max_slots": soft_max_slots,
+        "daily_max_slots": daily_max_slots,
+        "rest_slots": rest_slots,
+        "slots_per_day": 24 * 60 // granularity,
+    }
+
+
+def _is_shift_available(worker_id: str, day: int, start_min: int, end_min: int, unavail_lookup: dict) -> bool:
     for ua in unavail_lookup.get((worker_id, day), []):
         if ua.is_full_day:
             return False
@@ -138,614 +249,1057 @@ def _is_shift_available(worker_id: str, day: int, start_min: int, end_min: int,
     return True
 
 
-def _build_demand(coverage: list, granularity: int):
-    """
-    Returns:
-      demand  : {(day, skill_id, slot): required_workers}
-      extent  : {(day, skill_id): (first_slot, last_slot_exclusive)}
-    """
-    demand: dict = {}
-    extent: dict = {}
-    for cov in coverage:
-        s = cov.start_minutes // granularity
-        e = cov.end_minutes // granularity
-        k = (cov.day, cov.skill_id)
-        cur = extent.get(k)
-        extent[k] = (min(cur[0], s), max(cur[1], e)) if cur else (s, e)
-        for t in range(s, e):
-            key = (cov.day, cov.skill_id, t)
-            demand[key] = demand.get(key, 0) + cov.min_workers
+def _build_unavailability_lookup(unavailability: list[Unavailability]) -> dict[tuple[str, int], list[Unavailability]]:
+    lookup: dict[tuple[str, int], list[Unavailability]] = {}
+    for ua in unavailability:
+        lookup.setdefault((ua.worker_id, ua.day), []).append(ua)
+    return lookup
+
+
+def _build_demand(coverage_windows: list[CoverageWindow], granularity: int):
+    demand: dict[tuple[int, str, int], int] = {}
+    extent: dict[tuple[int, str], tuple[int, int]] = {}
+    for cov in coverage_windows:
+        start_slot = cov.start_minutes // granularity
+        end_slot = cov.end_minutes // granularity
+        key = (cov.day, cov.skill_id)
+        current = extent.get(key)
+        extent[key] = (min(current[0], start_slot), max(current[1], end_slot)) if current else (start_slot, end_slot)
+        for slot in range(start_slot, end_slot):
+            demand[(cov.day, cov.skill_id, slot)] = demand.get((cov.day, cov.skill_id, slot), 0) + cov.min_workers
     return demand, extent
 
 
-def _coverage_gaps(coverage_windows: list, assignments: list,
-                   remaining_demand: dict, granularity: int) -> list[CoverageGap]:
-    gaps = []
+def _build_skill_thresholds(skill_constraints: list[SkillConstraint]) -> dict[str, int]:
+    thresholds: dict[str, int] = {}
+    for constraint in skill_constraints:
+        if constraint.enforce_min_team_rating and constraint.min_avg_rating is not None:
+            thresholds[constraint.skill_id] = int(round(float(constraint.min_avg_rating) * 100))
+    return thresholds
+
+
+def _worker_is_eligible(worker: Worker, request: SolveRequest, skill_id: str, day_date: date) -> bool:
+    if worker.status and worker.status != "ACTIVE":
+        return False
+    if skill_id not in worker.skill_ids:
+        return False
+    if request.place_id not in worker.place_ids and "ALL" not in worker.place_ids:
+        return False
+    if worker.start_date:
+        start_date = datetime.fromisoformat(worker.start_date).date()
+        if day_date < start_date:
+            return False
+    return True
+
+
+def _assignment_to_response(assignment: ExistingAssignment | Assignment, workers_by_id: dict[str, Worker]) -> Assignment:
+    worker = workers_by_id.get(assignment.worker_id)
+    worker_name = worker.name if worker else assignment.worker_id
+    return Assignment(
+        worker_id=assignment.worker_id,
+        worker_name=worker_name,
+        skill_id=assignment.skill_id,
+        day=assignment.day,
+        start_minutes=assignment.start_minutes,
+        end_minutes=assignment.end_minutes,
+        is_locked=getattr(assignment, "is_locked", False),
+    )
+
+
+def _basic_assignment_violations(
+    request: SolveRequest,
+    assignments: list[ExistingAssignment | Assignment],
+    workers_by_id: dict[str, Worker],
+    unavail_lookup: dict,
+    day_dates: list[date],
+    slot_settings: dict[str, int],
+) -> list[ConstraintViolation]:
+    violations: list[ConstraintViolation] = []
+    min_minutes = slot_settings["min_slots"] * slot_settings["granularity"]
+    max_minutes = slot_settings["max_slots"] * slot_settings["granularity"]
+    daily_max_minutes = slot_settings["daily_max_slots"] * slot_settings["granularity"]
+
+    for assignment in assignments:
+        worker = workers_by_id.get(assignment.worker_id)
+        if worker is None:
+            violations.append(
+                ConstraintViolation(
+                    code="UNKNOWN_WORKER",
+                    message=f"Unknown worker {assignment.worker_id}",
+                    worker_id=assignment.worker_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+            continue
+        if assignment.day < 0 or assignment.day >= len(day_dates):
+            violations.append(
+                ConstraintViolation(
+                    code="DAY_OUT_OF_RANGE",
+                    message="Assignment day is outside the solve interval",
+                    worker_id=assignment.worker_id,
+                    skill_id=assignment.skill_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+            continue
+        day_date = day_dates[assignment.day]
+        if not _worker_is_eligible(worker, request, assignment.skill_id, day_date):
+            violations.append(
+                ConstraintViolation(
+                    code="INELIGIBLE_WORKER",
+                    message="Worker is not eligible for this place/skill/date",
+                    worker_id=assignment.worker_id,
+                    skill_id=assignment.skill_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+        duration = assignment.end_minutes - assignment.start_minutes
+        if duration < min_minutes or duration > max_minutes:
+            violations.append(
+                ConstraintViolation(
+                    code="SHIFT_DURATION",
+                    message="Shift duration violates shift length bounds",
+                    worker_id=assignment.worker_id,
+                    skill_id=assignment.skill_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+        if duration > daily_max_minutes:
+            violations.append(
+                ConstraintViolation(
+                    code="DAILY_MAX_HOURS",
+                    message="Shift exceeds the configured daily maximum hours",
+                    worker_id=assignment.worker_id,
+                    skill_id=assignment.skill_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+        if assignment.start_minutes < 0 or assignment.end_minutes > 24 * 60 or assignment.start_minutes >= assignment.end_minutes:
+            violations.append(
+                ConstraintViolation(
+                    code="INVALID_TIME_RANGE",
+                    message="Assignment time range is invalid",
+                    worker_id=assignment.worker_id,
+                    skill_id=assignment.skill_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+            continue
+        if not _is_shift_available(assignment.worker_id, assignment.day, assignment.start_minutes, assignment.end_minutes, unavail_lookup):
+            violations.append(
+                ConstraintViolation(
+                    code="UNAVAILABLE",
+                    message="Shift overlaps worker unavailability",
+                    worker_id=assignment.worker_id,
+                    skill_id=assignment.skill_id,
+                    day=assignment.day,
+                    start_minutes=assignment.start_minutes,
+                    end_minutes=assignment.end_minutes,
+                )
+            )
+
+    return violations
+
+
+def _coverage_gaps(
+    coverage_windows: list[CoverageWindow],
+    assignments: list[Assignment],
+    remaining_demand: dict[tuple[int, str, int], int],
+    granularity: int,
+) -> list[CoverageGap]:
+    gaps: list[CoverageGap] = []
     for cov in coverage_windows:
-        cs = cov.start_minutes // granularity
-        ce = cov.end_minutes // granularity
+        start_slot = cov.start_minutes // granularity
+        end_slot = cov.end_minutes // granularity
         gap_start = None
-        for t in range(cs, ce + 1):
-            has_gap = t < ce and remaining_demand.get((cov.day, cov.skill_id, t), 0) > 0
+        for slot in range(start_slot, end_slot + 1):
+            has_gap = slot < end_slot and remaining_demand.get((cov.day, cov.skill_id, slot), 0) > 0
             if has_gap and gap_start is None:
-                gap_start = t
+                gap_start = slot
             elif not has_gap and gap_start is not None:
-                g_s = gap_start * granularity
-                g_e = t * granularity
-                ac = sum(1 for a in assignments
-                         if a.day == cov.day and a.skill_id == cov.skill_id
-                         and a.start_minutes < g_e and a.end_minutes > g_s)
-                gaps.append(CoverageGap(
-                    skill_id=cov.skill_id, day=cov.day,
-                    start_minutes=g_s, end_minutes=g_e,
-                    required=cov.min_workers, assigned=ac,
-                ))
+                gap_start_minutes = gap_start * granularity
+                gap_end_minutes = slot * granularity
+                assigned = sum(
+                    1
+                    for assignment in assignments
+                    if assignment.day == cov.day
+                    and assignment.skill_id == cov.skill_id
+                    and assignment.start_minutes < gap_end_minutes
+                    and assignment.end_minutes > gap_start_minutes
+                )
+                gaps.append(
+                    CoverageGap(
+                        skill_id=cov.skill_id,
+                        day=cov.day,
+                        start_minutes=gap_start_minutes,
+                        end_minutes=gap_end_minutes,
+                        required=cov.min_workers,
+                        assigned=assigned,
+                    )
+                )
                 gap_start = None
     return gaps
 
 
-def _build_skill_thresholds(skill_constraints: list[SkillConstraint]) -> dict[str, int]:
-    """Returns {skill_id: min_avg_rating_scaled_by_100} for enabled constraints."""
-    thresholds: dict[str, int] = {}
-    for c in skill_constraints:
-        if c.enforce_min_team_rating and c.min_avg_rating is not None:
-            thresholds[c.skill_id] = int(round(float(c.min_avg_rating) * 100))
-    return thresholds
-
-
-def _recompute_remaining_demand(demand: dict, assignments: list[Assignment], granularity: int) -> dict:
+def _recompute_remaining_demand(
+    demand: dict[tuple[int, str, int], int], assignments: list[Assignment], granularity: int
+) -> dict[tuple[int, str, int], int]:
     remaining = dict(demand)
-    for a in assignments:
-        s = a.start_minutes // granularity
-        e = a.end_minutes // granularity
-        for t in range(s, e):
-            key = (a.day, a.skill_id, t)
+    for assignment in assignments:
+        start_slot = assignment.start_minutes // granularity
+        end_slot = assignment.end_minutes // granularity
+        for slot in range(start_slot, end_slot):
+            key = (assignment.day, assignment.skill_id, slot)
             if key in remaining:
                 remaining[key] = max(0, remaining[key] - 1)
     return remaining
 
 
+def _summarize_assignment_violations(
+    request: SolveRequest,
+    assignments: list[Assignment],
+    day_dates: list[date],
+    slot_settings: dict[str, int],
+    skill_thresholds: dict[str, int],
+) -> tuple[list[ConstraintViolation], list[CoverageGap], dict[str, float]]:
+    demand, _ = _build_demand(request.coverage_windows, slot_settings["granularity"])
+    workers_by_id = {worker.id: worker for worker in request.workers}
+    violations: list[ConstraintViolation] = []
+    total_hours_by_worker: dict[str, float] = {worker.id: 0.0 for worker in request.workers}
+    by_worker_day: dict[tuple[str, int], list[Assignment]] = {}
+    slot_counts: dict[tuple[int, str, int], int] = {}
+    slot_rating_sum: dict[tuple[int, str, int], int] = {}
+
+    for assignment in assignments:
+        total_hours_by_worker[assignment.worker_id] = total_hours_by_worker.get(assignment.worker_id, 0.0) + (
+            (assignment.end_minutes - assignment.start_minutes) / 60
+        )
+        by_worker_day.setdefault((assignment.worker_id, assignment.day), []).append(assignment)
+        worker = workers_by_id.get(assignment.worker_id)
+        rating_scaled = int(round(float(worker.skill_ratings.get(assignment.skill_id, 3)) * 100)) if worker else 300
+        start_slot = assignment.start_minutes // slot_settings["granularity"]
+        end_slot = assignment.end_minutes // slot_settings["granularity"]
+        for slot in range(start_slot, end_slot):
+            key = (assignment.day, assignment.skill_id, slot)
+            slot_counts[key] = slot_counts.get(key, 0) + 1
+            slot_rating_sum[key] = slot_rating_sum.get(key, 0) + rating_scaled
+
+    for (worker_id, day), day_assignments in by_worker_day.items():
+        ordered = sorted(day_assignments, key=lambda item: (item.start_minutes, item.end_minutes, item.skill_id))
+        if len(ordered) > 1:
+            violations.append(
+                ConstraintViolation(
+                    code="MULTIPLE_SHIFTS_PER_DAY",
+                    message="Worker has more than one shift in the same day",
+                    worker_id=worker_id,
+                    day=day,
+                )
+            )
+        for left, right in zip(ordered, ordered[1:]):
+            if left.end_minutes > right.start_minutes:
+                violations.append(
+                    ConstraintViolation(
+                        code="SHIFT_OVERLAP",
+                        message="Worker shifts overlap in the same day",
+                        worker_id=worker_id,
+                        day=day,
+                        start_minutes=right.start_minutes,
+                        end_minutes=right.end_minutes,
+                    )
+                )
+
+    rest_minutes = slot_settings["rest_slots"] * slot_settings["granularity"]
+    by_worker: dict[str, list[Assignment]] = {}
+    for assignment in assignments:
+        by_worker.setdefault(assignment.worker_id, []).append(assignment)
+    for worker_id, worker_assignments in by_worker.items():
+        ordered = sorted(worker_assignments, key=lambda item: (item.day, item.start_minutes))
+        for left, right in zip(ordered, ordered[1:]):
+            if right.day == left.day + 1:
+                actual_rest = (24 * 60 - left.end_minutes) + right.start_minutes
+                if actual_rest < rest_minutes:
+                    violations.append(
+                        ConstraintViolation(
+                            code="MIN_REST",
+                            message="Assignments violate minimum rest between consecutive days",
+                            worker_id=worker_id,
+                            day=right.day,
+                            start_minutes=right.start_minutes,
+                            end_minutes=right.end_minutes,
+                        )
+                    )
+
+    return violations, [], total_hours_by_worker
+
+
+def _validate_assignments(
+    request: SolveRequest,
+    assignments: list[ExistingAssignment | Assignment],
+    include_staffing_checks: bool = True,
+) -> ValidationResponse:
+    day_dates = _parse_day_dates(request)
+    workers_by_id = {worker.id: worker for worker in request.workers}
+    slot_settings = _settings_slots(request.settings)
+    unavail_lookup = _build_unavailability_lookup(request.unavailability)
+    skill_thresholds = _build_skill_thresholds(request.skill_constraints)
+
+    assignment_responses = [_assignment_to_response(assignment, workers_by_id) for assignment in assignments]
+    violations = _basic_assignment_violations(request, assignments, workers_by_id, unavail_lookup, day_dates, slot_settings)
+    summary_violations, gaps, total_hours = _summarize_assignment_violations(
+        request,
+        assignment_responses,
+        day_dates,
+        slot_settings,
+        skill_thresholds,
+    )
+    violations.extend(summary_violations)
+
+    if include_staffing_checks:
+        by_day: dict[int, list[Assignment]] = {}
+        for assignment in assignment_responses:
+            by_day.setdefault(assignment.day, []).append(assignment)
+        for day, day_assignments in by_day.items():
+            earliest = min(assignment.start_minutes for assignment in day_assignments)
+            latest = max(assignment.end_minutes for assignment in day_assignments)
+            earliest_group = [assignment for assignment in day_assignments if assignment.start_minutes == earliest]
+            latest_group = [assignment for assignment in day_assignments if assignment.end_minutes == latest]
+            if not any((workers_by_id.get(assignment.worker_id).can_open if workers_by_id.get(assignment.worker_id) else False) for assignment in earliest_group):
+                violations.append(ConstraintViolation(code="CAN_OPEN", message="Earliest shift group requires at least one opener", day=day))
+            if not any((workers_by_id.get(assignment.worker_id).can_close if workers_by_id.get(assignment.worker_id) else False) for assignment in latest_group):
+                violations.append(ConstraintViolation(code="CAN_CLOSE", message="Latest shift group requires at least one closer", day=day))
+
+        slot_counts: dict[tuple[int, str, int], int] = {}
+        slot_rating_sum: dict[tuple[int, str, int], int] = {}
+        for assignment in assignment_responses:
+            worker = workers_by_id.get(assignment.worker_id)
+            rating_scaled = int(round(float(worker.skill_ratings.get(assignment.skill_id, 3)) * 100)) if worker else 300
+            for slot in range(assignment.start_minutes // slot_settings["granularity"], assignment.end_minutes // slot_settings["granularity"]):
+                key = (assignment.day, assignment.skill_id, slot)
+                slot_counts[key] = slot_counts.get(key, 0) + 1
+                slot_rating_sum[key] = slot_rating_sum.get(key, 0) + rating_scaled
+
+        for (day, skill_id, slot), assigned_count in slot_counts.items():
+            threshold = skill_thresholds.get(skill_id)
+            if threshold is None or assigned_count <= 0:
+                continue
+            if slot_rating_sum.get((day, skill_id, slot), 0) < threshold * assigned_count:
+                slot_start = slot * slot_settings["granularity"]
+                slot_end = slot_start + slot_settings["granularity"]
+                violations.append(
+                    ConstraintViolation(
+                        code="MIN_TEAM_RATING",
+                        message="Staffed slot does not meet the minimum average rating",
+                        skill_id=skill_id,
+                        day=day,
+                        start_minutes=slot_start,
+                        end_minutes=slot_end,
+                    )
+                )
+
+        demand, _ = _build_demand(request.coverage_windows, slot_settings["granularity"])
+        remaining = _recompute_remaining_demand(demand, assignment_responses, slot_settings["granularity"])
+        gaps = _coverage_gaps(request.coverage_windows, assignment_responses, remaining, slot_settings["granularity"])
+        for gap in gaps:
+            violations.append(
+                ConstraintViolation(
+                    code="COVERAGE_GAP",
+                    message="Coverage minimum is not satisfied",
+                    skill_id=gap.skill_id,
+                    day=gap.day,
+                    start_minutes=gap.start_minutes,
+                    end_minutes=gap.end_minutes,
+                )
+            )
+
+    diagnostics = [
+        f"Validated {len(assignment_responses)} assignments",
+        "No hard-constraint violations found" if not violations else f"{len(violations)} hard-constraint violations found",
+        "100% coverage achieved" if not gaps else f"{len(gaps)} coverage gaps remaining",
+    ]
+    status = "VALID" if not violations else "INVALID"
+    return ValidationResponse(
+        status=status,
+        is_valid=not violations,
+        assignments=assignment_responses,
+        coverage_gaps=gaps,
+        diagnostics=diagnostics,
+        constraint_violations=violations,
+        total_hours_by_worker=total_hours,
+    )
+
+
+def _candidate_bounds(extent: tuple[int, int], slots_per_day: int, min_slots: int, max_slots: int) -> tuple[int, int]:
+    demand_start, demand_end = extent
+    start_min = max(0, demand_start - max_slots + 1)
+    start_max = min(slots_per_day - min_slots, demand_end - 1)
+    return start_min, start_max
+
+
+def _shift_overlaps_extent(start_slot: int, end_slot: int, extent: tuple[int, int]) -> bool:
+    demand_start, demand_end = extent
+    return start_slot < demand_end and end_slot > demand_start
+
+
+def _locked_assignment_violation_response(
+    validation: ValidationResponse, t0: datetime, workers: list[Worker]
+) -> SolveResponse:
+    total_hours_by_worker = {worker.id: 0.0 for worker in workers}
+    for worker_id, hours in validation.total_hours_by_worker.items():
+        total_hours_by_worker[worker_id] = hours
+    return SolveResponse(
+        status="INFEASIBLE",
+        assignments=validation.assignments,
+        coverage_gaps=validation.coverage_gaps,
+        diagnostics=validation.diagnostics,
+        constraint_violations=validation.constraint_violations,
+        solve_time_ms=int((datetime.now() - t0).total_seconds() * 1000),
+        total_hours_by_worker=total_hours_by_worker,
+    )
+
+
 def _enforce_open_close_greedy(assignments: list[Assignment], workers_by_id: dict[str, Worker]) -> tuple[list[Assignment], int]:
-    """
-    Enforces strict open/close eligibility in greedy fallback by pruning
-    assignments from violating day edges.
-    """
     by_day: dict[int, list[Assignment]] = {}
-    for a in assignments:
-        by_day.setdefault(a.day, []).append(a)
+    for assignment in assignments:
+        by_day.setdefault(assignment.day, []).append(assignment)
 
     kept: list[Assignment] = []
     removed = 0
-
-    for day in sorted(by_day):
-        day_assignments = list(by_day[day])
-
-        # Earliest starter side must include at least one can_open worker.
-        while day_assignments:
-            earliest = min(a.start_minutes for a in day_assignments)
-            earliest_group = [a for a in day_assignments if a.start_minutes == earliest]
-            if any((workers_by_id.get(a.worker_id).can_open if workers_by_id.get(a.worker_id) else False)
-                   for a in earliest_group):
+    for day, day_assignments in by_day.items():
+        current = list(day_assignments)
+        while current:
+            earliest = min(assignment.start_minutes for assignment in current)
+            earliest_group = [assignment for assignment in current if assignment.start_minutes == earliest]
+            if any((workers_by_id.get(assignment.worker_id).can_open if workers_by_id.get(assignment.worker_id) else False) for assignment in earliest_group):
                 break
-            drop = sorted(earliest_group, key=lambda x: (x.worker_id, x.skill_id, x.end_minutes))[0]
-            day_assignments.remove(drop)
+            current.remove(sorted(earliest_group, key=lambda assignment: (assignment.worker_id, assignment.skill_id))[0])
             removed += 1
 
-        # Latest finisher side must include at least one can_close worker.
-        while day_assignments:
-            latest = max(a.end_minutes for a in day_assignments)
-            latest_group = [a for a in day_assignments if a.end_minutes == latest]
-            if any((workers_by_id.get(a.worker_id).can_close if workers_by_id.get(a.worker_id) else False)
-                   for a in latest_group):
+        while current:
+            latest = max(assignment.end_minutes for assignment in current)
+            latest_group = [assignment for assignment in current if assignment.end_minutes == latest]
+            if any((workers_by_id.get(assignment.worker_id).can_close if workers_by_id.get(assignment.worker_id) else False) for assignment in latest_group):
                 break
-            drop = sorted(latest_group, key=lambda x: (x.worker_id, x.skill_id, x.start_minutes))[0]
-            day_assignments.remove(drop)
+            current.remove(sorted(latest_group, key=lambda assignment: (assignment.worker_id, assignment.skill_id))[0])
             removed += 1
-
-        kept.extend(day_assignments)
-
+        kept.extend(current)
     return kept, removed
 
 
-# ── Greedy solver ──────────────────────────────────────────────────────────────
-
 def _solve_greedy(request: SolveRequest) -> SolveResponse:
-    """
-    Pure-Python greedy fallback (no OR-Tools).
-    Treats coverage windows as slot-demand; assigns the longest valid shift
-    that covers the most uncovered demand slots per worker/day/skill.
-    """
     t0 = datetime.now()
-    start = datetime.fromisoformat(request.start_date).date()
-    end   = datetime.fromisoformat(request.end_date).date()
-    num_days = (end - start).days + 1
-    if num_days <= 0 or num_days > 31:
-        raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
+    day_dates = _parse_day_dates(request)
+    slot_settings = _settings_slots(request.settings)
+    granularity = slot_settings["granularity"]
+    min_slots = slot_settings["min_slots"]
+    max_slots = slot_settings["max_slots"]
+    soft_min_slots = slot_settings["soft_min_slots"]
+    soft_max_slots = slot_settings["soft_max_slots"]
+    slots_per_day = slot_settings["slots_per_day"]
+    rest_minutes = slot_settings["rest_slots"] * granularity
 
-    g         = request.settings.granularity_minutes
-    min_slots = int(max(1, (request.settings.min_hours_per_block * 60) // g))
-    max_slots = int(max(min_slots, (request.settings.max_hours_per_block * 60) // g))
-    soft_min  = request.settings.soft_min_hours_per_block
-    soft_max  = request.settings.soft_max_hours_per_block
-    soft_min_slots = int(max(min_slots, (soft_min * 60) // g)) if soft_min else int(min_slots)
-    soft_max_slots = int(max(min_slots, (soft_max * 60) // g)) if soft_max else int(max_slots)
-    spd       = 24 * 60 // g  # slots per day
-
-    unavail: dict = {}
-    for ua in request.unavailability:
-        unavail.setdefault((ua.worker_id, ua.day), []).append(ua)
-
+    workers = request.workers
+    workers_by_id = {worker.id: worker for worker in workers}
+    unavail_lookup = _build_unavailability_lookup(request.unavailability)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
-    demand, extent = _build_demand(request.coverage_windows, g)
-    remaining       = dict(demand)
-    assigned_days: dict = {w.id: set() for w in request.workers}
-    total_hours:   dict = {w.id: 0.0   for w in request.workers}
-    workers_by_id: dict = {w.id: w for w in request.workers}
-    slot_assigned_count: dict = {}
-    slot_rating_sum_scaled: dict = {}
-    assignments:   list = []
-    max_total = request.settings.max_hours_per_day * num_days
+    demand, extent = _build_demand(request.coverage_windows, granularity)
+    remaining = dict(demand)
 
-    # Process day/skill pairs ordered by total demand (hardest first)
+    locked_validation = _validate_assignments(
+        request,
+        [assignment for assignment in request.existing_assignments if assignment.is_locked],
+        include_staffing_checks=False,
+    )
+    if not locked_validation.is_valid:
+        return _locked_assignment_violation_response(locked_validation, t0, workers)
+
+    existing_keys = {
+        (assignment.worker_id, assignment.day, assignment.skill_id, assignment.start_minutes // granularity, assignment.end_minutes // granularity): assignment
+        for assignment in request.existing_assignments
+    }
+
+    assignments = [_assignment_to_response(assignment, workers_by_id) for assignment in request.existing_assignments if assignment.is_locked]
+    total_hours = {worker.id: 0.0 for worker in workers}
+    assigned_days: dict[str, set[int]] = {worker.id: set() for worker in workers}
+    assigned_worker_day: dict[tuple[str, int], Assignment] = {}
+    slot_counts: dict[tuple[int, str, int], int] = {}
+    slot_rating_sum: dict[tuple[int, str, int], int] = {}
+    baseline_month_slots = _build_worker_month_baseline(request, granularity)
+    month_slots_assigned: dict[tuple[str, str], int] = {}
+
+    for assignment in assignments:
+        assigned_days[assignment.worker_id].add(assignment.day)
+        assigned_worker_day[(assignment.worker_id, assignment.day)] = assignment
+        total_hours[assignment.worker_id] += (assignment.end_minutes - assignment.start_minutes) / 60
+        worker = workers_by_id.get(assignment.worker_id)
+        rating_scaled = int(round(float(worker.skill_ratings.get(assignment.skill_id, 3)) * 100)) if worker else 300
+        month_key = _month_start_for_date(day_dates[assignment.day])
+        month_slots_assigned[(assignment.worker_id, month_key)] = month_slots_assigned.get((assignment.worker_id, month_key), 0) + (
+            (assignment.end_minutes - assignment.start_minutes) // granularity
+        )
+        for slot in range(assignment.start_minutes // granularity, assignment.end_minutes // granularity):
+            key = (assignment.day, assignment.skill_id, slot)
+            if key in remaining:
+                remaining[key] = max(0, remaining[key] - 1)
+            slot_counts[key] = slot_counts.get(key, 0) + 1
+            slot_rating_sum[key] = slot_rating_sum.get(key, 0) + rating_scaled
+
+    unmatched_existing = 0
     day_skills = sorted(
-        set((d, sk) for (d, sk, _) in demand),
-        key=lambda ds: -sum(demand.get((ds[0], ds[1], t), 0) for t in range(spd))
+        set((day, skill_id) for (day, skill_id, _) in demand),
+        key=lambda item: -sum(demand.get((item[0], item[1], slot), 0) for slot in range(slots_per_day)),
     )
 
     for day, skill_id in day_skills:
-        ext = extent.get((day, skill_id))
-        if not ext:
+        demand_extent = extent.get((day, skill_id))
+        if demand_extent is None:
             continue
-        d_s, d_e = ext  # demand slot range
+        demand_start, demand_end = demand_extent
+        start_min, start_max = _candidate_bounds(demand_extent, slots_per_day, min_slots, max_slots)
+        if start_min > start_max:
+            continue
 
-        eligible = sorted(
-            [w for w in request.workers
-             if skill_id in w.skill_ids and day not in assigned_days[w.id]],
-            key=lambda w: (total_hours[w.id], -w.skill_ratings.get(skill_id, 3))
+        eligible_workers = sorted(
+            (
+                worker
+                for worker in workers
+                if day not in assigned_days[worker.id] and _worker_is_eligible(worker, request, skill_id, day_dates[day])
+            ),
+            key=lambda worker: (total_hours[worker.id], -(worker.skill_ratings.get(skill_id, 3))),
         )
 
-        for worker in eligible:
-            if not any(remaining.get((day, skill_id, t), 0) > 0 for t in range(d_s, d_e)):
+        for worker in eligible_workers:
+            if not any(remaining.get((day, skill_id, slot), 0) > 0 for slot in range(demand_start, demand_end)):
                 break
-            if total_hours[worker.id] + min_slots * g / 60 > max_total:
-                continue
 
-            best, best_score = None, -1
-            demand_len = d_e - d_s
-            if demand_len >= min_slots:
-                eff_max = min(max_slots, demand_len)
-                s_start, e_limit = d_s, d_e
-            else:
-                eff_max = min_slots
-                pad = (min_slots - demand_len + 1) // 2
-                s_start = max(0, d_s - pad)
-                e_limit = s_start + min_slots
-            for length in range(eff_max, min_slots - 1, -1):
-                for s in range(s_start, max(s_start, e_limit - length) + 1):
-                    e = s + length
-                    if e > e_limit:
+            best_key = None
+            best_score = None
+            for start_slot in range(start_min, start_max + 1):
+                max_end = min(slots_per_day, start_slot + max_slots)
+                for end_slot in range(start_slot + min_slots, max_end + 1):
+                    if not _shift_overlaps_extent(start_slot, end_slot, demand_extent):
                         continue
-                    if not _is_shift_available(worker.id, day, s * g, e * g, unavail):
+                    start_minutes = start_slot * granularity
+                    end_minutes = end_slot * granularity
+                    if not _is_shift_available(worker.id, day, start_minutes, end_minutes, unavail_lookup):
                         continue
-                    min_scaled = skill_thresholds.get(skill_id)
-                    if min_scaled is not None:
-                        rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
+                    previous_assignment = assigned_worker_day.get((worker.id, day - 1))
+                    next_assignment = assigned_worker_day.get((worker.id, day + 1))
+                    if previous_assignment and (24 * 60 - previous_assignment.end_minutes) + start_minutes < rest_minutes:
+                        continue
+                    if next_assignment and (24 * 60 - end_minutes) + next_assignment.start_minutes < rest_minutes:
+                        continue
+
+                    threshold = skill_thresholds.get(skill_id)
+                    rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
+                    if threshold is not None:
                         violates_rating = False
-                        for t in range(s, e):
-                            key = (day, skill_id, t)
-                            new_count = slot_assigned_count.get(key, 0) + 1
-                            new_sum = slot_rating_sum_scaled.get(key, 0) + rating_scaled
-                            if new_sum < min_scaled * new_count:
+                        for slot in range(start_slot, end_slot):
+                            count = slot_counts.get((day, skill_id, slot), 0) + 1
+                            rating_sum = slot_rating_sum.get((day, skill_id, slot), 0) + rating_scaled
+                            if rating_sum < threshold * count:
                                 violates_rating = True
                                 break
                         if violates_rating:
                             continue
-                    cov_score = sum(min(remaining.get((day, skill_id, t), 0), 1) for t in range(s, e)) * 100000
-                    overtime = max(0, length - soft_max_slots)
-                    undertime = max(0, soft_min_slots - length)
-                    score = cov_score + min(length, soft_max_slots) - (overtime * overtime * 100) - (undertime * undertime * 100)
-                    if score > best_score:
-                        best_score, best = score, (s, e)
 
-            if best is None or best_score <= 0:
+                    coverage_slots = sum(min(remaining.get((day, skill_id, slot), 0), 1) for slot in range(start_slot, end_slot))
+                    if coverage_slots <= 0:
+                        continue
+
+                    month_key = _month_start_for_date(day_dates[day])
+                    assigned_month_slots = month_slots_assigned.get((worker.id, month_key), 0)
+                    baseline_slots = baseline_month_slots.get((worker.id, month_key), 0)
+                    current_slots = assigned_month_slots + baseline_slots
+                    length_slots = end_slot - start_slot
+                    monthly_bonus = 0
+                    if worker.monthly_min_hours is not None:
+                        min_target_slots = int(round(float(worker.monthly_min_hours) * 60 / granularity))
+                        monthly_bonus += max(0, min_target_slots - current_slots) * min(length_slots, max(0, min_target_slots - current_slots)) * 2
+                    if worker.monthly_optimal_hours is not None:
+                        optimal_target_slots = int(round(float(worker.monthly_optimal_hours) * 60 / granularity))
+                        before_diff = abs(current_slots - optimal_target_slots)
+                        after_diff = abs(current_slots + length_slots - optimal_target_slots)
+                        monthly_bonus += max(0, before_diff - after_diff) * 8
+
+                    balance_bonus = 0
+                    if worker.monthly_min_hours is None and worker.monthly_optimal_hours is None and request.balance_hours:
+                        balance_bonus = int(max(0, 100 - total_hours[worker.id] * 10))
+
+                    change_bonus = 0
+                    key = (worker.id, day, skill_id, start_slot, end_slot)
+                    if request.minimize_changes and key in existing_keys:
+                        change_bonus = 5000
+
+                    overtime = max(0, length_slots - soft_max_slots)
+                    undertime = max(0, soft_min_slots - length_slots)
+                    shift_score = (length_slots * 5) - (overtime * overtime * 25) - (undertime * undertime * 25)
+                    score = coverage_slots * 100000 + change_bonus + monthly_bonus + balance_bonus + shift_score
+                    if best_score is None or score > best_score:
+                        best_score = score
+                        best_key = (start_slot, end_slot, key)
+
+            if best_key is None:
                 continue
 
-            s, e = best
-            rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
-            for t in range(s, e):
-                k = (day, skill_id, t)
-                if k in remaining:
-                    remaining[k] = max(0, remaining[k] - 1)
-                slot_assigned_count[k] = slot_assigned_count.get(k, 0) + 1
-                slot_rating_sum_scaled[k] = slot_rating_sum_scaled.get(k, 0) + rating_scaled
-            hours = (e - s) * g / 60
-            total_hours[worker.id] += hours
+            start_slot, end_slot, key = best_key
+            start_minutes = start_slot * granularity
+            end_minutes = end_slot * granularity
+            assignment = Assignment(
+                worker_id=worker.id,
+                worker_name=worker.name,
+                skill_id=skill_id,
+                day=day,
+                start_minutes=start_minutes,
+                end_minutes=end_minutes,
+                is_locked=bool(existing_keys.get(key).is_locked) if key in existing_keys else False,
+            )
+            assignments.append(assignment)
             assigned_days[worker.id].add(day)
-            assignments.append(Assignment(
-                worker_id=worker.id, worker_name=worker.name,
-                skill_id=skill_id, day=day,
-                start_minutes=s * g, end_minutes=e * g,
-            ))
+            assigned_worker_day[(worker.id, day)] = assignment
+            total_hours[worker.id] += (end_minutes - start_minutes) / 60
+            month_key = _month_start_for_date(day_dates[day])
+            month_slots_assigned[(worker.id, month_key)] = month_slots_assigned.get((worker.id, month_key), 0) + (end_slot - start_slot)
+            rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
+            for slot in range(start_slot, end_slot):
+                demand_key = (day, skill_id, slot)
+                if demand_key in remaining:
+                    remaining[demand_key] = max(0, remaining[demand_key] - 1)
+                slot_counts[demand_key] = slot_counts.get(demand_key, 0) + 1
+                slot_rating_sum[demand_key] = slot_rating_sum.get(demand_key, 0) + rating_scaled
+
+    for existing in request.existing_assignments:
+        if existing.is_locked:
+            continue
+        key = (
+            existing.worker_id,
+            existing.day,
+            existing.skill_id,
+            existing.start_minutes // granularity,
+            existing.end_minutes // granularity,
+        )
+        if request.minimize_changes and key not in existing_keys:
+            unmatched_existing += 1
 
     assignments, removed_for_open_close = _enforce_open_close_greedy(assignments, workers_by_id)
-    remaining = _recompute_remaining_demand(demand, assignments, g)
-    total_hours = {w.id: 0.0 for w in request.workers}
-    for a in assignments:
-        total_hours[a.worker_id] += (a.end_minutes - a.start_minutes) / 60
-
-    gaps      = _coverage_gaps(request.coverage_windows, assignments, remaining, g)
-    solve_ms  = int((datetime.now() - t0).total_seconds() * 1000)
-    status    = "OPTIMAL" if not gaps else ("FEASIBLE" if assignments else "INFEASIBLE")
-    h         = [v for v in total_hours.values() if v > 0]
-    diag      = [
-        f"Generated {len(assignments)} shifts (greedy)", f"Solve time: {solve_ms}ms",
-        "100% coverage achieved" if not gaps else f"{len(gaps)} coverage gaps remaining",
+    validation = _validate_assignments(request, assignments)
+    solve_ms = int((datetime.now() - t0).total_seconds() * 1000)
+    diagnostics = [
+        f"Generated {len(assignments)} shifts (greedy)",
+        f"Solve time: {solve_ms}ms",
+        "100% coverage achieved" if not validation.coverage_gaps else f"{len(validation.coverage_gaps)} coverage gaps remaining",
     ]
+    if unmatched_existing:
+        diagnostics.append(f"{unmatched_existing} existing assignments could not be preserved exactly")
     if removed_for_open_close:
-        diag.append(f"Removed {removed_for_open_close} edge shifts to enforce can_open/can_close")
-    if h:
-        diag.append(f"Hours range: {min(h):.1f}h – {max(h):.1f}h")
-    return SolveResponse(status=status, assignments=assignments, coverage_gaps=gaps,
-                         diagnostics=diag, solve_time_ms=solve_ms,
-                         total_hours_by_worker=total_hours)
+        diagnostics.append(f"Removed {removed_for_open_close} edge shifts to enforce can_open/can_close")
+    diagnostics.extend(validation.diagnostics[1:])
+    status = "OPTIMAL" if not validation.constraint_violations else ("FEASIBLE" if assignments else "INFEASIBLE")
+    return SolveResponse(
+        status=status,
+        assignments=validation.assignments,
+        coverage_gaps=validation.coverage_gaps,
+        diagnostics=diagnostics,
+        constraint_violations=validation.constraint_violations,
+        solve_time_ms=solve_ms,
+        total_hours_by_worker=validation.total_hours_by_worker,
+    )
 
-
-# ── CP-SAT solver ──────────────────────────────────────────────────────────────
 
 def _solve_cpsat(request: SolveRequest) -> SolveResponse:
-    """
-    CP-SAT solver v2 — flexible shift model.
-
-    Shifts are free to start/end anywhere within worker availability;
-    coverage windows are treated as slot-level demand requirements only.
-
-    Hard constraints:
-    - Max 1 shift per worker per day (shift may span multiple windows)
-    - Shift duration in [min_hours_per_block*60, max_hours_per_block*60]
-    - Shift must not overlap any worker unavailability
-    - Locked existing assignments are pinned to their exact times
-
-    Soft objectives (priority, highest first):
-    - P1 (×100000): Minimize coverage gap (unfilled demand slots)
-    - P2 (×50):     Balance assigned hours proportional to worker availability
-    - P3:           Prefer longer shifts up to soft_max, penalize soft_min/soft_max violations
-    - P4 (×5):    Minimise changes vs existing (repair mode only)
-    """
     t0 = datetime.now()
-    start    = datetime.fromisoformat(request.start_date).date()
-    end      = datetime.fromisoformat(request.end_date).date()
-    num_days = (end - start).days + 1
-    if num_days <= 0 or num_days > 31:
-        raise HTTPException(status_code=400, detail="Invalid date range (1-31 days)")
-
-    g         = int(request.settings.granularity_minutes)
-    min_slots = int(max(1, (request.settings.min_hours_per_block * 60) // g))
-    max_slots = int(max(min_slots, (request.settings.max_hours_per_block * 60) // g))
-    soft_min  = request.settings.soft_min_hours_per_block
-    soft_max  = request.settings.soft_max_hours_per_block
-    soft_min_slots = int(max(min_slots, (soft_min * 60) // g)) if soft_min else min_slots
-    soft_max_slots = int(max(min_slots, (soft_max * 60) // g)) if soft_max else max_slots
-    spd       = int(24 * 60 // g)
-    workers   = request.workers
-    model     = cp_model.CpModel()
-
+    day_dates = _parse_day_dates(request)
+    slot_settings = _settings_slots(request.settings)
+    granularity = slot_settings["granularity"]
+    min_slots = slot_settings["min_slots"]
+    max_slots = slot_settings["max_slots"]
+    soft_min_slots = slot_settings["soft_min_slots"]
+    soft_max_slots = slot_settings["soft_max_slots"]
+    rest_slots = slot_settings["rest_slots"]
+    slots_per_day = slot_settings["slots_per_day"]
+    workers = request.workers
+    workers_by_id = {worker.id: worker for worker in workers}
+    demand, extent = _build_demand(request.coverage_windows, granularity)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
-    demand, extent = _build_demand(request.coverage_windows, g)
+    unavail_lookup = _build_unavailability_lookup(request.unavailability)
+    baseline_month_slots = _build_worker_month_baseline(request, granularity)
 
-    unavail: dict = {}
-    for ua in request.unavailability:
-        unavail.setdefault((ua.worker_id, ua.day), []).append(ua)
+    locked_assignments = [assignment for assignment in request.existing_assignments if assignment.is_locked]
+    locked_validation = _validate_assignments(request, locked_assignments, include_staffing_checks=False)
+    if not locked_validation.is_valid:
+        return _locked_assignment_violation_response(locked_validation, t0, workers)
 
-    # ── Generate candidate shift variables ────────────────────────────────────
-    shift_vars: dict = {}  # (w_idx, day, skill_id, s, e) -> BoolVar
+    model = cp_model.CpModel()
+    shift_vars: dict[tuple[int, int, str, int, int], cp_model.IntVar] = {}
 
-    for w_idx, worker in enumerate(workers):
-        for day in range(num_days):
+    for worker_index, worker in enumerate(workers):
+        for day, day_date in enumerate(day_dates):
             for skill_id in worker.skill_ids:
-                ext = extent.get((day, skill_id))
-                if not ext:
+                if not _worker_is_eligible(worker, request, skill_id, day_date):
                     continue
-                d_s, d_e = ext
-                demand_len = d_e - d_s
-                # Shifts must stay within demand extent
-                if demand_len >= min_slots:
-                    s_lo = d_s
-                    s_hi = d_e - min_slots
-                    e_cap = d_e
-                else:
-                    pad = (min_slots - demand_len + 1) // 2
-                    s_lo = max(0, d_s - pad)
-                    s_hi = s_lo
-                    e_cap = s_lo + min_slots
-                for s in range(s_lo, s_hi + 1):
-                    for e in range(s + min_slots, min(s + max_slots, e_cap) + 1):
-                        if not _is_shift_available(worker.id, day, s * g, e * g, unavail):
+                demand_extent = extent.get((day, skill_id))
+                if demand_extent is None:
+                    continue
+                start_min, start_max = _candidate_bounds(demand_extent, slots_per_day, min_slots, max_slots)
+                if start_min > start_max:
+                    continue
+                for start_slot in range(start_min, start_max + 1):
+                    max_end = min(slots_per_day, start_slot + max_slots)
+                    for end_slot in range(start_slot + min_slots, max_end + 1):
+                        if not _shift_overlaps_extent(start_slot, end_slot, demand_extent):
                             continue
-                        shift_vars[(w_idx, day, skill_id, s, e)] = model.NewBoolVar(
-                            f"x{w_idx}_{day}_{s}_{e}"
+                        if not _is_shift_available(worker.id, day, start_slot * granularity, end_slot * granularity, unavail_lookup):
+                            continue
+                        shift_vars[(worker_index, day, skill_id, start_slot, end_slot)] = model.NewBoolVar(
+                            f"x_{worker_index}_{day}_{skill_id}_{start_slot}_{end_slot}"
                         )
 
-    # Build lookup indices for fast constraint building
-    # (day, skill, slot) -> covering vars
-    slot_vars: dict = {}
-    # (day, skill, slot) -> [(var, rating_scaled)]
-    slot_rating_terms: dict = {}
-    # (day, slot) -> covering vars (across all skills)
-    day_slot_vars: dict = {}
-    # (day, slot) -> covering vars with can_open/can_close workers
-    day_open_slot_vars: dict = {}
-    day_close_slot_vars: dict = {}
-    # (w_idx, day) -> all vars for that worker-day
-    wd_vars: dict = {}
-    # day -> all vars in that day
-    day_vars: dict = {}
-    for (w_idx, day, skill_id, s, e), var in shift_vars.items():
-        worker = workers[w_idx]
+    violation_hints: list[ConstraintViolation] = []
+    worker_index_by_id = {worker.id: index for index, worker in enumerate(workers)}
+    for assignment in locked_assignments:
+        worker_index = worker_index_by_id.get(assignment.worker_id)
+        if worker_index is None:
+            continue
+        key = (
+            worker_index,
+            assignment.day,
+            assignment.skill_id,
+            assignment.start_minutes // granularity,
+            assignment.end_minutes // granularity,
+        )
+        if key not in shift_vars:
+            shift_vars[key] = model.NewBoolVar(
+                f"x_locked_{worker_index}_{assignment.day}_{assignment.skill_id}_{assignment.start_minutes // granularity}_{assignment.end_minutes // granularity}"
+            )
+
+    slot_vars: dict[tuple[int, str, int], list[cp_model.IntVar]] = {}
+    slot_rating_terms: dict[tuple[int, str, int], list[tuple[cp_model.IntVar, int]]] = {}
+    worker_day_vars: dict[tuple[int, int], list[tuple[int, int, str, cp_model.IntVar]]] = {}
+    day_slot_vars: dict[tuple[int, int], list[cp_model.IntVar]] = {}
+    day_open_slot_vars: dict[tuple[int, int], list[cp_model.IntVar]] = {}
+    day_close_slot_vars: dict[tuple[int, int], list[cp_model.IntVar]] = {}
+
+    for (worker_index, day, skill_id, start_slot, end_slot), variable in shift_vars.items():
+        worker = workers[worker_index]
         rating_scaled = int(round(float(worker.skill_ratings.get(skill_id, 3)) * 100))
-        wd_vars.setdefault((w_idx, day), []).append(var)
-        day_vars.setdefault(day, []).append(var)
-        for t in range(s, e):
-            slot_vars.setdefault((day, skill_id, t), []).append(var)
-            slot_rating_terms.setdefault((day, skill_id, t), []).append((var, rating_scaled))
-            day_slot_vars.setdefault((day, t), []).append(var)
+        worker_day_vars.setdefault((worker_index, day), []).append((start_slot, end_slot, skill_id, variable))
+        for slot in range(start_slot, end_slot):
+            slot_vars.setdefault((day, skill_id, slot), []).append(variable)
+            slot_rating_terms.setdefault((day, skill_id, slot), []).append((variable, rating_scaled))
+            day_slot_vars.setdefault((day, slot), []).append(variable)
             if worker.can_open:
-                day_open_slot_vars.setdefault((day, t), []).append(var)
+                day_open_slot_vars.setdefault((day, slot), []).append(variable)
             if worker.can_close:
-                day_close_slot_vars.setdefault((day, t), []).append(var)
+                day_close_slot_vars.setdefault((day, slot), []).append(variable)
 
-    # ── Hard: one shift per worker per day ────────────────────────────────────
-    for (w_idx, day), dvars in wd_vars.items():
-        if dvars:
-            model.Add(sum(dvars) <= 1)
+    for (worker_index, day), variables in worker_day_vars.items():
+        model.Add(sum(variable for _, _, _, variable in variables) <= 1)
 
-    # ── Coverage constraints with slack ───────────────────────────────────────
-    slack_vars: dict = {}
-    for (day, skill_id, t), req in demand.items():
-        covering = slot_vars.get((day, skill_id, t), [])
-        slack = model.NewIntVar(0, req, f"sl{day}_{t}")
-        slack_vars[(day, skill_id, t)] = slack
-        model.Add((sum(covering) if covering else 0) + slack >= req)
+    for worker_index in range(len(workers)):
+        for day in range(len(day_dates) - 1):
+            left = worker_day_vars.get((worker_index, day), [])
+            right = worker_day_vars.get((worker_index, day + 1), [])
+            for left_start, left_end, _, left_var in left:
+                for right_start, _, _, right_var in right:
+                    rest = slots_per_day - left_end + right_start
+                    if rest < rest_slots:
+                        model.Add(left_var + right_var <= 1)
 
-    # ── Hard: slot-level minimum average rating (applies also to single worker) ──
-    for (day, skill_id, t), covering in slot_vars.items():
-        min_scaled = skill_thresholds.get(skill_id)
-        if min_scaled is None or not covering:
+    slack_vars: dict[tuple[int, str, int], cp_model.IntVar] = {}
+    for (day, skill_id, slot), required in demand.items():
+        slack = model.NewIntVar(0, required, f"slack_{day}_{skill_id}_{slot}")
+        covering = slot_vars.get((day, skill_id, slot), [])
+        model.Add((sum(covering) if covering else 0) + slack >= required)
+        slack_vars[(day, skill_id, slot)] = slack
+
+    for (day, skill_id, slot), covering in slot_vars.items():
+        threshold = skill_thresholds.get(skill_id)
+        if threshold is None or not covering:
             continue
-        rating_terms = slot_rating_terms.get((day, skill_id, t), [])
-        if not rating_terms:
-            continue
-        assigned_count = sum(covering)
-        rating_sum = sum(rating * var for var, rating in rating_terms)
-        model.Add(rating_sum >= min_scaled * assigned_count)
+        rating_terms = slot_rating_terms.get((day, skill_id, slot), [])
+        rating_sum = sum(rating * variable for variable, rating in rating_terms)
+        model.Add(rating_sum >= threshold * sum(covering))
 
-    # ── Hard: day edge eligibility (can_open/can_close) ───────────────────────
-    day_to_slots: dict = {}
-    for (day, t) in day_slot_vars.keys():
-        day_to_slots.setdefault(day, []).append(t)
-
+    day_to_slots: dict[int, list[int]] = {}
+    for day, slot in day_slot_vars.keys():
+        day_to_slots.setdefault(day, []).append(slot)
     for day, slots in day_to_slots.items():
         unique_slots = sorted(set(slots))
-        dvars = day_vars.get(day, [])
-        if not dvars:
+        day_variables = [variable for vars_for_day in worker_day_vars.values() for _, _, _, variable in vars_for_day if any(key_day == day for key_worker, key_day in [next(iter(worker_day_vars.keys()))])]
+        day_variables = [variable for (worker_index, key_day), entries in worker_day_vars.items() if key_day == day for _, _, _, variable in entries]
+        if not day_variables:
             continue
-
         day_has_assignments = model.NewBoolVar(f"day_has_{day}")
-        model.Add(sum(dvars) >= 1).OnlyEnforceIf(day_has_assignments)
-        model.Add(sum(dvars) == 0).OnlyEnforceIf(day_has_assignments.Not())
+        model.Add(sum(day_variables) >= 1).OnlyEnforceIf(day_has_assignments)
+        model.Add(sum(day_variables) == 0).OnlyEnforceIf(day_has_assignments.Not())
 
-        slot_staffed: dict = {}
-        for t in unique_slots:
-            staffed = model.NewBoolVar(f"staffed_{day}_{t}")
-            slot_staffed[t] = staffed
-            covering = day_slot_vars.get((day, t), [])
+        staffed_flags: dict[int, cp_model.IntVar] = {}
+        for slot in unique_slots:
+            staffed = model.NewBoolVar(f"staffed_{day}_{slot}")
+            covering = day_slot_vars.get((day, slot), [])
             if covering:
                 model.Add(sum(covering) >= 1).OnlyEnforceIf(staffed)
                 model.Add(sum(covering) == 0).OnlyEnforceIf(staffed.Not())
             else:
                 model.Add(staffed == 0)
+            staffed_flags[slot] = staffed
 
-        first_slot_flags: dict = {}
-        for t in unique_slots:
-            first = model.NewBoolVar(f"first_{day}_{t}")
-            first_slot_flags[t] = first
-            model.Add(first <= slot_staffed[t])
-            for u in unique_slots:
-                if u >= t:
+        first_flags: dict[int, cp_model.IntVar] = {}
+        for slot in unique_slots:
+            first = model.NewBoolVar(f"first_{day}_{slot}")
+            model.Add(first <= staffed_flags[slot])
+            for previous in unique_slots:
+                if previous >= slot:
                     break
-                model.Add(first + slot_staffed[u] <= 1)
-            open_covering = day_open_slot_vars.get((day, t), [])
+                model.Add(first + staffed_flags[previous] <= 1)
+            open_covering = day_open_slot_vars.get((day, slot), [])
             if open_covering:
                 model.Add(sum(open_covering) >= 1).OnlyEnforceIf(first)
             else:
                 model.Add(first == 0)
-        model.Add(sum(first_slot_flags.values()) == day_has_assignments)
+            first_flags[slot] = first
+        model.Add(sum(first_flags.values()) == day_has_assignments)
 
-        last_slot_flags: dict = {}
-        for t in unique_slots:
-            last = model.NewBoolVar(f"last_{day}_{t}")
-            last_slot_flags[t] = last
-            model.Add(last <= slot_staffed[t])
-            for u in unique_slots:
-                if u <= t:
+        last_flags: dict[int, cp_model.IntVar] = {}
+        for slot in unique_slots:
+            last = model.NewBoolVar(f"last_{day}_{slot}")
+            model.Add(last <= staffed_flags[slot])
+            for following in unique_slots:
+                if following <= slot:
                     continue
-                model.Add(last + slot_staffed[u] <= 1)
-            close_covering = day_close_slot_vars.get((day, t), [])
+                model.Add(last + staffed_flags[following] <= 1)
+            close_covering = day_close_slot_vars.get((day, slot), [])
             if close_covering:
                 model.Add(sum(close_covering) >= 1).OnlyEnforceIf(last)
             else:
                 model.Add(last == 0)
-        model.Add(sum(last_slot_flags.values()) == day_has_assignments)
+            last_flags[slot] = last
+        model.Add(sum(last_flags.values()) == day_has_assignments)
 
-    # ── Locked existing assignments ───────────────────────────────────────────
-    w_id_to_idx = {w.id: i for i, w in enumerate(workers)}
-    for ea in request.existing_assignments:
-        if not ea.is_locked:
-            continue
-        w_idx = w_id_to_idx.get(ea.worker_id)
-        if w_idx is None:
-            continue
-        key = (w_idx, ea.day, ea.skill_id,
-               ea.start_minutes // g, ea.end_minutes // g)
-        if key in shift_vars:
-            model.Add(shift_vars[key] == 1)
-
-    # ── Objectives ────────────────────────────────────────────────────────────
-    objectives = []
-
-    # P1: Coverage gap penalty
+    unmatched_existing = 0
+    objectives: list[cp_model.LinearExpr] = []
     for slack in slack_vars.values():
-        objectives.append(slack * 100000)
+        objectives.append(slack * 1000000)
 
-    # P2: Balance hours proportional to availability
-    if request.balance_hours and len(workers) > 1:
-        avail_slots_w = []
-        for worker in workers:
-            total = 0
-            for day in range(num_days):
-                uas = unavail.get((worker.id, day), [])
-                if any(ua.is_full_day for ua in uas):
-                    continue
-                day_avail = spd
-                for ua in uas:
-                    if not ua.is_full_day and ua.start_minutes is not None:
-                        day_avail -= (ua.end_minutes - ua.start_minutes) // g
-                total += max(0, day_avail)
-            avail_slots_w.append(total)
-
-        total_avail = sum(avail_slots_w)
-        total_demand = sum(demand.values())
-
-        if total_avail > 0:
-            for w_idx in range(len(workers)):
-                w_vars = [(s, e, v) for (wi, d, sk, s, e), v in shift_vars.items()
-                          if wi == w_idx]
-                if not w_vars:
-                    continue
-                assigned_expr = sum((e - s) * v for s, e, v in w_vars)
-                target = (total_demand * avail_slots_w[w_idx]) // total_avail
-                dev = model.NewIntVar(0, num_days * spd, f"dev{w_idx}")
-                model.Add(dev >= assigned_expr - target)
-                model.Add(dev >= target - assigned_expr)
-                objectives.append(dev * 50)
-
-    # P3: Prefer longer shifts (penalise shortfall from demand length, bounded by soft_max_slots)
-    # Also heavily penalise shifts extending beyond soft_max_slots
-    for (w_idx, day, skill_id, s, e), var in shift_vars.items():
-        length = e - s
-        demand_range = extent.get((day, skill_id), (s, e))
-        useful_max = min(soft_max_slots, demand_range[1] - demand_range[0])
-        
-        # Penalise shortfall to encourage combining shifts up to soft_max,
-        # using a quadratic penalty to naturally balance shift lengths (enforcing FIFO)
-        shortfall = useful_max - length
-        if shortfall > 0:
-            objectives.append(var * (shortfall * shortfall * 5))
-            
-        # Heavily penalise shifts exceeding soft_max (quadratic overtime penalty)
-        if length > soft_max_slots:
-            overtime = length - soft_max_slots
-            objectives.append(var * (overtime * overtime * 100))
-
-        # Heavily penalise shifts under soft_min (quadratic undertime penalty)
-        if length < soft_min_slots:
-            undertime = soft_min_slots - length
-            objectives.append(var * (undertime * undertime * 100))
-
-    # P4: Minimise changes (repair mode)
     if request.minimize_changes:
-        for ea in request.existing_assignments:
-            if ea.is_locked:
+        for assignment in request.existing_assignments:
+            if assignment.is_locked:
                 continue
-            w_idx = w_id_to_idx.get(ea.worker_id)
-            if w_idx is None:
+            worker_index = worker_index_by_id.get(assignment.worker_id)
+            if worker_index is None:
+                unmatched_existing += 1
+                violation_hints.append(
+                    ConstraintViolation(
+                        code="UNMATCHED_EXISTING_ASSIGNMENT",
+                        message="Existing assignment references an unknown worker",
+                        worker_id=assignment.worker_id,
+                        skill_id=assignment.skill_id,
+                        day=assignment.day,
+                        start_minutes=assignment.start_minutes,
+                        end_minutes=assignment.end_minutes,
+                    )
+                )
                 continue
-            key = (w_idx, ea.day, ea.skill_id,
-                   ea.start_minutes // g, ea.end_minutes // g)
-            if key not in shift_vars:
+            key = (
+                worker_index,
+                assignment.day,
+                assignment.skill_id,
+                assignment.start_minutes // granularity,
+                assignment.end_minutes // granularity,
+            )
+            variable = shift_vars.get(key)
+            if variable is None:
+                unmatched_existing += 1
+                violation_hints.append(
+                    ConstraintViolation(
+                        code="UNMATCHED_EXISTING_ASSIGNMENT",
+                        message="Existing assignment could not be preserved exactly under the current constraints",
+                        worker_id=assignment.worker_id,
+                        skill_id=assignment.skill_id,
+                        day=assignment.day,
+                        start_minutes=assignment.start_minutes,
+                        end_minutes=assignment.end_minutes,
+                    )
+                )
                 continue
-            removed = model.NewBoolVar(f"rm{w_idx}_{ea.day}")
-            model.Add(shift_vars[key] + removed == 1)
-            objectives.append(removed * 5)
+            removed = model.NewBoolVar(
+                f"removed_{worker_index}_{assignment.day}_{assignment.skill_id}_{assignment.start_minutes // granularity}_{assignment.end_minutes // granularity}"
+            )
+            model.Add(variable + removed == 1)
+            objectives.append(removed * 10000)
+
+    days_by_month: dict[str, list[int]] = {}
+    for day, day_date in enumerate(day_dates):
+        days_by_month.setdefault(_month_start_for_date(day_date), []).append(day)
+
+    for worker_index, worker in enumerate(workers):
+        for month_start, month_days in days_by_month.items():
+            month_variables = [
+                (end_slot - start_slot, variable)
+                for (index, day, skill_id, start_slot, end_slot), variable in shift_vars.items()
+                if index == worker_index and day in month_days
+            ]
+            if not month_variables:
+                continue
+            assigned_slots_expr = sum(length * variable for length, variable in month_variables)
+            baseline_slots = baseline_month_slots.get((worker.id, month_start), 0)
+
+            if worker.monthly_min_hours is not None:
+                target_slots = int(round(float(worker.monthly_min_hours) * 60 / granularity))
+                shortfall = model.NewIntVar(0, max(0, target_slots), f"min_shortfall_{worker_index}_{month_start}")
+                model.Add(shortfall >= target_slots - (baseline_slots + assigned_slots_expr))
+                objectives.append(shortfall * 200)
+
+            if worker.monthly_optimal_hours is not None:
+                target_slots = int(round(float(worker.monthly_optimal_hours) * 60 / granularity))
+                deviation = model.NewIntVar(0, slots_per_day * len(month_days), f"optimal_dev_{worker_index}_{month_start}")
+                model.Add(deviation >= baseline_slots + assigned_slots_expr - target_slots)
+                model.Add(deviation >= target_slots - (baseline_slots + assigned_slots_expr))
+                objectives.append(deviation * 30)
+
+    if request.balance_hours and len(workers) > 1:
+        total_demand_slots = sum(demand.values())
+        available_slots_per_worker: list[int] = []
+        for worker in workers:
+            total_available = 0
+            for day in range(len(day_dates)):
+                if not any(_worker_is_eligible(worker, request, skill_id, day_dates[day]) for _, skill_id in [(day, skill_id) for (day_key, skill_id), _ in extent.items() if day_key == day]):
+                    continue
+                day_available = slots_per_day
+                for ua in unavail_lookup.get((worker.id, day), []):
+                    if ua.is_full_day:
+                        day_available = 0
+                        break
+                    if ua.start_minutes is not None and ua.end_minutes is not None:
+                        day_available -= max(0, (ua.end_minutes - ua.start_minutes) // granularity)
+                total_available += max(0, day_available)
+            available_slots_per_worker.append(total_available)
+
+        total_available_slots = sum(available_slots_per_worker)
+        if total_available_slots > 0:
+            for worker_index, worker in enumerate(workers):
+                if worker.monthly_min_hours is not None or worker.monthly_optimal_hours is not None:
+                    continue
+                worker_variables = [
+                    (end_slot - start_slot, variable)
+                    for (index, day, skill_id, start_slot, end_slot), variable in shift_vars.items()
+                    if index == worker_index
+                ]
+                if not worker_variables:
+                    continue
+                target = (total_demand_slots * available_slots_per_worker[worker_index]) // total_available_slots
+                assigned_expr = sum(length * variable for length, variable in worker_variables)
+                deviation = model.NewIntVar(0, slots_per_day * len(day_dates), f"balance_dev_{worker_index}")
+                model.Add(deviation >= assigned_expr - target)
+                model.Add(deviation >= target - assigned_expr)
+                objectives.append(deviation * 10)
+
+    for (worker_index, day, skill_id, start_slot, end_slot), variable in shift_vars.items():
+        length = end_slot - start_slot
+        shortfall = max(0, soft_max_slots - length)
+        overtime = max(0, length - soft_max_slots)
+        undertime = max(0, soft_min_slots - length)
+        objectives.append(variable * shortfall)
+        if overtime > 0:
+            objectives.append(variable * (overtime * overtime * 3))
+        if undertime > 0:
+            objectives.append(variable * (undertime * undertime * 3))
+
+    for assignment in locked_assignments:
+        worker_index = worker_index_by_id[assignment.worker_id]
+        key = (
+            worker_index,
+            assignment.day,
+            assignment.skill_id,
+            assignment.start_minutes // granularity,
+            assignment.end_minutes // granularity,
+        )
+        model.Add(shift_vars[key] == 1)
 
     if objectives:
         model.Minimize(sum(objectives))
 
-    # ── Solve ─────────────────────────────────────────────────────────────────
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = request.solver_timeout_seconds
-    solver.parameters.num_search_workers  = 4
+    solver.parameters.num_search_workers = 4
     status = solver.Solve(model)
     solve_ms = int((datetime.now() - t0).total_seconds() * 1000)
 
-    # ── Extract assignments ───────────────────────────────────────────────────
-    assignments: list = []
-    total_hours: dict = {w.id: 0.0 for w in workers}
-
+    assignments: list[Assignment] = []
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        for (w_idx, day, skill_id, s, e), var in shift_vars.items():
-            if solver.Value(var) == 1:
-                worker = workers[w_idx]
-                hours  = (e - s) * g / 60
-                total_hours[worker.id] += hours
-                assignments.append(Assignment(
-                    worker_id=worker.id, worker_name=worker.name,
-                    skill_id=skill_id, day=day,
-                    start_minutes=s * g, end_minutes=e * g,
-                ))
+        locked_keys = {
+            (
+                assignment.worker_id,
+                assignment.day,
+                assignment.skill_id,
+                assignment.start_minutes // granularity,
+                assignment.end_minutes // granularity,
+            )
+            for assignment in locked_assignments
+        }
+        for (worker_index, day, skill_id, start_slot, end_slot), variable in shift_vars.items():
+            if solver.Value(variable) != 1:
+                continue
+            worker = workers[worker_index]
+            assignments.append(
+                Assignment(
+                    worker_id=worker.id,
+                    worker_name=worker.name,
+                    skill_id=skill_id,
+                    day=day,
+                    start_minutes=start_slot * granularity,
+                    end_minutes=end_slot * granularity,
+                    is_locked=(worker.id, day, skill_id, start_slot, end_slot) in locked_keys,
+                )
+            )
 
-    # ── Coverage gaps (from slack values) — report precise sub-ranges ──────
-    gaps = []
-    for cov in request.coverage_windows:
-        cs, ce = cov.start_minutes // g, cov.end_minutes // g
-        gap_start = None
-        for t in range(cs, ce + 1):
-            has_gap = False
-            if t < ce:
-                key = (cov.day, cov.skill_id, t)
-                if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-                    has_gap = key in slack_vars and solver.Value(slack_vars[key]) > 0
-                else:
-                    has_gap = True
-            if has_gap and gap_start is None:
-                gap_start = t
-            elif not has_gap and gap_start is not None:
-                g_s = gap_start * g
-                g_e = t * g
-                ac = sum(1 for a in assignments
-                         if a.day == cov.day and a.skill_id == cov.skill_id
-                         and a.start_minutes < g_e and a.end_minutes > g_s)
-                gaps.append(CoverageGap(
-                    skill_id=cov.skill_id, day=cov.day,
-                    start_minutes=g_s, end_minutes=g_e,
-                    required=cov.min_workers, assigned=ac,
-                ))
-                gap_start = None
-
-    status_str = "INFEASIBLE"
-    if status == cp_model.OPTIMAL:
-        status_str = "OPTIMAL" if not gaps else "FEASIBLE"
-    elif status == cp_model.FEASIBLE:
-        status_str = "FEASIBLE"
-
-    h    = [v for v in total_hours.values()]
-    diag = [
-        f"Generated {len(assignments)} shifts (CP-SAT)", f"Solve time: {solve_ms}ms",
-        "100% coverage achieved" if not gaps else f"{len(gaps)} coverage gaps remaining",
+    validation = _validate_assignments(request, assignments)
+    diagnostics = [
+        f"Generated {len(assignments)} shifts (CP-SAT)",
+        f"Solve time: {solve_ms}ms",
+        "100% coverage achieved" if not validation.coverage_gaps else f"{len(validation.coverage_gaps)} coverage gaps remaining",
     ]
-    if h:
-        diag.append(f"Hours range: {min(h):.1f}h – {max(h):.1f}h")
+    if unmatched_existing:
+        diagnostics.append(f"{unmatched_existing} existing assignments could not be preserved exactly")
+    diagnostics.extend(validation.diagnostics[1:])
 
-    return SolveResponse(status=status_str, assignments=assignments, coverage_gaps=gaps,
-                         diagnostics=diag, solve_time_ms=solve_ms,
-                         total_hours_by_worker=total_hours)
+    combined_violations = violation_hints + validation.constraint_violations
+    if status == cp_model.INFEASIBLE:
+        status_str = "INFEASIBLE"
+    elif not validation.constraint_violations:
+        status_str = "OPTIMAL" if status == cp_model.OPTIMAL else "FEASIBLE"
+    else:
+        status_str = "FEASIBLE" if assignments else "INFEASIBLE"
 
+    return SolveResponse(
+        status=status_str,
+        assignments=validation.assignments,
+        coverage_gaps=validation.coverage_gaps,
+        diagnostics=diagnostics,
+        constraint_violations=combined_violations,
+        solve_time_ms=solve_ms,
+        total_hours_by_worker=validation.total_hours_by_worker,
+    )
 
-# ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "clocked-solver-v2",
-            "solver": "cpsat" if ORTOOLS_AVAILABLE else "greedy"}
+    return {
+        "status": "healthy",
+        "service": "clocked-solver-v2",
+        "solver": "cpsat" if ORTOOLS_AVAILABLE else "greedy",
+    }
 
 
 @app.post("/solve", response_model=SolveResponse)
@@ -760,10 +1314,17 @@ async def solve_schedule(request: SolveRequest):
         return _solve_greedy(request)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Solver error: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Solver error: {str(exc)}")
+
+
+@app.post("/validate", response_model=ValidationResponse)
+async def validate_schedule(request: SolveRequest):
+    assignments = request.existing_assignments
+    return _validate_assignments(request, assignments)
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

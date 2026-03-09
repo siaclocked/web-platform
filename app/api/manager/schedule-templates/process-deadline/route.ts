@@ -4,51 +4,9 @@ import {
   notifyManager, 
   NOTIFICATION_TYPES 
 } from '@/lib/notifications';
+import { buildSolverRequest } from '../solver-payload';
 
 const SOLVER_URL = process.env.SOLVER_URL || 'http://localhost:8000';
-
-interface SolverRequest {
-  place_id: string;
-  start_date: string;
-  end_date: string;
-  workers: Array<{
-    id: string;
-    name: string;
-    skill_ids: string[];
-    place_ids: string[];
-    skill_ratings: Record<string, number>;
-    start_date: string | null;
-    can_open: boolean;
-    can_close: boolean;
-  }>;
-  skill_constraints: Array<{
-    skill_id: string;
-    enforce_min_team_rating: boolean;
-    min_avg_rating: number | null;
-  }>;
-  coverage_windows: Array<{
-    id: string;
-    skill_id: string;
-    day: number;
-    start_minutes: number;
-    end_minutes: number;
-    min_workers: number;
-  }>;
-  unavailability: Array<{
-    worker_id: string;
-    day: number;
-    start_minutes?: number;
-    end_minutes?: number;
-    is_full_day: boolean;
-  }>;
-  settings: {
-    max_hours_per_day: number;
-    min_hours_per_block: number;
-    max_hours_per_block: number;
-    min_rest_between_shifts: number;
-    granularity_minutes: number;
-  };
-}
 
 export async function POST(request: Request) {
   try {
@@ -128,234 +86,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get workers at this place with their skills
-    const { data: workerPlaces, error: workersError } = await supabase
-      .from('worker_places')
-      .select(`
-        worker_id,
-        users:worker_id (
-          id,
-          first_name,
-          last_name,
-          start_date,
-          can_open,
-          can_close
-        )
-      `)
-      .eq('place_id', template.place_id)
-      .eq('is_active', true);
-
-    if (workersError) {
-      console.error('Error fetching workers:', workersError);
-      return NextResponse.json(
-        { error: 'Failed to fetch workers' },
-        { status: 500 }
-      );
-    }
-
-    const workerIds = workerPlaces?.map(wp => wp.worker_id) || [];
-
-    // Get worker skills
-    const { data: workerSkills, error: skillsError } = await supabase
-      .from('worker_skills')
-      .select('worker_id, skill_id, rating')
-      .in('worker_id', workerIds);
-
-    if (skillsError) {
-      console.error('Error fetching worker skills:', skillsError);
-    }
-
-    // Get worker availability from the calendar-based worker_availability table
-    const { data: availEntries, error: availError } = await supabase
-      .from('worker_availability')
-      .select('*')
-      .in('worker_id', workerIds)
-      .gte('date', template.start_date)
-      .lte('date', template.end_date);
-
-    if (availError) {
-      console.error('Error fetching worker availability:', availError);
-    }
-
-    // Build worker availability lookup: worker_id -> date -> entry
-    const workerAvailMap: Record<string, Record<string, { type: string; start_time?: string; end_time?: string }>> = {};
-    (availEntries || []).forEach((entry: {
-      worker_id: string;
-      date: string;
-      availability_type: string;
-      start_time?: string;
-      end_time?: string;
-    }) => {
-      if (!workerAvailMap[entry.worker_id]) {
-        workerAvailMap[entry.worker_id] = {};
-      }
-      workerAvailMap[entry.worker_id][entry.date] = {
-        type: entry.availability_type,
-        start_time: entry.start_time,
-        end_time: entry.end_time,
-      };
+    const solverRequest = await buildSolverRequest({
+      supabase,
+      template,
+      shiftTemplates: (shiftTemplates || []) as Array<{
+        id: string;
+        date: string;
+        day_type: string;
+        shifts: Array<{ startTime: string; endTime: string; position: string; workers?: number }> | null;
+      }>,
+      minimizeChanges: true,
+      balanceHours: true,
     });
-
-    // Build workers array for solver
-    type SolverWorker = SolverRequest['workers'][number];
-    const workersMap: Record<string, SolverWorker> = {};
-    workerPlaces?.forEach(wp => {
-      const userData = wp.users as {
-        first_name?: string;
-        last_name?: string;
-        start_date?: string;
-        can_open?: boolean;
-        can_close?: boolean;
-      } | null;
-      workersMap[wp.worker_id] = {
-        id: wp.worker_id,
-        name: `${userData?.first_name || ''} ${userData?.last_name || ''}`.trim() || 'Unknown',
-        skill_ids: [],
-        place_ids: [template.place_id],
-        skill_ratings: {},
-        start_date: userData?.start_date || null,
-        can_open: userData?.can_open ?? true,
-        can_close: userData?.can_close ?? true,
-      };
-    });
-
-    workerSkills?.forEach(ws => {
-      if (workersMap[ws.worker_id]) {
-        workersMap[ws.worker_id].skill_ids.push(ws.skill_id);
-        workersMap[ws.worker_id].skill_ratings[ws.skill_id] = ws.rating || 3;
-      }
-    });
-
-    // Build coverage windows from shift templates
-    // Use day OFFSET from start_date (not day-of-week) to avoid duplicates
-    // and the JS getDay() vs Python weekday() numbering mismatch.
-    const coverageWindows: SolverRequest['coverage_windows'] = [];
-    const startDateObj = new Date(template.start_date + 'T00:00:00');
-
-    (shiftTemplates || []).forEach((st) => {
-      if (st.day_type === 'work' && st.shifts) {
-        const shiftDate = new Date(st.date + 'T00:00:00');
-        const dayOffset = Math.round((shiftDate.getTime() - startDateObj.getTime()) / (24 * 60 * 60 * 1000));
-
-        const shifts = st.shifts as Array<{ startTime: string; endTime: string; position: string; workers?: number }>;
-        shifts.forEach((shift, shiftIndex: number) => {
-          const [startH, startM] = shift.startTime.split(':').map(Number);
-          const [endH, endM] = shift.endTime.split(':').map(Number);
-
-          coverageWindows.push({
-            id: `${st.id}-${shiftIndex}`,
-            skill_id: shift.position,
-            day: dayOffset,
-            start_minutes: startH * 60 + startM,
-            end_minutes: endH * 60 + endM,
-            min_workers: shift.workers || 1
-          });
-        });
-      }
-    });
-
-    const skillIdsInCoverage = [...new Set(coverageWindows.map((w) => w.skill_id))];
-    let skillConstraints: SolverRequest['skill_constraints'] = [];
-    if (skillIdsInCoverage.length > 0) {
-      const { data: placeSkillConfigs, error: placeSkillError } = await supabase
-        .from('place_skill_configs')
-        .select('skill_id, enforce_min_team_rating, min_avg_rating')
-        .eq('place_id', template.place_id)
-        .in('skill_id', skillIdsInCoverage);
-
-      if (placeSkillError) {
-        // Keep backward compatibility for environments without the new table yet.
-        if (!placeSkillError.message?.includes('does not exist') && placeSkillError.code !== '42P01') {
-          console.error('Error fetching place skill configs:', placeSkillError);
-        }
-      } else {
-        skillConstraints = (placeSkillConfigs || []).map((c: {
-          skill_id: string;
-          enforce_min_team_rating: boolean | null;
-          min_avg_rating: number | null;
-        }) => ({
-          skill_id: c.skill_id,
-          enforce_min_team_rating: c.enforce_min_team_rating ?? false,
-          min_avg_rating: c.min_avg_rating ?? null,
-        }));
-      }
-    }
-
-    // Build unavailability from worker_availability calendar entries
-    // Workers who have NO entry for a date are treated as unavailable (conservative).
-    // Workers with 'unavailable' are fully off that day.
-    // Workers with 'available_range' are unavailable outside that range.
-    // Workers with 'available_all_day' have no unavailability for that day.
-    const unavailability: SolverRequest['unavailability'] = [];
-
-    Object.keys(workersMap).forEach(workerId => {
-      const workerAvail = workerAvailMap[workerId] || {};
-
-      (shiftTemplates || []).forEach((st) => {
-        if (st.day_type === 'work') {
-          const shiftDate = new Date(st.date + 'T00:00:00');
-          const dayOffset = Math.round((shiftDate.getTime() - startDateObj.getTime()) / (24 * 60 * 60 * 1000));
-          const dateStr = st.date; // YYYY-MM-DD
-          const entry = workerAvail[dateStr];
-
-          if (!entry || entry.type === 'unavailable' || entry.type === 'vacation') {
-            // No availability set, explicitly unavailable, or on vacation → full day off
-            unavailability.push({
-              worker_id: workerId,
-              day: dayOffset,
-              is_full_day: true,
-            });
-          } else if (entry.type === 'available_range' && entry.start_time && entry.end_time) {
-            // Available only during a range → unavailable outside that range
-            const [aStartH, aStartM] = entry.start_time.split(':').map(Number);
-            const [aEndH, aEndM] = entry.end_time.split(':').map(Number);
-            const availStart = aStartH * 60 + (aStartM || 0);
-            const availEnd = aEndH * 60 + (aEndM || 0);
-
-            // Unavailable before their available start
-            if (availStart > 0) {
-              unavailability.push({
-                worker_id: workerId,
-                day: dayOffset,
-                start_minutes: 0,
-                end_minutes: availStart,
-                is_full_day: false,
-              });
-            }
-            // Unavailable after their available end
-            if (availEnd < 1440) {
-              unavailability.push({
-                worker_id: workerId,
-                day: dayOffset,
-                start_minutes: availEnd,
-                end_minutes: 1440,
-                is_full_day: false,
-              });
-            }
-          }
-          // 'available_all_day' → no unavailability entry needed
-        }
-      });
-    });
-
-    // Prepare solver request
-    const placeSettings = template.places?.settings || {};
-    const solverRequest: SolverRequest = {
-      place_id: template.place_id,
-      start_date: template.start_date,
-      end_date: template.end_date,
-      workers: Object.values(workersMap),
-      skill_constraints: skillConstraints,
-      coverage_windows: coverageWindows,
-      unavailability,
-      settings: {
-        max_hours_per_day: placeSettings.max_hours_per_day || 12,
-        min_hours_per_block: placeSettings.min_hours_per_block || 2,
-        max_hours_per_block: placeSettings.max_hours_per_block || 10,
-        min_rest_between_shifts: placeSettings.min_rest_between_shifts || 8,
-        granularity_minutes: placeSettings.schedule_granularity_minutes || 15
-      }
-    };
 
     // Update template status to processing
     await supabase
@@ -415,7 +157,10 @@ export async function POST(request: Request) {
     }
 
     // Process solver result
-    const isInfeasible = solverResult.status === 'INFEASIBLE' || solverResult.coverage_gaps?.length > 0;
+    const isInfeasible =
+      solverResult.status === 'INFEASIBLE' ||
+      solverResult.coverage_gaps?.length > 0 ||
+      solverResult.constraint_violations?.length > 0;
 
     // Update template with result
     await supabase

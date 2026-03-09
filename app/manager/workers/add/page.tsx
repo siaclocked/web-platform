@@ -25,6 +25,8 @@ export default function AddWorkerPage() {
     email: '',
     phone: '',
     hourlyRate: '',
+    monthlyMinHours: '',
+    monthlyOptimalHours: '',
     startDate: '',
     canOpen: true,
     canClose: true,
@@ -140,6 +142,8 @@ export default function AddWorkerPage() {
           positionRatings,
           placeIds: selectedPlaces,
           hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
+          monthly_min_hours: formData.monthlyMinHours ? parseFloat(formData.monthlyMinHours) : null,
+          monthly_optimal_hours: formData.monthlyOptimalHours ? parseFloat(formData.monthlyOptimalHours) : null,
           start_date: formData.startDate || null,
           can_open: formData.canOpen,
           can_close: formData.canClose,
@@ -205,6 +209,8 @@ export default function AddWorkerPage() {
                   email: '',
                   phone: '',
                   hourlyRate: '',
+                  monthlyMinHours: '',
+                  monthlyOptimalHours: '',
                   startDate: '',
                   canOpen: true,
                   canClose: true,
@@ -343,6 +349,27 @@ export default function AddWorkerPage() {
               onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
             />
 
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                type="number"
+                min="0"
+                step="0.25"
+                label="Monthly Min Hours"
+                placeholder="80"
+                value={formData.monthlyMinHours}
+                onChange={(e) => setFormData({ ...formData, monthlyMinHours: e.target.value })}
+              />
+              <Input
+                type="number"
+                min="0"
+                step="0.25"
+                label="Monthly Optimal Hours"
+                placeholder="160"
+                value={formData.monthlyOptimalHours}
+                onChange={(e) => setFormData({ ...formData, monthlyOptimalHours: e.target.value })}
+              />
+            </div>
+
             {/* Start Date */}
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -390,7 +417,7 @@ export default function AddWorkerPage() {
                     );
                   })}
                 </div>
-                <p className="text-xs text-foreground-muted mt-1">Rate the worker's skill level for each position. Higher rated workers are preferred by the solver.</p>
+                <p className="text-xs text-foreground-muted mt-1">Rate the worker&apos;s skill level for each position. Higher rated workers are preferred by the solver.</p>
               </div>
             )}
 

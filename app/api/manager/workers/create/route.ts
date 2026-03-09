@@ -15,11 +15,43 @@ export async function POST(request: Request) {
       start_date,
       can_open,
       can_close,
+      monthly_min_hours,
+      monthly_optimal_hours,
     } = await request.json();
 
     if (!email || !firstName || !lastName) {
       return NextResponse.json(
         { error: "Missing required fields" },
+        { status: 400 },
+      );
+    }
+
+    const normalizedMonthlyMin =
+      monthly_min_hours === null || monthly_min_hours === undefined || monthly_min_hours === ""
+        ? null
+        : Number(monthly_min_hours);
+    const normalizedMonthlyOptimal =
+      monthly_optimal_hours === null || monthly_optimal_hours === undefined || monthly_optimal_hours === ""
+        ? null
+        : Number(monthly_optimal_hours);
+
+    if (
+      (normalizedMonthlyMin !== null && (!Number.isFinite(normalizedMonthlyMin) || normalizedMonthlyMin < 0)) ||
+      (normalizedMonthlyOptimal !== null && (!Number.isFinite(normalizedMonthlyOptimal) || normalizedMonthlyOptimal < 0))
+    ) {
+      return NextResponse.json(
+        { error: "Monthly hour targets must be non-negative numbers" },
+        { status: 400 },
+      );
+    }
+
+    if (
+      normalizedMonthlyMin !== null &&
+      normalizedMonthlyOptimal !== null &&
+      normalizedMonthlyMin > normalizedMonthlyOptimal
+    ) {
+      return NextResponse.json(
+        { error: "Monthly minimum hours cannot exceed monthly optimal hours" },
         { status: 400 },
       );
     }
@@ -101,6 +133,8 @@ export async function POST(request: Request) {
       status: "ACTIVE",
       manager_id: user.id,
       hourly_rate: hourlyRate || null,
+      monthly_min_hours: normalizedMonthlyMin,
+      monthly_optimal_hours: normalizedMonthlyOptimal,
       can_open: can_open ?? true,
       can_close: can_close ?? true,
     };
