@@ -98,6 +98,7 @@ export default function ManagerSchedulePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [expandedSchedule, setExpandedSchedule] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [viewingScheduleId, setViewingScheduleId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
@@ -140,7 +141,10 @@ export default function ManagerSchedulePage() {
   useEffect(() => {
     if (reviewId && schedules.length > 0) {
       const target = schedules.find(s => s.id === reviewId);
-      if (target) setExpandedSchedule(reviewId);
+      if (target) {
+        setExpandedSchedule(reviewId);
+        setViewingScheduleId(reviewId);
+      }
     }
   }, [reviewId, schedules]);
 
@@ -422,11 +426,14 @@ export default function ManagerSchedulePage() {
     }
   };
 
-  // Flatten all schedules into a date-keyed map of shifts (deduplicated)
+  // Flatten schedules into a date-keyed map of shifts (filtered by viewingScheduleId when set)
   const flatShiftsByDate = useMemo(() => {
     const map: Record<string, FlatShift[]> = {};
     const seen = new Set<string>();
-    schedules.forEach(s => {
+    const schedulesToShow = viewingScheduleId
+      ? schedules.filter(s => s.id === viewingScheduleId)
+      : schedules;
+    schedulesToShow.forEach(s => {
       if (!s.solver_result?.assignments) return;
       const placeName = getPlaceName(s.place_id);
       s.solver_result.assignments.forEach(a => {
@@ -457,7 +464,7 @@ export default function ManagerSchedulePage() {
     });
     Object.values(map).forEach(arr => arr.sort((a, b) => a.start_minutes - b.start_minutes));
     return map;
-  }, [schedules, places]);
+  }, [schedules, places, viewingScheduleId]);
 
   const getPositionName = (skillId: string) => {
     return positions.find(p => p.id === skillId)?.name || skillId;
@@ -645,161 +652,261 @@ export default function ManagerSchedulePage() {
     </div>
   );
 
+  const viewingSchedule = viewingScheduleId ? schedules.find(s => s.id === viewingScheduleId) : null;
+
   return (
     <PageContainer>
       <div>
-        {/* Review banner */}
-        {reviewId && (() => {
-          const reviewSchedule = schedules.find(s => s.id === reviewId);
-          if (!reviewSchedule) return null;
-          const gaps = reviewSchedule.solver_result?.coverage_gaps?.length || 0;
-          const assignments = reviewSchedule.solver_result?.assignments?.length || 0;
-          const isFeasible = reviewSchedule.solver_result?.status === 'OPTIMAL' || reviewSchedule.solver_result?.status === 'FEASIBLE';
-          return (
-            <Card className={`mb-4 border-l-4 ${isFeasible && gaps === 0 ? 'border-l-success' : 'border-l-warning'}`}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-foreground">
-                      Review: {reviewSchedule.name}
-                    </h3>
-                    <p className="text-sm text-foreground-muted mt-1">
+        {/* ========== SCHEDULE LIST (default) ========== */}
+        {!viewingScheduleId && (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
+                <p className="text-foreground-muted text-sm">Click on a schedule to view and manage it</p>
+              </div>
+            </div>
+
+            {schedules.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <Calendar className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
+                  <h3 className="text-lg font-medium mb-2">No generated schedules yet</h3>
+                  <p className="text-foreground-muted mb-4">
+                    Create a timesheet, publish it, let workers set availability, then close it to generate a schedule.
+                  </p>
+                  <Link href="/manager/timesheets">
+                    <Button>
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Create a Timesheet
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {schedules.map((schedule) => {
+                  const result = schedule.solver_result;
+                  const assignmentCount = result?.assignments?.length || 0;
+                  const gapCount = result?.coverage_gaps?.length || 0;
+                  const uniqueWorkers = result ? new Set(result.assignments?.map(a => a.worker_id)).size : 0;
+
+                  return (
+                    <Card
+                      key={schedule.id}
+                      className="cursor-pointer hover:border-primary/40 transition-all"
+                      onClick={() => {
+                        setViewingScheduleId(schedule.id);
+                        // Auto-set calendar to schedule's month
+                        const sd = new Date(schedule.start_date + 'T00:00:00');
+                        setCurrentMonth(new Date(sd.getFullYear(), sd.getMonth(), 1));
+                      }}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-foreground text-lg">{schedule.name}</h3>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
+                                <MapPin className="w-3.5 h-3.5" />
+                                <span>{getPlaceName(schedule.place_id)}</span>
+                              </div>
+                              <span className="text-foreground-muted">·</span>
+                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span>{formatDate(schedule.start_date)} – {formatDate(schedule.end_date)}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 mt-2 flex-wrap">
+                              {schedule.status === 'schedule_published' ? (
+                                <Badge variant="success">
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Published
+                                </Badge>
+                              ) : (
+                                <Badge variant={getSolverStatusVariant(schedule.solver_status)}>
+                                  {getSolverStatusLabel(schedule.solver_status, result)}
+                                </Badge>
+                              )}
+                              <span className="text-sm text-foreground-muted flex items-center gap-1">
+                                <Users className="w-3.5 h-3.5" />
+                                {uniqueWorkers} workers · {assignmentCount} shifts
+                              </span>
+                              {gapCount > 0 && (
+                                <span className="text-sm text-warning flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                  {gapCount} gaps
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="ml-4 flex items-center gap-2">
+                            {schedule.status === 'closed' && (
+                              <Button
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handlePublish(schedule.id); }}
+                                isLoading={publishingId === schedule.id}
+                                disabled={publishingId !== null}
+                              >
+                                <Send className="w-3.5 h-3.5 mr-1" />
+                                Publish
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <ChevronRight className="w-5 h-5 text-foreground-muted" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ========== INDIVIDUAL SCHEDULE VIEW ========== */}
+        {viewingScheduleId && viewingSchedule && (
+          <>
+            {/* Back + header */}
+            <div className="flex items-center gap-3 mb-2">
+              <Button variant="outline" size="sm" onClick={() => {
+                setViewingScheduleId(null);
+                stopEditing();
+              }}>
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+              <div className="flex-1">
+                <h1 className="text-xl font-bold text-foreground">{viewingSchedule.name}</h1>
+                <div className="flex items-center gap-2 text-sm text-foreground-muted">
+                  <MapPin className="w-3.5 h-3.5" />
+                  {getPlaceName(viewingSchedule.place_id)}
+                  <span>·</span>
+                  <Calendar className="w-3.5 h-3.5" />
+                  {formatDate(viewingSchedule.start_date)} – {formatDate(viewingSchedule.end_date)}
+                  <span>·</span>
+                  {viewingSchedule.status === 'schedule_published' ? (
+                    <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Published</Badge>
+                  ) : (
+                    <Badge variant={getSolverStatusVariant(viewingSchedule.solver_status)}>
+                      {getSolverStatusLabel(viewingSchedule.solver_status, viewingSchedule.solver_result)}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Review banner */}
+            {reviewId && viewingScheduleId === reviewId && (() => {
+              const gaps = viewingSchedule.solver_result?.coverage_gaps?.length || 0;
+              const assignments = viewingSchedule.solver_result?.assignments?.length || 0;
+              const isFeasible = viewingSchedule.solver_result?.status === 'OPTIMAL' || viewingSchedule.solver_result?.status === 'FEASIBLE';
+              return (
+                <Card className={`mb-4 border-l-4 ${isFeasible && gaps === 0 ? 'border-l-success' : 'border-l-warning'}`}>
+                  <CardContent className="p-4">
+                    <p className="text-sm text-foreground-muted">
                       {assignments} shift{assignments !== 1 ? 's' : ''} assigned
                       {gaps > 0 && <span className="text-warning ml-2">· {gaps} coverage gap{gaps !== 1 ? 's' : ''}</span>}
-                      {gaps === 0 && <span className="text-success ml-2">· No gaps</span>}
+                      {gaps === 0 && <span className="text-success ml-2">· No gaps — ready to publish</span>}
                     </p>
-                    {reviewSchedule.solver_result?.diagnostics && reviewSchedule.solver_result.diagnostics.length > 0 && (
-                      <ul className="mt-2 text-xs text-foreground-muted space-y-0.5">
-                        {reviewSchedule.solver_result.diagnostics.slice(0, 3).map((d, i) => (
-                          <li key={i}>→ {d}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    {reviewSchedule.status === 'closed' && (
-                      <Button
-                        onClick={() => handlePublish(reviewSchedule.id)}
-                        isLoading={publishingId === reviewSchedule.id}
-                      >
-                        <Send className="w-4 h-4 mr-1" />
+                    {viewingSchedule.status === 'closed' && !isEditing && (
+                      <Button size="sm" className="mt-2" onClick={() => handlePublish(viewingSchedule.id)} isLoading={publishingId === viewingSchedule.id}>
+                        <Send className="w-3.5 h-3.5 mr-1" />
                         Approve & Send to Employees
                       </Button>
                     )}
-                    {reviewSchedule.status === 'schedule_published' && (
-                      <Badge variant="success">Published</Badge>
-                    )}
-                    <Button variant="outline" onClick={() => router.push('/manager/schedule')}>
-                      Dismiss
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })()}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
-        {/* Top bar — wireframe style */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            {!isEditing && schedules.some(s => s.solver_result) && (
-              <Button variant="outline" onClick={() => startEditing()}>
-                <Edit2 className="w-4 h-4 mr-1" />
-                Edit Schedule
-              </Button>
-            )}
-            {isEditing && (
-              <>
-                <Button onClick={() => saveEdits()} isLoading={savingEdits}>
-                  <Save className="w-4 h-4 mr-1" />
-                  Save Changes
-                </Button>
-                <Button variant="outline" onClick={() => { stopEditing(); fetchSchedules(); }}>
-                  Cancel
-                </Button>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {!isEditing && schedules.some(s => s.status === 'closed') && (
-              <Button onClick={() => {
-                const first = schedules.find(s => s.status === 'closed');
-                if (first) handlePublish(first.id);
-              }}>
-                Publish
-              </Button>
-            )}
-            <div className="relative">
-              <select
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value as ViewMode)}
-                className="text-sm py-2 pl-3 pr-8 border border-border rounded-lg bg-background text-foreground appearance-none cursor-pointer"
-              >
-                <option value="month">Month View</option>
-                <option value="week">Week View</option>
-                <option value="list">List View</option>
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
-        {isEditing && (() => {
-          const editSchedule = schedules.find(s => s.id === editingScheduleId);
-          const gapCount = editSchedule?.solver_result?.coverage_gaps?.length || 0;
-          const assignmentCount = editSchedule?.solver_result?.assignments?.length || 0;
-          const isReady = gapCount === 0 && assignmentCount > 0;
-
-          return (
-            <div className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-2 border ${isReady ? 'bg-success/10 border-success/40' : 'bg-primary-muted/30 border-primary/20'}`}>
+            {/* Top bar — edit/save/view mode */}
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                {isReady ? (
-                  <CheckCircle className="w-4 h-4 text-success" />
-                ) : (
-                  <Edit2 className="w-4 h-4 text-primary" />
+                {!isEditing && viewingSchedule.solver_result && (
+                  <Button variant="outline" onClick={() => startEditing(viewingScheduleId)}>
+                    <Edit2 className="w-4 h-4 mr-1" />
+                    Edit Schedule
+                  </Button>
                 )}
-                <span className="text-sm text-foreground">
-                  {isReady ? (
-                    <><strong>Schedule is ready to be published!</strong> {assignmentCount} shift{assignmentCount !== 1 ? 's' : ''} assigned, no coverage gaps.</>
-                  ) : (
-                    <><strong>Editing mode:</strong> Click a day to add/remove shifts. {gapCount > 0 && <span className="text-warning">{gapCount} coverage gap{gapCount !== 1 ? 's' : ''} remaining.</span>}</>
-                  )}
-                </span>
+                {isEditing && (
+                  <>
+                    <Button onClick={() => saveEdits()} isLoading={savingEdits}>
+                      <Save className="w-4 h-4 mr-1" />
+                      Save Changes
+                    </Button>
+                    <Button variant="outline" onClick={() => { stopEditing(); fetchSchedules(); }}>
+                      Cancel
+                    </Button>
+                  </>
+                )}
+                {!isEditing && viewingSchedule.status === 'closed' && (
+                  <Button onClick={() => handlePublish(viewingSchedule.id)} isLoading={publishingId === viewingSchedule.id}>
+                    <Send className="w-4 h-4 mr-1" />
+                    Publish
+                  </Button>
+                )}
               </div>
-              {isReady && editSchedule?.status === 'closed' && (
-                <Button size="sm" onClick={async () => {
-                  const saved = await saveEdits(true);
-                  if (saved) {
-                    stopEditing();
-                    handlePublish(editSchedule.id);
-                  }
-                }} isLoading={savingEdits || publishingId === editSchedule.id}>
-                  <Send className="w-3.5 h-3.5 mr-1" />
-                  Publish to Employees
-                </Button>
-              )}
+              <div className="relative">
+                <select
+                  value={viewMode}
+                  onChange={(e) => setViewMode(e.target.value as ViewMode)}
+                  className="text-sm py-2 pl-3 pr-8 border border-border rounded-lg bg-background text-foreground appearance-none cursor-pointer"
+                >
+                  <option value="month">Month View</option>
+                  <option value="week">Week View</option>
+                  <option value="list">List View</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+              </div>
             </div>
-          );
-        })()}
 
-        {schedules.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-8">
-              <Calendar className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
-              <h3 className="text-lg font-medium mb-2">No generated schedules yet</h3>
-              <p className="text-foreground-muted mb-4">
-                Create a timesheet, publish it, let workers set availability, then close it to generate a schedule.
-              </p>
-              <Link href="/manager/timesheets">
-                <Button>
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Create a Timesheet
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
+            {/* Editing banner */}
+            {isEditing && (() => {
+              const editSchedule = schedules.find(s => s.id === editingScheduleId);
+              const gapCount = editSchedule?.solver_result?.coverage_gaps?.length || 0;
+              const assignmentCount = editSchedule?.solver_result?.assignments?.length || 0;
+              const isReady = gapCount === 0 && assignmentCount > 0;
+
+              return (
+                <div className={`mb-4 p-3 rounded-lg flex items-center justify-between gap-2 border ${isReady ? 'bg-success/10 border-success/40' : 'bg-primary-muted/30 border-primary/20'}`}>
+                  <div className="flex items-center gap-2">
+                    {isReady ? (
+                      <CheckCircle className="w-4 h-4 text-success" />
+                    ) : (
+                      <Edit2 className="w-4 h-4 text-primary" />
+                    )}
+                    <span className="text-sm text-foreground">
+                      {isReady ? (
+                        <><strong>Schedule is ready to be published!</strong> {assignmentCount} shift{assignmentCount !== 1 ? 's' : ''} assigned, no coverage gaps.</>
+                      ) : (
+                        <><strong>Editing mode:</strong> Click a day to add/remove shifts. {gapCount > 0 && <span className="text-warning">{gapCount} coverage gap{gapCount !== 1 ? 's' : ''} remaining.</span>}</>
+                      )}
+                    </span>
+                  </div>
+                  {isReady && editSchedule?.status === 'closed' && (
+                    <Button size="sm" onClick={async () => {
+                      const saved = await saveEdits(true);
+                      if (saved) {
+                        stopEditing();
+                        handlePublish(editSchedule.id);
+                      }
+                    }} isLoading={savingEdits || publishingId === editSchedule.id}>
+                      <Send className="w-3.5 h-3.5 mr-1" />
+                      Publish to Employees
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ===== MONTH VIEW ===== */}
             {viewMode === 'month' && (
               <div className="space-y-4">
@@ -1119,186 +1226,104 @@ export default function ManagerSchedulePage() {
               </div>
             )}
 
-            {/* ===== LIST VIEW (original with publish) ===== */}
-            {viewMode === 'list' && (
-              <div className="space-y-4">
-                {schedules.map((schedule) => {
-                  const isExpanded = expandedSchedule === schedule.id;
-                  const result = schedule.solver_result;
-                  const assignmentCount = result?.assignments?.length || 0;
-                  const gapCount = result?.coverage_gaps?.length || 0;
-                  const uniqueWorkers = result ? new Set(result.assignments?.map(a => a.worker_id)).size : 0;
+            {/* ===== LIST VIEW (detail view for this schedule) ===== */}
+            {viewMode === 'list' && (() => {
+              const result = viewingSchedule.solver_result;
+              if (!result) return <p className="text-foreground-muted text-center py-8">No solver results for this schedule.</p>;
+              return (
+                <div className="space-y-4">
+                  {result.diagnostics && result.diagnostics.length > 0 && (
+                    <div className="p-3 bg-background-secondary rounded-lg">
+                      <h4 className="text-sm font-medium text-foreground mb-2">Solver Info</h4>
+                      <ul className="text-sm text-foreground-muted space-y-1">
+                        {result.diagnostics.map((d, i) => (
+                          <li key={i}>· {d}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-                  return (
-                    <Card key={schedule.id}>
-                      <CardContent className="p-4">
-                        <div
-                          className="flex items-center justify-between cursor-pointer"
-                          onClick={() => toggleExpand(schedule.id)}
-                        >
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-foreground">{schedule.name}</h3>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
-                                <MapPin className="w-3.5 h-3.5" />
-                                <span>{getPlaceName(schedule.place_id)}</span>
-                              </div>
-                              <span className="text-foreground-muted">·</span>
-                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>{formatDate(schedule.start_date)} - {formatDate(schedule.end_date)}</span>
-                              </div>
+                  {result.total_hours_by_worker && Object.keys(result.total_hours_by_worker).length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-foreground mb-2">Hours by Worker</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {Object.entries(result.total_hours_by_worker).map(([workerId, hours]) => {
+                          const workerName = result.assignments?.find(a => a.worker_id === workerId)?.worker_name || workerId;
+                          return (
+                            <div key={workerId} className="p-2 bg-background-secondary rounded-lg text-sm">
+                              <span className="font-medium text-foreground">{workerName}</span>
+                              <span className="text-foreground-muted ml-2">{Number(hours).toFixed(1)}h</span>
                             </div>
-                            <div className="flex items-center gap-3 mt-2 flex-wrap">
-                              {schedule.status === 'schedule_published' ? (
-                                <Badge variant="success">
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                  Published
-                                </Badge>
-                              ) : (
-                                <Badge variant={getSolverStatusVariant(schedule.solver_status)}>
-                                  {getSolverStatusLabel(schedule.solver_status, result)}
-                                </Badge>
-                              )}
-                              <span className="text-sm text-foreground-muted flex items-center gap-1">
-                                <Users className="w-3.5 h-3.5" />
-                                {uniqueWorkers} workers · {assignmentCount} shifts
-                              </span>
-                              {gapCount > 0 && (
-                                <span className="text-sm text-warning flex items-center gap-1">
-                                  <AlertCircle className="w-3.5 h-3.5" />
-                                  {gapCount} gaps
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="ml-4 flex items-center gap-2">
-                            {schedule.status === 'closed' && (
-                              <Button
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handlePublish(schedule.id); }}
-                                isLoading={publishingId === schedule.id}
-                                disabled={publishingId !== null}
-                              >
-                                <Send className="w-3.5 h-3.5 mr-1" />
-                                Publish
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                            {isExpanded ? (
-                              <ChevronUp className="w-5 h-5 text-foreground-muted" />
-                            ) : (
-                              <ChevronDown className="w-5 h-5 text-foreground-muted" />
-                            )}
-                          </div>
-                        </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-                        {isExpanded && result && (
-                          <div className="mt-4 pt-4 border-t border-border space-y-4">
-                            {result.diagnostics && result.diagnostics.length > 0 && (
-                              <div className="p-3 bg-background-secondary rounded-lg">
-                                <h4 className="text-sm font-medium text-foreground mb-2">Solver Info</h4>
-                                <ul className="text-sm text-foreground-muted space-y-1">
-                                  {result.diagnostics.map((d, i) => (
-                                    <li key={i}>· {d}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-
-                            {result.total_hours_by_worker && Object.keys(result.total_hours_by_worker).length > 0 && (
-                              <div>
-                                <h4 className="text-sm font-medium text-foreground mb-2">Hours by Worker</h4>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                  {Object.entries(result.total_hours_by_worker).map(([workerId, hours]) => {
-                                    const workerName = result.assignments?.find(a => a.worker_id === workerId)?.worker_name || workerId;
-                                    return (
-                                      <div key={workerId} className="p-2 bg-background-secondary rounded-lg text-sm">
-                                        <span className="font-medium text-foreground">{workerName}</span>
-                                        <span className="text-foreground-muted ml-2">{Number(hours).toFixed(1)}h</span>
+                  {result.assignments && result.assignments.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-foreground mb-2">Schedule by Day</h4>
+                      <div className="space-y-3">
+                        {Object.entries(getAssignmentsByDay(result.assignments, viewingSchedule.start_date))
+                          .sort(([a], [b]) => Number(a) - Number(b))
+                          .map(([dayStr, dayAssignments]) => {
+                            const dayNum = Number(dayStr);
+                            const dayDate = getDayDate(viewingSchedule.start_date, dayNum);
+                            return (
+                              <Card key={dayStr} className="border-border/50">
+                                <CardContent className="p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Calendar className="w-4 h-4 text-primary" />
+                                    <span className="font-medium text-sm text-foreground">
+                                      {dayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                                    </span>
+                                    <Badge variant="default" className="text-xs">{dayAssignments.length} shifts</Badge>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {dayAssignments.map((assignment, idx) => (
+                                      <div key={idx} className="flex items-center gap-3 p-2 bg-background-secondary rounded text-sm">
+                                        <div className="flex items-center gap-1.5 text-foreground-muted">
+                                          <Clock className="w-3.5 h-3.5" />
+                                          <span>{formatMinutesToTime(assignment.start_minutes)} – {formatMinutesToTime(assignment.end_minutes)}</span>
+                                        </div>
+                                        <span className="font-medium text-foreground">{assignment.worker_name}</span>
+                                        <Badge variant="info" className="text-xs">{getPositionName(assignment.skill_id)}</Badge>
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
+                                    ))}
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
 
-                            {result.assignments && result.assignments.length > 0 && (
-                              <div>
-                                <h4 className="text-sm font-medium text-foreground mb-2">Schedule</h4>
-                                <div className="space-y-3">
-                                  {Object.entries(getAssignmentsByDay(result.assignments, schedule.start_date))
-                                    .sort(([a], [b]) => Number(a) - Number(b))
-                                    .map(([dayStr, dayAssignments]) => {
-                                      const dayNum = Number(dayStr);
-                                      const dayDate = getDayDate(schedule.start_date, dayNum);
-                                      return (
-                                        <Card key={dayStr} className="border-border/50">
-                                          <CardContent className="p-3">
-                                            <div className="flex items-center gap-2 mb-2">
-                                              <Calendar className="w-4 h-4 text-primary" />
-                                              <span className="font-medium text-sm text-foreground">
-                                                {dayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-                                              </span>
-                                              <Badge variant="default" className="text-xs">{dayAssignments.length} shifts</Badge>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                              {dayAssignments.map((assignment, idx) => (
-                                                <div key={idx} className="flex items-center gap-3 p-2 bg-background-secondary rounded text-sm">
-                                                  <div className="flex items-center gap-1.5 text-foreground-muted">
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    <span>{formatMinutesToTime(assignment.start_minutes)} - {formatMinutesToTime(assignment.end_minutes)}</span>
-                                                  </div>
-                                                  <span className="font-medium text-foreground">{assignment.worker_name}</span>
-                                                  <Badge variant="info" className="text-xs">{getPositionName(assignment.skill_id)}</Badge>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </CardContent>
-                                        </Card>
-                                      );
-                                    })}
-                                </div>
-                              </div>
-                            )}
-
-                            {result.coverage_gaps && result.coverage_gaps.length > 0 && (
-                              <div>
-                                <h4 className="text-sm font-medium text-warning mb-2">Coverage Gaps</h4>
-                                <div className="space-y-1.5">
-                                  {result.coverage_gaps.map((gap, idx) => (
-                                    <div key={idx} className="flex items-center gap-3 p-2 bg-warning-muted/20 rounded text-sm">
-                                      <AlertCircle className="w-4 h-4 text-warning" />
-                                      <span className="text-foreground">
-                                        Day {gap.day}: {formatMinutesToTime(gap.start_minutes)} - {formatMinutesToTime(gap.end_minutes)}
-                                      </span>
-                                      <Badge variant="warning" className="text-xs">{getPositionName(gap.skill_id)}</Badge>
-                                      <span className="text-foreground-muted">{gap.assigned}/{gap.required} workers</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {(!result.assignments || result.assignments.length === 0) && (
-                              <div className="text-center py-4">
-                                <p className="text-foreground-muted">No assignments were generated for this schedule.</p>
-                              </div>
-                            )}
+                  {result.coverage_gaps && result.coverage_gaps.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium text-warning mb-2">Coverage Gaps</h4>
+                      <div className="space-y-1.5">
+                        {result.coverage_gaps.map((gap, idx) => (
+                          <div key={idx} className="flex items-center gap-3 p-2 bg-warning-muted/20 rounded text-sm">
+                            <AlertCircle className="w-4 h-4 text-warning" />
+                            <span className="text-foreground">
+                              Day {gap.day}: {formatMinutesToTime(gap.start_minutes)} – {formatMinutesToTime(gap.end_minutes)}
+                            </span>
+                            <Badge variant="warning" className="text-xs">{getPositionName(gap.skill_id)}</Badge>
                           </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(!result.assignments || result.assignments.length === 0) && (
+                    <div className="text-center py-4">
+                      <p className="text-foreground-muted">No assignments were generated for this schedule.</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
       </div>

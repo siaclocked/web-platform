@@ -176,7 +176,11 @@ export default function AddWorkerPage() {
       formData.email.trim() &&
       isValidEmail(formData.email) &&
       selectedPositions.length > 0 &&
-      selectedPlaces.length > 0
+      selectedPlaces.length > 0 &&
+      formData.hourlyRate.trim() !== '' &&
+      formData.monthlyMinHours.trim() !== '' &&
+      formData.monthlyOptimalHours.trim() !== '' &&
+      formData.startDate.trim() !== ''
     );
   };
 
@@ -343,10 +347,11 @@ export default function AddWorkerPage() {
             <Input
               type="number"
               step="0.01"
-              label="Hourly Rate (Optional)"
+              label="Hourly Rate"
               placeholder="15.00"
               value={formData.hourlyRate}
               onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
+              required
             />
 
             <div className="grid grid-cols-2 gap-3">
@@ -358,6 +363,7 @@ export default function AddWorkerPage() {
                 placeholder="80"
                 value={formData.monthlyMinHours}
                 onChange={(e) => setFormData({ ...formData, monthlyMinHours: e.target.value })}
+                required
               />
               <Input
                 type="number"
@@ -367,6 +373,7 @@ export default function AddWorkerPage() {
                 placeholder="160"
                 value={formData.monthlyOptimalHours}
                 onChange={(e) => setFormData({ ...formData, monthlyOptimalHours: e.target.value })}
+                required
               />
             </div>
 
@@ -374,13 +381,14 @@ export default function AddWorkerPage() {
             <div>
               <label className="block text-sm font-medium mb-1">
                 <Calendar className="w-3.5 h-3.5 inline mr-1" />
-                Start Date
+                Start Date <span className="text-danger">*</span>
               </label>
               <input
                 type="date"
                 value={formData.startDate}
                 onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
                 className="w-full p-2 border border-border rounded-lg bg-background text-foreground text-sm"
+                required
               />
               <p className="text-xs text-foreground-muted mt-1">Date the worker starts. Used by the solver for scheduling eligibility.</p>
             </div>

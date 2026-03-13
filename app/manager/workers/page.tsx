@@ -543,13 +543,14 @@ export default function ManagerWorkersPage() {
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-medium text-foreground-muted mb-1">Hourly Rate</label>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Hourly Rate <span className="text-danger">*</span></label>
                             <Input
                               type="number"
                               step="0.01"
                               placeholder="15.00"
                               value={editForm.hourly_rate}
                               onChange={(e) => setEditForm({ ...editForm, hourly_rate: e.target.value })}
+                              required
                             />
                           </div>
                           <div>
@@ -568,7 +569,7 @@ export default function ManagerWorkersPage() {
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-xs font-medium text-foreground-muted mb-1">Monthly Min Hours</label>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Monthly Min Hours <span className="text-danger">*</span></label>
                             <Input
                               type="number"
                               min="0"
@@ -576,10 +577,11 @@ export default function ManagerWorkersPage() {
                               placeholder="80"
                               value={editForm.monthly_min_hours}
                               onChange={(e) => setEditForm({ ...editForm, monthly_min_hours: e.target.value })}
+                              required
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-foreground-muted mb-1">Monthly Optimal Hours</label>
+                            <label className="block text-xs font-medium text-foreground-muted mb-1">Monthly Optimal Hours <span className="text-danger">*</span></label>
                             <Input
                               type="number"
                               min="0"
@@ -587,13 +589,14 @@ export default function ManagerWorkersPage() {
                               placeholder="160"
                               value={editForm.monthly_optimal_hours}
                               onChange={(e) => setEditForm({ ...editForm, monthly_optimal_hours: e.target.value })}
+                              required
                             />
                           </div>
                         </div>
 
 	                        <div className="grid grid-cols-2 gap-3">
 	                          <div>
-	                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date</label>
+	                            <label className="block text-xs font-medium text-foreground-muted mb-1">Start Date <span className="text-danger">*</span></label>
                             <input
                               type="date"
                               value={editForm.start_date}

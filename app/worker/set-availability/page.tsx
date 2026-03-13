@@ -397,10 +397,6 @@ export default function SetAvailabilityPage() {
                 Not available
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded bg-purple-500/20 border border-purple-500/50" />
-                Vacation
-              </div>
-              <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-warning" />
                 Unsaved
               </div>
@@ -422,7 +418,7 @@ export default function SetAvailabilityPage() {
               </div>
 
               {/* Type selector */}
-              <div className="grid grid-cols-4 gap-2 mb-4">
+              <div className="grid grid-cols-3 gap-2 mb-4">
                 <button
                   onClick={() => setPanelType('available_all_day')}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-sm transition-all
@@ -446,14 +442,6 @@ export default function SetAvailabilityPage() {
                 >
                   <X className="w-5 h-5" />
                   Off
-                </button>
-                <button
-                  onClick={() => setPanelType('vacation')}
-                  className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-sm transition-all
-                    ${panelType === 'vacation' ? 'border-purple-500 bg-purple-500/10 text-purple-600 font-semibold' : 'border-border hover:bg-background-secondary text-foreground'}`}
-                >
-                  <Palmtree className="w-5 h-5" />
-                  Vacation
                 </button>
               </div>
 

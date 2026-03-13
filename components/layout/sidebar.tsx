@@ -15,7 +15,6 @@ import {
   Bell,
   User,
   Eye,
-  LayoutGrid,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -29,7 +28,6 @@ const managerNavItems = [
   { href: '/manager/worker-availability', icon: Eye, label: 'Worker Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
-  { href: '/manager/coverage-templates', icon: LayoutGrid, label: 'Coverage Templates' },
   { href: '/manager/worker-tracking', icon: Clock, label: 'Worker Tracking' },
   { href: '/manager/notifications', icon: Bell, label: 'Notifications' },
 ];

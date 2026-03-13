@@ -11,7 +11,6 @@ import {
   Briefcase,
   ChevronLeft,
   ChevronRight,
-  Users,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -108,14 +107,6 @@ export default function WorkerSchedulePage() {
   const monthLabel = currentMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const calendarDays: Array<{ day: number; dateStr: string } | null> = [];
-  // Pad leading blanks
-  for (let i = 0; i < firstDayOfWeek; i++) calendarDays.push(null);
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    calendarDays.push({ day: d, dateStr });
-  }
-
   const selectedShifts = selectedDate ? shiftsByDate[selectedDate] || [] : [];
 
   // Total hours this month
@@ -139,6 +130,45 @@ export default function WorkerSchedulePage() {
     return count;
   }, [shiftsByDate, year, month]);
 
+  // Build calendar grid with prev/next month filler days (same as availability calendar)
+  const calendarDaysGrid: Array<{ day: number; dateStr: string; isCurrentMonth: boolean }> = [];
+  // Previous month filler
+  const prevMonthLastDay = new Date(year, month, 0).getDate();
+  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+    const d = prevMonthLastDay - i;
+    const pm = month === 0 ? 12 : month;
+    const py = month === 0 ? year - 1 : year;
+    calendarDaysGrid.push({ day: d, dateStr: `${py}-${String(pm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    calendarDaysGrid.push({ day: d, dateStr, isCurrentMonth: true });
+  }
+  // Next month filler
+  const remainingCells = 7 - (calendarDaysGrid.length % 7);
+  if (remainingCells < 7) {
+    for (let d = 1; d <= remainingCells; d++) {
+      const nm = month + 2 > 12 ? 1 : month + 2;
+      const ny = month + 2 > 12 ? year + 1 : year;
+      calendarDaysGrid.push({ day: d, dateStr: `${ny}-${String(nm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
+    }
+  }
+
+  const getCellStyle = (dateStr: string) => {
+    const shifts = shiftsByDate[dateStr];
+    if (!shifts || shifts.length === 0) return '';
+    return 'bg-primary/10 border-primary/40';
+  };
+
+  const getCellLabel = (dateStr: string) => {
+    const shifts = shiftsByDate[dateStr];
+    if (!shifts || shifts.length === 0) return null;
+    if (shifts.length === 1) {
+      return `${shifts[0].start_time.slice(0, 5)}`;
+    }
+    return `${shifts.length} shifts`;
+  };
+
   if (isLoading) {
     return (
       <PageContainer>
@@ -151,83 +181,86 @@ export default function WorkerSchedulePage() {
 
   return (
     <PageContainer>
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6">
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">My Schedule</h1>
-          <p className="text-foreground-muted">Tap a day to see your shifts</p>
+          <div className="flex items-center gap-3">
+            <Badge variant="info">{monthShiftCount} shift{monthShiftCount !== 1 ? "s" : ""}</Badge>
+            <span className="text-sm text-foreground-muted">{monthHours.toFixed(1)}h this month</span>
+          </div>
         </div>
-
-        {/* Month summary */}
-        <div className="flex items-center gap-4 mb-4">
-          <Badge variant="info">{monthShiftCount} shift{monthShiftCount !== 1 ? "s" : ""}</Badge>
-          <span className="text-sm text-foreground-muted">{monthHours.toFixed(1)}h this month</span>
-        </div>
+        <p className="text-foreground-muted text-sm">
+          Tap a day to see your shift details
+        </p>
 
         {/* Calendar */}
-        <Card className="mb-4">
+        <Card>
           <CardContent className="p-4">
             {/* Month navigation */}
             <div className="flex items-center justify-between mb-4">
               <Button variant="outline" size="sm" onClick={prevMonth}>
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <div className="flex items-center gap-2">
-                <h2 className="font-semibold text-foreground">{monthLabel}</h2>
-                <Button variant="outline" size="sm" onClick={goToToday} className="text-xs">
-                  Today
-                </Button>
-              </div>
+              <h2 className="font-semibold text-foreground">{monthLabel}</h2>
               <Button variant="outline" size="sm" onClick={nextMonth}>
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
 
             {/* Day headers */}
-            <div className="grid grid-cols-7 gap-1 mb-1">
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
-                <div key={d} className="text-center text-xs font-medium text-foreground-muted py-1">
-                  {d}
-                </div>
+            <div className="grid grid-cols-7 mb-1">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
               ))}
             </div>
 
             {/* Calendar grid */}
-            <div className="grid grid-cols-7 gap-1">
-              {calendarDays.map((cell, idx) => {
-                if (!cell) {
-                  return <div key={`blank-${idx}`} className="aspect-square" />;
-                }
-
-                const hasShifts = !!shiftsByDate[cell.dateStr];
+            <div className="grid grid-cols-7">
+              {calendarDaysGrid.map((cell, idx) => {
                 const isToday = cell.dateStr === todayStr;
                 const isSelected = cell.dateStr === selectedDate;
-                const shiftCount = shiftsByDate[cell.dateStr]?.length || 0;
+                const cellStyle = getCellStyle(cell.dateStr);
+                const label = getCellLabel(cell.dateStr);
 
                 return (
                   <button
-                    key={cell.dateStr}
-                    onClick={() => setSelectedDate(isSelected ? null : cell.dateStr)}
-                    className={`
-                      aspect-square rounded-lg flex flex-col items-center justify-center text-sm relative transition-all
-                      ${isSelected ? "bg-primary text-white ring-2 ring-primary/30" : ""}
-                      ${isToday && !isSelected ? "bg-primary/10 text-primary font-bold" : ""}
-                      ${!isSelected && !isToday ? "hover:bg-background-secondary text-foreground" : ""}
+                    key={idx}
+                    onClick={() => cell.isCurrentMonth && setSelectedDate(isSelected ? null : cell.dateStr)}
+                    disabled={!cell.isCurrentMonth}
+                    className={`relative flex flex-col items-start p-2 min-h-[72px] sm:min-h-[80px] border text-left transition-all text-xs
+                      ${cell.isCurrentMonth ? 'cursor-pointer hover:bg-background-secondary' : 'opacity-30 cursor-default'}
+                      ${isSelected ? 'ring-2 ring-primary' : ''}
+                      ${cellStyle ? cellStyle : 'border-border/50'}
                     `}
                   >
-                    <span>{cell.day}</span>
-                    {hasShifts && (
-                      <div className="flex gap-0.5 mt-0.5">
-                        {Array.from({ length: Math.min(shiftCount, 3) }).map((_, i) => (
-                          <span
-                            key={i}
-                            className={`w-1.5 h-1.5 rounded-full ${isSelected ? "bg-white" : "bg-primary"}`}
-                          />
-                        ))}
-                      </div>
+                    <span className={`text-sm font-semibold leading-none ${isToday ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center' : ''} ${!cell.isCurrentMonth ? 'text-foreground-muted/40' : 'text-foreground'}`}>
+                      {cell.day}
+                    </span>
+                    {label && (
+                      <span className="mt-auto text-[10px] sm:text-xs text-primary font-medium truncate w-full">
+                        {label}
+                      </span>
                     )}
                   </button>
                 );
               })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-4 mt-4 text-xs text-foreground-muted">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-primary/10 border border-primary/40" />
+                Shift scheduled
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded border border-border/50" />
+                No shift
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-primary" />
+                Today
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -236,13 +269,20 @@ export default function WorkerSchedulePage() {
         {selectedDate && (
           <Card>
             <CardContent className="p-4">
-              <h3 className="font-semibold text-foreground mb-3">
-                {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-foreground">
+                  {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </h3>
+                {selectedShifts.length > 0 && (
+                  <Badge variant="info">
+                    {selectedShifts.reduce((acc, s) => acc + s.hours, 0).toFixed(1)}h total
+                  </Badge>
+                )}
+              </div>
 
               {selectedShifts.length === 0 ? (
                 <p className="text-sm text-foreground-muted py-2">No shifts scheduled for this day.</p>
@@ -251,26 +291,24 @@ export default function WorkerSchedulePage() {
                   {selectedShifts.map((shift, idx) => (
                     <div
                       key={`${shift.date}-${idx}`}
-                      className="p-3 bg-background-secondary rounded-lg"
+                      className="p-3 bg-primary/5 border border-primary/20 rounded-lg"
                     >
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between mb-1.5">
                         <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-primary" />
-                          <span className="font-medium text-foreground">
+                          <span className="font-semibold text-foreground">
                             {shift.start_time} – {shift.end_time}
                           </span>
                         </div>
-                        <span className="text-sm font-medium text-foreground">
-                          {shift.hours.toFixed(1)}h
-                        </span>
+                        <Badge variant="default">{shift.hours.toFixed(1)}h</Badge>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-foreground-muted mt-1">
-                        <span className="flex items-center gap-1">
-                          <Briefcase className="w-3 h-3" />
+                      <div className="flex items-center gap-4 text-sm text-foreground-muted">
+                        <span className="flex items-center gap-1.5">
+                          <Briefcase className="w-3.5 h-3.5" />
                           {shift.skill_name}
                         </span>
-                        <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
+                        <span className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5" />
                           {shift.place_name}
                         </span>
                       </div>
