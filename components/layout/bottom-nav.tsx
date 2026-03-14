@@ -36,7 +36,6 @@ const managerNavItems = [
   { href: '/manager', icon: Home, label: 'Home' },
   { href: '/manager/schedule', icon: Calendar, label: 'Schedule' },
   { href: '/manager/workers', icon: Users, label: 'Team' },
-  { href: '/manager/timesheets', icon: ClipboardList, label: 'Create' },
   { href: '/manager/worker-availability', icon: Eye, label: 'Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },

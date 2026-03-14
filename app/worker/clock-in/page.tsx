@@ -32,6 +32,7 @@ interface RecentSession {
   id: string;
   start_time: string;
   end_time: string;
+  place?: { name: string };
   places?: { name: string };
   skills?: { name: string };
 }
@@ -180,9 +181,14 @@ export default function WorkerClockInPage() {
     }
   };
 
-  const formatSessionHours = (start: string, end: string) => {
+  const formatSessionDuration = (start: string, end: string) => {
     const ms = new Date(end).getTime() - new Date(start).getTime();
-    return (ms / (1000 * 60 * 60)).toFixed(1);
+    const totalMinutes = Math.round(ms / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return `${minutes}m`;
+    if (minutes === 0) return `${hours}h`;
+    return `${hours}h ${minutes}m`;
   };
 
   if (isLoading) {
@@ -317,7 +323,7 @@ export default function WorkerClockInPage() {
                   >
                     <div>
                       <p className="font-medium text-foreground text-sm">
-                        {session.places?.name || "Unknown"}
+                        {session.place?.name || session.places?.name || "Unknown"}
                       </p>
                       <p className="text-xs text-foreground-muted">
                         {new Date(session.start_time).toLocaleDateString()} •{" "}
@@ -333,11 +339,10 @@ export default function WorkerClockInPage() {
                     <div className="text-right">
                       {session.end_time ? (
                         <span className="text-sm font-medium text-foreground">
-                          {formatSessionHours(
+                          {formatSessionDuration(
                             session.start_time,
                             session.end_time,
                           )}
-                          h
                         </span>
                       ) : (
                         <Badge variant="success">Active</Badge>

@@ -1,5 +1,14 @@
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+
+function getServiceSupabase() {
+  return createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 export async function GET(
   request: Request,
@@ -7,9 +16,9 @@ export async function GET(
 ) {
   try {
     const { id: placeIdParam } = await params;
-    const supabase = await createClient();
+    const authClient = await createClient();
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await authClient.auth.getUser();
     
     if (userError || !user) {
       return NextResponse.json(
@@ -17,6 +26,8 @@ export async function GET(
         { status: 401 }
       );
     }
+
+    const supabase = getServiceSupabase();
 
     const { data: userData, error: userDataError } = await supabase
       .from('users')

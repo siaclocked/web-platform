@@ -46,14 +46,18 @@ export async function POST(request: Request) {
     }
 
     // Transform the data to match the expected format
-    const transformedSessions = sessions?.map(session => ({
-      id: session.id,
-      start_time: session.start_time,
-      end_time: session.end_time,
-      place: session.places && Array.isArray(session.places) && session.places.length > 0 
-        ? { name: session.places[0].name } 
-        : { name: 'Unknown Location' }
-    })) || [];
+    const transformedSessions = sessions?.map(session => {
+      const p = session.places as any;
+      const placeName = p
+        ? (Array.isArray(p) ? p[0]?.name : p.name) || 'Unknown Location'
+        : 'Unknown Location';
+      return {
+        id: session.id,
+        start_time: session.start_time,
+        end_time: session.end_time,
+        place: { name: placeName },
+      };
+    }) || [];
 
     return NextResponse.json(transformedSessions);
 

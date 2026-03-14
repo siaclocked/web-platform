@@ -154,8 +154,36 @@ export default function SetAvailabilityPage() {
     setDirty(prev => new Set(prev).add(dateStr));
   };
 
+  const formatTimeInput = (raw: string, previous: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    const capped = digits.slice(0, 4);
+    if (capped.length === 0) return '';
+    if (capped.length <= 2) {
+      const h = parseInt(capped, 10);
+      if (capped.length === 2 && h > 23) return previous;
+      return capped;
+    }
+    const hh = capped.slice(0, 2);
+    const mm = capped.slice(2);
+    if (parseInt(hh, 10) > 23) return previous;
+    if (mm.length === 2 && parseInt(mm, 10) > 59) return previous;
+    return `${hh}:${mm}`;
+  };
+
   const handleApply = () => {
     if (!selectedDate) return;
+    if (panelType === 'available_range') {
+      if (!panelStart || !panelEnd || panelStart.length < 5 || panelEnd.length < 5) {
+        alert('Please enter valid start and end times in HH:MM format');
+        return;
+      }
+      const [sh, sm] = panelStart.split(':').map(Number);
+      const [eh, em] = panelEnd.split(':').map(Number);
+      if (eh * 60 + em <= sh * 60 + sm) {
+        alert('End time must be after start time');
+        return;
+      }
+    }
     setDayAvailability(selectedDate, panelType, panelStart, panelEnd);
     setSelectedDate(null);
   };
@@ -445,26 +473,32 @@ export default function SetAvailabilityPage() {
                 </button>
               </div>
 
-              {/* Time range inputs */}
+              {/* Time range inputs (24-hour format) */}
               {panelType === 'available_range' && (
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-1">
                     <label className="block text-xs text-foreground-muted mb-1">From</label>
                     <input
-                      type="time"
+                      type="text"
+                      inputMode="numeric"
                       value={panelStart}
-                      onChange={(e) => setPanelStart(e.target.value)}
-                      className="w-full p-2 border border-border rounded-lg text-sm bg-background"
+                      onChange={(e) => setPanelStart(formatTimeInput(e.target.value, panelStart))}
+                      placeholder="09:00"
+                      maxLength={5}
+                      className="w-full p-2 border border-border rounded-lg text-sm bg-background text-center font-mono"
                     />
                   </div>
                   <span className="text-foreground-muted mt-5">–</span>
                   <div className="flex-1">
                     <label className="block text-xs text-foreground-muted mb-1">To</label>
                     <input
-                      type="time"
+                      type="text"
+                      inputMode="numeric"
                       value={panelEnd}
-                      onChange={(e) => setPanelEnd(e.target.value)}
-                      className="w-full p-2 border border-border rounded-lg text-sm bg-background"
+                      onChange={(e) => setPanelEnd(formatTimeInput(e.target.value, panelEnd))}
+                      placeholder="17:00"
+                      maxLength={5}
+                      className="w-full p-2 border border-border rounded-lg text-sm bg-background text-center font-mono"
                     />
                   </div>
                 </div>

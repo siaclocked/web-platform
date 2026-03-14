@@ -71,16 +71,22 @@ export async function GET(request: Request) {
     const prevHours = calcHours(prevSessions || []);
 
     // Format sessions for display
-    const sessions = (currentSessions || []).map(s => ({
-      id: s.id,
-      start_time: s.start_time,
-      end_time: s.end_time,
-      place_name: (s.places as any)?.name || 'Unknown',
-      skill_name: (s.skills as any)?.name || 'Unknown',
-      hours: s.end_time
-        ? Math.round(((new Date(s.end_time).getTime() - new Date(s.start_time).getTime()) / (1000 * 60 * 60)) * 100) / 100
-        : null,
-    }));
+    const sessions = (currentSessions || []).map(s => {
+      const p = s.places as any;
+      const sk = s.skills as any;
+      const placeName = p ? (Array.isArray(p) ? p[0]?.name : p.name) || 'Unknown Location' : 'Unknown Location';
+      const skillName = sk ? (Array.isArray(sk) ? sk[0]?.name : sk.name) || '' : '';
+      return {
+        id: s.id,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        place_name: placeName,
+        skill_name: skillName,
+        hours: s.end_time
+          ? Math.round(((new Date(s.end_time).getTime() - new Date(s.start_time).getTime()) / (1000 * 60 * 60)) * 100) / 100
+          : null,
+      };
+    });
 
     return NextResponse.json({
       hourly_rate: hourlyRate,

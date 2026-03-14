@@ -145,7 +145,7 @@ export default function WorkerHoursPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-foreground text-sm">
-                          {session.place_name || 'Untitled'}
+                          {session.place_name || 'Unknown Location'}
                         </span>
                         <span className="text-xs text-foreground-muted">
                           {new Date(session.start_time).toLocaleDateString('en-US', {
@@ -171,7 +171,9 @@ export default function WorkerHoursPage() {
                     </div>
                     <div className="text-right">
                       {session.hours !== null ? (
-                        <span className="text-sm font-bold text-foreground">{session.hours.toFixed(1)}h</span>
+                        <span className="text-sm font-bold text-foreground">
+                          {(() => { const totalMin = Math.round(session.hours * 60); const h = Math.floor(totalMin / 60); const m = totalMin % 60; return h === 0 ? `${m}m` : m === 0 ? `${h}h` : `${h}h ${m}m`; })()}
+                        </span>
                       ) : (
                         <Badge variant="success">Active</Badge>
                       )}

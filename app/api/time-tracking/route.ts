@@ -163,8 +163,13 @@ export async function POST(request: NextRequest) {
               { status: 400 }
             );
           }
+        } else {
+          // No published schedules exist for this place/date — still require a shift
+          return NextResponse.json(
+            { error: 'No schedule has been published for this location yet. Please wait until your manager publishes a schedule.' },
+            { status: 400 }
+          );
         }
-        // If no published schedules exist at all for this place/date, allow clock-in (no schedule to enforce)
       }
 
       // Create work session

@@ -169,11 +169,7 @@ export default function ManagerSchedulePage() {
 
       if (response.ok) {
         const data = (await response.json()) as ScheduleTemplateResponse;
-        // Show templates that have been solved or published
-        const solvedTemplates = (data.templates || []).filter(
-          (template) => (template.status === 'closed' || template.status === 'schedule_published') && template.solver_status && template.solver_result
-        );
-        setSchedules(solvedTemplates);
+        setSchedules(data.templates || []);
       }
     } catch (error) {
       console.error('Error fetching schedules:', error);
@@ -466,6 +462,23 @@ export default function ManagerSchedulePage() {
     return map;
   }, [schedules, places, viewingScheduleId]);
 
+  // Build a date-keyed map of coverage gaps for the viewed schedule
+  const gapsByDate = useMemo(() => {
+    const map: Record<string, Array<{ skill_id: string; day: number; start_minutes: number; end_minutes: number }>> = {};
+    if (!viewingScheduleId) return map;
+    const schedule = schedules.find(s => s.id === viewingScheduleId);
+    if (!schedule?.solver_result?.coverage_gaps) return map;
+    schedule.solver_result.coverage_gaps.forEach(gap => {
+      const startDate = new Date(schedule.start_date + 'T00:00:00');
+      const gapDate = new Date(startDate);
+      gapDate.setDate(gapDate.getDate() + gap.day);
+      const dateStr = `${gapDate.getFullYear()}-${String(gapDate.getMonth() + 1).padStart(2, '0')}-${String(gapDate.getDate()).padStart(2, '0')}`;
+      if (!map[dateStr]) map[dateStr] = [];
+      map[dateStr].push(gap);
+    });
+    return map;
+  }, [schedules, viewingScheduleId]);
+
   const getPositionName = (skillId: string) => {
     return positions.find(p => p.id === skillId)?.name || skillId;
   };
@@ -665,6 +678,12 @@ export default function ManagerSchedulePage() {
                 <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
                 <p className="text-foreground-muted text-sm">Click on a schedule to view and manage it</p>
               </div>
+              <Link href="/manager/timesheets">
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Schedule
+                </Button>
+              </Link>
             </div>
 
             {schedules.length === 0 ? (
@@ -673,12 +692,12 @@ export default function ManagerSchedulePage() {
                   <Calendar className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
                   <h3 className="text-lg font-medium mb-2">No generated schedules yet</h3>
                   <p className="text-foreground-muted mb-4">
-                    Create a timesheet, publish it, let workers set availability, then close it to generate a schedule.
+                    Create a schedule, configure shifts, then publish it to run the solver and assign workers.
                   </p>
                   <Link href="/manager/timesheets">
                     <Button>
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Create a Timesheet
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Schedule
                     </Button>
                   </Link>
                 </CardContent>
@@ -690,17 +709,36 @@ export default function ManagerSchedulePage() {
                   const assignmentCount = result?.assignments?.length || 0;
                   const gapCount = result?.coverage_gaps?.length || 0;
                   const uniqueWorkers = result ? new Set(result.assignments?.map(a => a.worker_id)).size : 0;
+                  const hasSolverResult = !!result && !!result.assignments;
+                  const isDraft = schedule.status === 'draft';
+                  const isPublished = schedule.status === 'published';
+
+                  const getStatusBadge = () => {
+                    if (schedule.status === 'schedule_published') return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Sent to Employees</Badge>;
+                    if (schedule.status === 'closed' && hasSolverResult) return <Badge variant="info">Ready to Review</Badge>;
+                    if (isPublished) return <Badge variant="warning">Solver Running</Badge>;
+                    if (isDraft) return <Badge variant="default">Draft</Badge>;
+                    return <Badge variant={getSolverStatusVariant(schedule.solver_status)}>{getSolverStatusLabel(schedule.solver_status, result)}</Badge>;
+                  };
+
+                  const handleCardClick = () => {
+                    if (isDraft) {
+                      // Drafts → go to edit page
+                      router.push(`/manager/timesheets`);
+                      return;
+                    }
+                    if (hasSolverResult) {
+                      setViewingScheduleId(schedule.id);
+                      const sd = new Date(schedule.start_date + 'T00:00:00');
+                      setCurrentMonth(new Date(sd.getFullYear(), sd.getMonth(), 1));
+                    }
+                  };
 
                   return (
                     <Card
                       key={schedule.id}
-                      className="cursor-pointer hover:border-primary/40 transition-all"
-                      onClick={() => {
-                        setViewingScheduleId(schedule.id);
-                        // Auto-set calendar to schedule's month
-                        const sd = new Date(schedule.start_date + 'T00:00:00');
-                        setCurrentMonth(new Date(sd.getFullYear(), sd.getMonth(), 1));
-                      }}
+                      className={`transition-all ${hasSolverResult || isDraft ? 'cursor-pointer hover:border-primary/40' : ''}`}
+                      onClick={handleCardClick}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
@@ -718,20 +756,13 @@ export default function ManagerSchedulePage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-3 mt-2 flex-wrap">
-                              {schedule.status === 'schedule_published' ? (
-                                <Badge variant="success">
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                  Published
-                                </Badge>
-                              ) : (
-                                <Badge variant={getSolverStatusVariant(schedule.solver_status)}>
-                                  {getSolverStatusLabel(schedule.solver_status, result)}
-                                </Badge>
+                              {getStatusBadge()}
+                              {hasSolverResult && (
+                                <span className="text-sm text-foreground-muted flex items-center gap-1">
+                                  <Users className="w-3.5 h-3.5" />
+                                  {uniqueWorkers} workers · {assignmentCount} shifts
+                                </span>
                               )}
-                              <span className="text-sm text-foreground-muted flex items-center gap-1">
-                                <Users className="w-3.5 h-3.5" />
-                                {uniqueWorkers} workers · {assignmentCount} shifts
-                              </span>
                               {gapCount > 0 && (
                                 <span className="text-sm text-warning flex items-center gap-1">
                                   <AlertCircle className="w-3.5 h-3.5" />
@@ -741,7 +772,7 @@ export default function ManagerSchedulePage() {
                             </div>
                           </div>
                           <div className="ml-4 flex items-center gap-2">
-                            {schedule.status === 'closed' && (
+                            {schedule.status === 'closed' && hasSolverResult && (
                               <Button
                                 size="sm"
                                 onClick={(e) => { e.stopPropagation(); handlePublish(schedule.id); }}
@@ -752,14 +783,16 @@ export default function ManagerSchedulePage() {
                                 Publish
                               </Button>
                             )}
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                            <ChevronRight className="w-5 h-5 text-foreground-muted" />
+                            {schedule.status !== 'schedule_published' && (
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                            {(hasSolverResult || isDraft) && <ChevronRight className="w-5 h-5 text-foreground-muted" />}
                           </div>
                         </div>
                       </CardContent>
@@ -938,23 +971,38 @@ export default function ManagerSchedulePage() {
                     <div className="grid grid-cols-7">
                       {calendarDays.map((cell, idx) => {
                         const shifts = flatShiftsByDate[cell.dateStr] || [];
+                        const gaps = gapsByDate[cell.dateStr] || [];
                         const isToday = cell.dateStr === todayStr;
                         const isSelected = cell.dateStr === selectedDate;
                         const hasShifts = shifts.length > 0;
+                        const hasGaps = gaps.length > 0;
 
                         return (
                           <button
                             key={idx}
                             onClick={() => setSelectedDate(isSelected ? null : cell.dateStr)}
-                            className={`relative flex flex-col items-start p-2 min-h-[80px] border border-border/50 text-left transition-all
-                              ${hasShifts && cell.isCurrentMonth ? 'border-success bg-success/5' : ''}
+                            className={`relative flex flex-col items-start p-2 min-h-[80px] border text-left transition-all
+                              ${hasGaps && cell.isCurrentMonth ? 'border-warning bg-warning/10' : ''}
+                              ${hasShifts && !hasGaps && cell.isCurrentMonth ? 'border-success/60 bg-success/5' : ''}
+                              ${!hasShifts && !hasGaps ? 'border-border/50' : ''}
                               ${isSelected ? 'ring-2 ring-primary/40 bg-primary/5' : ''}
                               ${!cell.isCurrentMonth ? 'text-foreground-muted/40' : 'text-foreground'}
-                              ${cell.isCurrentMonth && !hasShifts ? 'hover:bg-background-secondary' : ''}`}
+                              ${cell.isCurrentMonth && !hasShifts && !hasGaps ? 'hover:bg-background-secondary' : ''}`}
                           >
                             <span className={`text-sm font-semibold ${isToday ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center' : ''}`}>
                               {cell.day}
                             </span>
+                            {hasGaps && cell.isCurrentMonth && (
+                              <span className="mt-auto text-[10px] text-warning font-medium truncate w-full flex items-center gap-0.5">
+                                <AlertCircle className="w-3 h-3 shrink-0" />
+                                {gaps.length} gap{gaps.length !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {hasShifts && !hasGaps && cell.isCurrentMonth && (
+                              <span className="mt-auto text-[10px] text-success font-medium truncate w-full">
+                                {shifts.length} shift{shifts.length !== 1 ? 's' : ''}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -1044,6 +1092,25 @@ export default function ManagerSchedulePage() {
                             <Button size="sm" variant="outline" onClick={() => setShowAddShift(false)}>
                               Cancel
                             </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Coverage gaps for this day */}
+                      {selectedDate && gapsByDate[selectedDate] && gapsByDate[selectedDate].length > 0 && (
+                        <div className="mb-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                          <h4 className="text-sm font-medium text-warning mb-2 flex items-center gap-1">
+                            <AlertCircle className="w-4 h-4" />
+                            Coverage Gaps ({gapsByDate[selectedDate].length})
+                          </h4>
+                          <div className="space-y-1.5">
+                            {gapsByDate[selectedDate].map((gap, gIdx) => (
+                              <div key={gIdx} className="flex items-center gap-2 text-sm">
+                                <Clock className="w-3.5 h-3.5 text-warning" />
+                                <span className="text-foreground">{formatMinutesToTime(gap.start_minutes)} – {formatMinutesToTime(gap.end_minutes)}</span>
+                                <Badge variant="warning" className="text-xs">{getPositionName(gap.skill_id)}</Badge>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}
