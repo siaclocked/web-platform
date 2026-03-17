@@ -8,11 +8,17 @@ shift still overlaps demanded time and respects worker/place constraints.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import queue as queue_module
+import threading
 from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 ORTOOLS_AVAILABLE = False
@@ -23,6 +29,41 @@ try:
     print("[solver-v2] OR-Tools loaded — using CP-SAT solver")
 except (ImportError, OSError) as e:
     print(f"[solver-v2] OR-Tools unavailable ({e}) — using greedy fallback")
+
+
+def _make_progress_callback_class():
+    """Build the progress callback class, inheriting from CpSolverSolutionCallback when available."""
+    base = cp_model.CpSolverSolutionCallback if ORTOOLS_AVAILABLE else object
+
+    class _Cb(base):
+        def __init__(self, progress_queue: queue_module.Queue | None = None):
+            super().__init__()
+            self._solution_count = 0
+            self._queue = progress_queue
+
+        def on_solution_callback(self):
+            self._solution_count += 1
+            if self._queue is not None:
+                obj = self.ObjectiveValue()
+                bound = self.BestObjectiveBound()
+                gap = abs(obj - bound) / max(1, abs(obj)) * 100 if obj != 0 else 0
+                self._queue.put({
+                    "type": "progress",
+                    "solutions_found": self._solution_count,
+                    "objective": int(obj),
+                    "bound": int(bound),
+                    "wall_time_s": round(self.WallTime(), 1),
+                    "gap_pct": round(gap, 1),
+                })
+
+        @property
+        def solution_count(self) -> int:
+            return self._solution_count
+
+    return _Cb
+
+
+_SolveProgressCallback = _make_progress_callback_class()
 
 
 app = FastAPI(title="Clocked Solver v2", version="2.1.0")
@@ -268,6 +309,17 @@ def _build_demand(coverage_windows: list[CoverageWindow], granularity: int):
         for slot in range(start_slot, end_slot):
             demand[(cov.day, cov.skill_id, slot)] = demand.get((cov.day, cov.skill_id, slot), 0) + cov.min_workers
     return demand, extent
+
+
+def _build_coverage_boundaries(coverage_windows: list[CoverageWindow], granularity: int) -> dict[tuple[int, str], list[int]]:
+    boundaries: dict[tuple[int, str], set[int]] = {}
+    for cov in coverage_windows:
+        key = (cov.day, cov.skill_id)
+        if key not in boundaries:
+            boundaries[key] = set()
+        boundaries[key].add(cov.start_minutes // granularity)
+        boundaries[key].add(cov.end_minutes // granularity)
+    return {key: sorted(slots) for key, slots in boundaries.items()}
 
 
 def _build_skill_thresholds(skill_constraints: list[SkillConstraint]) -> dict[str, int]:
@@ -642,8 +694,8 @@ def _validate_assignments(
 
 def _candidate_bounds(extent: tuple[int, int], slots_per_day: int, min_slots: int, max_slots: int) -> tuple[int, int]:
     demand_start, demand_end = extent
-    start_min = max(0, demand_start - max_slots + 1)
-    start_max = min(slots_per_day - min_slots, demand_end - 1)
+    start_min = demand_start
+    start_max = demand_end - min_slots
     return start_min, start_max
 
 
@@ -714,6 +766,7 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
     unavail_lookup = _build_unavailability_lookup(request.unavailability)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     demand, extent = _build_demand(request.coverage_windows, granularity)
+    cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity)
     remaining = dict(demand)
 
     locked_validation = _validate_assignments(
@@ -762,13 +815,11 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
     )
 
     for day, skill_id in day_skills:
-        demand_extent = extent.get((day, skill_id))
-        if demand_extent is None:
+        bounds = cov_boundaries.get((day, skill_id))
+        if bounds is None:
             continue
-        demand_start, demand_end = demand_extent
-        start_min, start_max = _candidate_bounds(demand_extent, slots_per_day, min_slots, max_slots)
-        if start_min > start_max:
-            continue
+        demand_start = bounds[0]
+        demand_end = bounds[-1]
 
         eligible_workers = sorted(
             (
@@ -785,10 +836,10 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
 
             best_key = None
             best_score = None
-            for start_slot in range(start_min, start_max + 1):
-                max_end = min(slots_per_day, start_slot + max_slots)
-                for end_slot in range(start_slot + min_slots, max_end + 1):
-                    if not _shift_overlaps_extent(start_slot, end_slot, demand_extent):
+            for i, start_slot in enumerate(bounds):
+                for end_slot in bounds[i + 1:]:
+                    length = end_slot - start_slot
+                    if length < min_slots or length > max_slots:
                         continue
                     start_minutes = start_slot * granularity
                     end_minutes = end_slot * granularity
@@ -917,7 +968,7 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
     )
 
 
-def _solve_cpsat(request: SolveRequest) -> SolveResponse:
+def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | None = None) -> SolveResponse:
     t0 = datetime.now()
     day_dates = _parse_day_dates(request)
     slot_settings = _settings_slots(request.settings)
@@ -931,6 +982,7 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
     workers = request.workers
     workers_by_id = {worker.id: worker for worker in workers}
     demand, extent = _build_demand(request.coverage_windows, granularity)
+    cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     unavail_lookup = _build_unavailability_lookup(request.unavailability)
     baseline_month_slots = _build_worker_month_baseline(request, granularity)
@@ -948,16 +1000,13 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
             for skill_id in worker.skill_ids:
                 if not _worker_is_eligible(worker, request, skill_id, day_date):
                     continue
-                demand_extent = extent.get((day, skill_id))
-                if demand_extent is None:
+                bounds = cov_boundaries.get((day, skill_id))
+                if bounds is None:
                     continue
-                start_min, start_max = _candidate_bounds(demand_extent, slots_per_day, min_slots, max_slots)
-                if start_min > start_max:
-                    continue
-                for start_slot in range(start_min, start_max + 1):
-                    max_end = min(slots_per_day, start_slot + max_slots)
-                    for end_slot in range(start_slot + min_slots, max_end + 1):
-                        if not _shift_overlaps_extent(start_slot, end_slot, demand_extent):
+                for i, start_slot in enumerate(bounds):
+                    for end_slot in bounds[i + 1:]:
+                        length = end_slot - start_slot
+                        if length < min_slots or length > max_slots:
                             continue
                         if not _is_shift_available(worker.id, day, start_slot * granularity, end_slot * granularity, unavail_lookup):
                             continue
@@ -1163,10 +1212,14 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
 
             if worker.monthly_optimal_hours is not None:
                 target_slots = int(round(float(worker.monthly_optimal_hours) * 60 / granularity))
-                deviation = model.NewIntVar(0, slots_per_day * len(month_days), f"optimal_dev_{worker_index}_{month_start}")
+                max_dev = slots_per_day * len(month_days)
+                deviation = model.NewIntVar(0, max_dev, f"optimal_dev_{worker_index}_{month_start}")
                 model.Add(deviation >= baseline_slots + assigned_slots_expr - target_slots)
                 model.Add(deviation >= target_slots - (baseline_slots + assigned_slots_expr))
-                objectives.append(deviation * 30)
+                dev_squared = model.NewIntVar(0, max_dev * max_dev, f"dev_sq_{worker_index}_{month_start}")
+                model.AddMultiplicationEquality(dev_squared, [deviation, deviation])
+                objectives.append(dev_squared * 2)
+                objectives.append(deviation * 10)
 
     if request.balance_hours and len(workers) > 1:
         total_demand_slots = sum(demand.values())
@@ -1189,8 +1242,6 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
         total_available_slots = sum(available_slots_per_worker)
         if total_available_slots > 0:
             for worker_index, worker in enumerate(workers):
-                if worker.monthly_min_hours is not None or worker.monthly_optimal_hours is not None:
-                    continue
                 worker_variables = [
                     (end_slot - start_slot, variable)
                     for (index, day, skill_id, start_slot, end_slot), variable in shift_vars.items()
@@ -1210,11 +1261,14 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
         shortfall = max(0, soft_max_slots - length)
         overtime = max(0, length - soft_max_slots)
         undertime = max(0, soft_min_slots - length)
-        objectives.append(variable * shortfall)
+        objectives.append(variable * shortfall * 50)
         if overtime > 0:
-            objectives.append(variable * (overtime * overtime * 3))
+            objectives.append(variable * (overtime * overtime * 15))
         if undertime > 0:
-            objectives.append(variable * (undertime * undertime * 3))
+            objectives.append(variable * (undertime * undertime * 15))
+        wasted = sum(1 for s in range(start_slot, end_slot) if (day, skill_id, s) not in demand)
+        if wasted > 0:
+            objectives.append(variable * wasted * 500)
 
     for assignment in locked_assignments:
         worker_index = worker_index_by_id[assignment.worker_id]
@@ -1232,8 +1286,13 @@ def _solve_cpsat(request: SolveRequest) -> SolveResponse:
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = request.solver_timeout_seconds
-    solver.parameters.num_search_workers = 4
-    status = solver.Solve(model)
+    solver.parameters.num_search_workers = min(8, os.cpu_count() or 4)
+    solver.parameters.relative_gap_limit = 0.005
+    solver.parameters.linearization_level = 2
+    if progress_queue is not None:
+        progress_queue.put({"type": "phase", "phase": "solving", "variables": len(shift_vars)})
+    callback = _SolveProgressCallback(progress_queue)
+    status = solver.Solve(model, callback)
     solve_ms = int((datetime.now() - t0).total_seconds() * 1000)
 
     assignments: list[Assignment] = []
@@ -1316,6 +1375,60 @@ async def solve_schedule(request: SolveRequest):
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Solver error: {str(exc)}")
+
+
+@app.post("/solve/stream")
+async def solve_schedule_stream(request: SolveRequest):
+    """SSE streaming endpoint — sends progress events while solving, then the final result."""
+    if not request.workers:
+        raise HTTPException(status_code=400, detail="No workers provided")
+    if not request.coverage_windows:
+        raise HTTPException(status_code=400, detail="No coverage windows provided")
+
+    progress_queue: queue_module.Queue = queue_module.Queue()
+    result_holder: list[SolveResponse | Exception] = []
+
+    def _run_solver():
+        try:
+            progress_queue.put({"type": "phase", "phase": "building_model"})
+            if ORTOOLS_AVAILABLE:
+                result = _solve_cpsat(request, progress_queue=progress_queue)
+            else:
+                result = _solve_greedy(request)
+            result_holder.append(result)
+        except Exception as exc:
+            result_holder.append(exc)
+        finally:
+            progress_queue.put({"type": "done"})
+
+    solver_thread = threading.Thread(target=_run_solver, daemon=True)
+    solver_thread.start()
+
+    async def _event_stream():
+        day_count = (date.fromisoformat(request.end_date) - date.fromisoformat(request.start_date)).days
+        yield f"event: started\ndata: {json.dumps({'workers': len(request.workers), 'days': day_count, 'coverage_windows': len(request.coverage_windows)})}\n\n"
+        while True:
+            try:
+                event = progress_queue.get_nowait()
+            except queue_module.Empty:
+                await asyncio.sleep(0.25)
+                continue
+
+            if event["type"] == "done":
+                if result_holder and isinstance(result_holder[0], SolveResponse):
+                    result = result_holder[0]
+                    yield f"event: complete\ndata: {result.model_dump_json()}\n\n"
+                elif result_holder and isinstance(result_holder[0], Exception):
+                    yield f"event: error\ndata: {json.dumps({'detail': str(result_holder[0])})}\n\n"
+                else:
+                    yield f"event: error\ndata: {json.dumps({'detail': 'Solver returned no result'})}\n\n"
+                break
+            elif event["type"] == "progress":
+                yield f"event: progress\ndata: {json.dumps(event)}\n\n"
+            elif event["type"] == "phase":
+                yield f"event: phase\ndata: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
 
 @app.post("/validate", response_model=ValidationResponse)
