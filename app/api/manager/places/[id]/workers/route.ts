@@ -84,28 +84,32 @@ export async function GET(
     // Extract worker IDs
     const workerIds = (workerPlaces || []).map((wp: any) => wp.worker_id);
 
-    // Fetch worker_skills with skill names for all workers
-    let workerSkillsMap: Record<string, string[]> = {};
+    // Fetch worker_skills with skill IDs and names for all workers
+    let workerSkillsMap: Record<string, { skill_id: string; id: string; name: string }[]> = {};
     if (workerIds.length > 0) {
       const { data: workerSkills } = await supabase
         .from('worker_skills')
-        .select('worker_id, skills:skill_id (name)')
+        .select('worker_id, skill_id, skills:skill_id (id, name)')
         .in('worker_id', workerIds);
 
       (workerSkills || []).forEach((ws: any) => {
-        const name = ws.skills?.name;
-        if (name) {
+        const skillData = ws.skills;
+        const skillId = ws.skill_id;
+        const name = Array.isArray(skillData) ? skillData[0]?.name : skillData?.name;
+        const id = Array.isArray(skillData) ? skillData[0]?.id : skillData?.id;
+        if (skillId && name) {
           if (!workerSkillsMap[ws.worker_id]) workerSkillsMap[ws.worker_id] = [];
-          workerSkillsMap[ws.worker_id].push(name);
+          workerSkillsMap[ws.worker_id].push({ skill_id: skillId, id: id || skillId, name });
         }
       });
     }
 
-    // Extract and format worker data with positions
+    // Extract and format worker data with skills (including skill_id for frontend filtering)
     const workers = (workerPlaces || [])
       .map((wp: any) => ({
         ...wp.users,
-        positions: workerSkillsMap[wp.worker_id] || [],
+        skills: workerSkillsMap[wp.worker_id] || [],
+        positions: (workerSkillsMap[wp.worker_id] || []).map(s => s.name),
       }))
       .filter((w: any) => w !== null && w.id);
 

@@ -15,6 +15,12 @@ interface Place {
   worker_count: number;
 }
 
+interface Position {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface Worker {
   id: string;
   first_name: string;
@@ -22,9 +28,8 @@ interface Worker {
   email: string;
   phone?: string;
   is_active: boolean;
-  position_id?: string;
   hourly_rate?: number;
-  position_name?: string;
+  positions?: Position[];
   created_at: string;
 }
 
@@ -175,13 +180,16 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
                               <span>{worker.phone}</span>
                             </div>
                           )}
-                          {worker.position_name && (
-                            <div className="flex items-center gap-1">
-                              <Briefcase className="w-3 h-3" />
-                              <span>{worker.position_name}</span>
-                            </div>
-                          )}
                         </div>
+                        {worker.positions && worker.positions.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {worker.positions.map((pos) => (
+                              <Badge key={pos.id} variant="default" style={{ backgroundColor: pos.color }}>
+                                {pos.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

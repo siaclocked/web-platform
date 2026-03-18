@@ -70,37 +70,58 @@ export async function GET(
       );
     }
 
-    // Get workers assigned to this place
-    const { data: workers, error: workersError } = await supabase
-      .from('users')
-      .select(`
-        id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        is_active,
-        position_id,
-        hourly_rate,
-        created_at
-      `)
+    // Get workers assigned to this place via worker_places junction table
+    const { data: workerPlaces, error: wpError } = await supabase
+      .from('worker_places')
+      .select('worker_id')
       .eq('place_id', placeId)
-      .eq('company_id', userData.company_id)
-      .order('first_name', { ascending: true });
+      .eq('is_active', true);
 
-    if (workersError) {
-      console.error('Error fetching workers for place:', workersError);
+    if (wpError) {
+      console.error('Error fetching worker_places:', wpError);
       return NextResponse.json(
         { error: 'Failed to fetch workers' },
         { status: 500 }
       );
     }
 
-    // Format the response
-    const formattedWorkers = (workers || []).map(worker => ({
-      ...worker,
-      position_name: null, // We'll fetch position names separately if needed
-    }));
+    const workerIds = (workerPlaces || []).map((wp: any) => wp.worker_id);
+
+    let formattedWorkers: any[] = [];
+    if (workerIds.length > 0) {
+      const { data: workers, error: workersError } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email, phone, is_active, hourly_rate, created_at')
+        .in('id', workerIds)
+        .order('first_name', { ascending: true });
+
+      if (workersError) {
+        console.error('Error fetching workers:', workersError);
+      } else {
+        // Get positions for each worker via worker_skills
+        formattedWorkers = await Promise.all(
+          (workers || []).map(async (worker: any) => {
+            const { data: workerSkills } = await supabase
+              .from('worker_skills')
+              .select('skill_id, skills:skill_id (id, name, color)')
+              .eq('worker_id', worker.id);
+
+            const positions = (workerSkills || [])
+              .filter((ws: any) => ws.skills)
+              .map((ws: any) => {
+                const s = ws.skills as any;
+                return {
+                  id: Array.isArray(s) ? s[0]?.id : s.id,
+                  name: Array.isArray(s) ? s[0]?.name : s.name,
+                  color: Array.isArray(s) ? s[0]?.color : s.color,
+                };
+              });
+
+            return { ...worker, positions };
+          })
+        );
+      }
+    }
 
     return NextResponse.json({ 
       place: {

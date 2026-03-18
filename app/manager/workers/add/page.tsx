@@ -398,7 +398,7 @@ export default function AddWorkerPage() {
               <div>
                 <label className="block text-sm font-medium mb-1">
                   <Star className="w-3.5 h-3.5 inline mr-1" />
-                  Position Ratings
+                  Position Ratings <span className="text-danger">*</span>
                 </label>
                 <div className="space-y-2 border rounded-lg p-3 bg-background">
                   {selectedPositions.map(posId => {
@@ -431,7 +431,7 @@ export default function AddWorkerPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-border p-3">
-                <p className="text-sm font-medium mb-2">Opening</p>
+                <p className="text-sm font-medium mb-2">Opening <span className="text-danger">*</span></p>
                 <Toggle
                   checked={formData.canOpen}
                   onChange={(checked) => setFormData({ ...formData, canOpen: checked })}
@@ -439,7 +439,7 @@ export default function AddWorkerPage() {
                 />
               </div>
               <div className="rounded-lg border border-border p-3">
-                <p className="text-sm font-medium mb-2">Closing</p>
+                <p className="text-sm font-medium mb-2">Closing <span className="text-danger">*</span></p>
                 <Toggle
                   checked={formData.canClose}
                   onChange={(checked) => setFormData({ ...formData, canClose: checked })}

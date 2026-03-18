@@ -11,7 +11,6 @@ import { createClient } from '@/lib/supabase/client';
 interface Company {
   id: string;
   name: string;
-  timezone: string;
   created_at: string;
   updated_at: string;
 }
@@ -34,7 +33,6 @@ export default function CompanySettingsPage() {
   
   const [editedCompany, setEditedCompany] = useState({
     name: '',
-    timezone: '',
   });
 
   useEffect(() => {
@@ -66,7 +64,6 @@ export default function CompanySettingsPage() {
       setAdmin(data.admin);
       setEditedCompany({
         name: data.company.name,
-        timezone: data.company.timezone || 'America/New_York',
       });
     } catch (error) {
       console.error('Error fetching company data:', error);
@@ -137,8 +134,7 @@ export default function CompanySettingsPage() {
   }
 
   const hasChanges = 
-    editedCompany.name !== company.name ||
-    editedCompany.timezone !== company.timezone;
+    editedCompany.name !== company.name;
 
   return (
     <PageContainer
@@ -187,30 +183,6 @@ export default function CompanySettingsPage() {
                   className="w-full p-2 border border-border rounded-lg bg-background text-foreground"
                   placeholder="Enter company name"
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">
-                  Timezone
-                </label>
-                <select
-                  value={editedCompany.timezone}
-                  onChange={(e) => setEditedCompany(prev => ({ ...prev, timezone: e.target.value }))}
-                  className="w-full p-2 border border-border rounded-lg bg-background text-foreground"
-                >
-                  <option value="America/New_York">Eastern Time (ET)</option>
-                  <option value="America/Chicago">Central Time (CT)</option>
-                  <option value="America/Denver">Mountain Time (MT)</option>
-                  <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                  <option value="America/Anchorage">Alaska Time (AKT)</option>
-                  <option value="Pacific/Honolulu">Hawaii Time (HT)</option>
-                  <option value="Europe/London">London (GMT)</option>
-                  <option value="Europe/Paris">Paris (CET)</option>
-                  <option value="Europe/Berlin">Berlin (CET)</option>
-                  <option value="Asia/Tokyo">Tokyo (JST)</option>
-                  <option value="Asia/Shanghai">Shanghai (CST)</option>
-                  <option value="Australia/Sydney">Sydney (AEDT)</option>
-                </select>
               </div>
 
               <div className="pt-4 border-t border-border">
