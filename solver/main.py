@@ -311,7 +311,9 @@ def _build_demand(coverage_windows: list[CoverageWindow], granularity: int):
     return demand, extent
 
 
-def _build_coverage_boundaries(coverage_windows: list[CoverageWindow], granularity: int) -> dict[tuple[int, str], list[int]]:
+def _build_coverage_boundaries(
+    coverage_windows: list[CoverageWindow], granularity: int, max_slots: int | None = None,
+) -> dict[tuple[int, str], list[int]]:
     boundaries: dict[tuple[int, str], set[int]] = {}
     for cov in coverage_windows:
         key = (cov.day, cov.skill_id)
@@ -319,6 +321,19 @@ def _build_coverage_boundaries(coverage_windows: list[CoverageWindow], granulari
             boundaries[key] = set()
         boundaries[key].add(cov.start_minutes // granularity)
         boundaries[key].add(cov.end_minutes // granularity)
+    if max_slots is not None:
+        for key, slots in boundaries.items():
+            extent_start = min(slots)
+            extent_end = max(slots)
+            derived: set[int] = set()
+            for s in slots:
+                ds = s - max_slots
+                if extent_start <= ds < extent_end and ds not in slots:
+                    derived.add(ds)
+                de = s + max_slots
+                if extent_start < de <= extent_end and de not in slots:
+                    derived.add(de)
+            slots.update(derived)
     return {key: sorted(slots) for key, slots in boundaries.items()}
 
 
@@ -766,7 +781,7 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
     unavail_lookup = _build_unavailability_lookup(request.unavailability)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     demand, extent = _build_demand(request.coverage_windows, granularity)
-    cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity)
+    cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity, max_slots=max_slots)
     remaining = dict(demand)
 
     locked_validation = _validate_assignments(
@@ -982,7 +997,7 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
     workers = request.workers
     workers_by_id = {worker.id: worker for worker in workers}
     demand, extent = _build_demand(request.coverage_windows, granularity)
-    cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity)
+    cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity, max_slots=max_slots)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     unavail_lookup = _build_unavailability_lookup(request.unavailability)
     baseline_month_slots = _build_worker_month_baseline(request, granularity)
