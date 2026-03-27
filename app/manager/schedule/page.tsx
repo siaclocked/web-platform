@@ -804,7 +804,7 @@ export default function ManagerSchedulePage() {
                 <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
                 <p className="text-foreground-muted text-sm">Click on a schedule to view and manage it</p>
               </div>
-              <Link href="/manager/timesheets">
+              <Link href="/manager/schedule/create-schedule">
                 <Button>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Schedule
@@ -820,7 +820,7 @@ export default function ManagerSchedulePage() {
                   <p className="text-foreground-muted mb-4">
                     Create a schedule, configure shifts, then publish it to run the solver and assign workers.
                   </p>
-                  <Link href="/manager/timesheets">
+                  <Link href="/manager/schedule/create-schedule">
                     <Button>
                       <Plus className="w-4 h-4 mr-2" />
                       Create Schedule
@@ -850,7 +850,7 @@ export default function ManagerSchedulePage() {
                   const handleCardClick = () => {
                     if (isDraft) {
                       // Drafts → go to edit page
-                      router.push(`/manager/timesheets`);
+                      router.push(`/manager/schedule/create-schedule?id=${schedule.id}`);
                       return;
                     }
                     if (hasSolverResult) {
