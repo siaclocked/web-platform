@@ -148,6 +148,8 @@ export default function ManagerSchedulePage() {
   } | null>(null);
   const [workerHours, setWorkerHours] = useState<WorkerHourData[]>([]);
   const [isLoadingHours, setIsLoadingHours] = useState(false);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [calendarFilter, setCalendarFilter] = useState<'all' | 'published' | 'drafts' | 'empty'>('all');
 
   useEffect(() => {
     fetchAll();
@@ -159,6 +161,7 @@ export default function ManagerSchedulePage() {
       const target = schedules.find(s => s.id === reviewId);
       if (target) {
         setExpandedSchedule(reviewId);
+        setSelectedPlaceId(target.place_id);
         setViewingScheduleId(reviewId);
         fetchWorkerHours(reviewId);
       }
@@ -580,6 +583,43 @@ export default function ManagerSchedulePage() {
     return count;
   };
 
+  // Group schedules by place_id
+  const schedulesByPlace = useMemo(() => {
+    const map: Record<string, ScheduleTemplate[]> = {};
+    schedules.forEach(s => {
+      if (!map[s.place_id]) map[s.place_id] = [];
+      map[s.place_id].push(s);
+    });
+    // Sort newest first (last saved wins)
+    Object.values(map).forEach(arr => arr.sort((a, b) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    ));
+    return map;
+  }, [schedules]);
+
+  // For the selected place, compute date → winning schedule status
+  // "Last saved is the real one" — newest updated_at wins for overlapping days
+  const placeDateStatus = useMemo(() => {
+    if (!selectedPlaceId) return {} as Record<string, { status: string; scheduleId: string; scheduleName: string }>;
+    const placeSchedules = schedulesByPlace[selectedPlaceId] || [];
+    const dateMap: Record<string, { status: string; scheduleId: string; scheduleName: string }> = {};
+    // Process oldest first so newest overwrites
+    const sorted = [...placeSchedules].sort((a, b) =>
+      new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+    );
+    sorted.forEach(s => {
+      const start = new Date(s.start_date + 'T00:00:00');
+      const end = new Date(s.end_date + 'T00:00:00');
+      const current = new Date(start);
+      while (current <= end) {
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+        dateMap[dateStr] = { status: s.status, scheduleId: s.id, scheduleName: s.name };
+        current.setDate(current.getDate() + 1);
+      }
+    });
+    return dateMap;
+  }, [selectedPlaceId, schedulesByPlace]);
+
   const getPositionName = (skillId: string) => {
     return positions.find(p => p.id === skillId)?.name || skillId;
   };
@@ -666,6 +706,44 @@ export default function ManagerSchedulePage() {
 
   const toggleExpand = (id: string) => {
     setExpandedSchedule(prev => prev === id ? null : id);
+  };
+
+  const handleDirectPublish = async (scheduleId: string) => {
+    if (!confirm('Publish this schedule directly? Solver validation will be skipped since you edited it manually. Workers will be notified of their assigned shifts.')) return;
+    setPublishingId(scheduleId);
+    try {
+      // Save edits first
+      const saved = await saveEdits(true);
+      if (!saved) { setPublishingId(null); return; }
+      stopEditing();
+
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('/api/manager/schedule-templates/publish-schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ schedule_template_id: scheduleId, skip_validation: true }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Schedule published! ${data.workers_notified} worker(s) notified.`);
+        fetchSchedules();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'Failed to publish schedule');
+      }
+    } catch (error) {
+      console.error('Error publishing schedule:', error);
+      alert('Failed to publish schedule');
+    } finally {
+      setPublishingId(null);
+    }
   };
 
   const handlePublish = async (scheduleId: string) => {
@@ -796,130 +874,69 @@ export default function ManagerSchedulePage() {
   return (
     <PageContainer>
       <div>
-        {/* ========== SCHEDULE LIST (default) ========== */}
-        {!viewingScheduleId && (
+        {/* ========== PLACES LIST (top-level) ========== */}
+        {!selectedPlaceId && !viewingScheduleId && (
           <>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
-                <p className="text-foreground-muted text-sm">Click on a schedule to view and manage it</p>
-              </div>
-              <Link href="/manager/schedule/create-schedule">
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Schedule
-                </Button>
-              </Link>
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-foreground">Scheduling</h1>
+              <p className="text-foreground-muted text-sm">Select a place to view and manage its schedules</p>
             </div>
 
-            {schedules.length === 0 ? (
+            {places.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-8">
-                  <Calendar className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
-                  <h3 className="text-lg font-medium mb-2">No generated schedules yet</h3>
-                  <p className="text-foreground-muted mb-4">
-                    Create a schedule, configure shifts, then publish it to run the solver and assign workers.
-                  </p>
-                  <Link href="/manager/schedule/create-schedule">
-                    <Button>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Schedule
-                    </Button>
-                  </Link>
+                  <MapPin className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
+                  <h3 className="text-lg font-medium mb-2">No Places Found</h3>
+                  <p className="text-foreground-muted mb-4">Add places first to start scheduling.</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-3">
-                {schedules.map((schedule) => {
-                  const result = schedule.solver_result;
-                  const assignmentCount = result?.assignments?.length || 0;
-                  const gapCount = computeActiveGaps(result);
-                  const uniqueWorkers = result ? new Set(result.assignments?.map(a => a.worker_id)).size : 0;
-                  const hasSolverResult = !!result && !!result.assignments;
-                  const isDraft = schedule.status === 'draft';
-                  const isPublished = schedule.status === 'published';
-
-                  const getStatusBadge = () => {
-                    if (schedule.status === 'schedule_published') return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Sent to Employees</Badge>;
-                    if (schedule.status === 'closed' && hasSolverResult) return <Badge variant="info">Ready to Review</Badge>;
-                    if (isPublished) return <Badge variant="warning">Solver Running</Badge>;
-                    if (isDraft) return <Badge variant="default">Draft</Badge>;
-                    return <Badge variant={getSolverStatusVariant(schedule.solver_status)}>{getSolverStatusLabel(schedule.solver_status, result)}</Badge>;
-                  };
-
-                  const handleCardClick = () => {
-                    if (isDraft) {
-                      // Drafts → go to edit page
-                      router.push(`/manager/schedule/create-schedule?id=${schedule.id}`);
-                      return;
-                    }
-                    if (hasSolverResult) {
-                      setViewingScheduleId(schedule.id);
-                      const sd = new Date(schedule.start_date + 'T00:00:00');
-                      setCurrentMonth(new Date(sd.getFullYear(), sd.getMonth(), 1));
-                      fetchWorkerHours(schedule.id);
-                    }
-                  };
+                {places.map(place => {
+                  const placeSchedules = schedulesByPlace[place.id] || [];
+                  const publishedCount = placeSchedules.filter(s => s.status === 'schedule_published').length;
+                  const draftCount = placeSchedules.filter(s => s.status === 'draft' || s.status === 'closed' || s.status === 'published').length;
 
                   return (
                     <Card
-                      key={schedule.id}
-                      className={`transition-all ${hasSolverResult || isDraft ? 'cursor-pointer hover:border-primary/40' : ''}`}
-                      onClick={handleCardClick}
+                      key={place.id}
+                      className="cursor-pointer hover:border-primary/40 transition-all"
+                      onClick={() => {
+                        setSelectedPlaceId(place.id);
+                        const now = new Date();
+                        setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                      }}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
-                            <h3 className="font-semibold text-foreground text-lg">{schedule.name}</h3>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
-                                <MapPin className="w-3.5 h-3.5" />
-                                <span>{getPlaceName(schedule.place_id)}</span>
-                              </div>
-                              <span className="text-foreground-muted">·</span>
-                              <div className="flex items-center gap-1 text-sm text-foreground-muted">
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>{formatDate(schedule.start_date)} – {formatDate(schedule.end_date)}</span>
-                              </div>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-5 h-5 text-primary" />
+                              <h3 className="font-semibold text-foreground text-lg">{place.name}</h3>
                             </div>
                             <div className="flex items-center gap-3 mt-2 flex-wrap">
-                              {getStatusBadge()}
-                              {hasSolverResult && (
-                                <span className="text-sm text-foreground-muted flex items-center gap-1">
-                                  <Users className="w-3.5 h-3.5" />
-                                  {uniqueWorkers} workers · {assignmentCount} shifts
+                              {publishedCount > 0 && (
+                                <span className="text-sm text-success flex items-center gap-1">
+                                  <CheckCircle className="w-3.5 h-3.5" /> {publishedCount} published
                                 </span>
                               )}
-                              {gapCount > 0 && (
+                              {draftCount > 0 && (
                                 <span className="text-sm text-warning flex items-center gap-1">
-                                  <AlertCircle className="w-3.5 h-3.5" />
-                                  {gapCount} gaps
+                                  <Edit2 className="w-3.5 h-3.5" /> {draftCount} draft{draftCount !== 1 ? 's' : ''}
                                 </span>
+                              )}
+                              {placeSchedules.length === 0 && (
+                                <span className="text-sm text-foreground-muted">No schedules yet</span>
                               )}
                             </div>
                           </div>
-                          <div className="ml-4 flex items-center gap-2">
-                            {schedule.status === 'closed' && hasSolverResult && (
-                              <Button
-                                size="sm"
-                                onClick={(e) => { e.stopPropagation(); handlePublish(schedule.id); }}
-                                isLoading={publishingId === schedule.id}
-                                disabled={publishingId !== null}
-                              >
-                                <Send className="w-3.5 h-3.5 mr-1" />
-                                Publish
+                          <div className="flex items-center gap-2">
+                            <Link href={`/manager/schedule/create-schedule?place=${place.id}`} onClick={(e) => e.stopPropagation()}>
+                              <Button size="sm" variant="outline">
+                                <Plus className="w-3.5 h-3.5 mr-1" /> Create Schedule
                               </Button>
-                            )}
-                            {schedule.status !== 'schedule_published' && (
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                            {(hasSolverResult || isDraft) && <ChevronRight className="w-5 h-5 text-foreground-muted" />}
+                            </Link>
+                            <ChevronRight className="w-5 h-5 text-foreground-muted" />
                           </div>
                         </div>
                       </CardContent>
@@ -931,6 +948,278 @@ export default function ManagerSchedulePage() {
           </>
         )}
 
+        {/* ========== PLACE CALENDAR VIEW ========== */}
+        {selectedPlaceId && !viewingScheduleId && (() => {
+          const place = places.find(p => p.id === selectedPlaceId);
+          if (!place) return null;
+          const placeSchedules = schedulesByPlace[selectedPlaceId] || [];
+          const nowDate = new Date();
+          nowDate.setHours(0, 0, 0, 0);
+          const activeSchedules = placeSchedules.filter(s => new Date(s.end_date + 'T00:00:00') >= nowDate);
+          const pastSchedules = placeSchedules.filter(s => new Date(s.end_date + 'T00:00:00') < nowDate);
+
+          const getDayColor = (dateStr: string): 'published' | 'draft' | 'empty' => {
+            const info = placeDateStatus[dateStr];
+            if (!info) return 'empty';
+            if (info.status === 'schedule_published') return 'published';
+            return 'draft'; // draft, published (solver running), closed (ready to review)
+          };
+
+          const shouldHighlight = (color: 'published' | 'draft' | 'empty') => {
+            if (calendarFilter === 'all') return true;
+            return calendarFilter === color;
+          };
+
+          const renderScheduleCard = (schedule: ScheduleTemplate) => {
+            const result = schedule.solver_result;
+            const assignmentCount = result?.assignments?.length || 0;
+            const gapCount = computeActiveGaps(result);
+            const hasSolverResult = !!result && !!result.assignments;
+            const isDraft = schedule.status === 'draft';
+
+            const getStatusBadge = () => {
+              if (schedule.status === 'schedule_published') return <Badge variant="success"><CheckCircle className="w-3 h-3 mr-1" />Published</Badge>;
+              if (schedule.status === 'closed' && hasSolverResult) return <Badge variant="info">Ready to Review</Badge>;
+              if (schedule.status === 'published') return <Badge variant="warning">Solver Running</Badge>;
+              if (isDraft) return <Badge variant="default">Draft</Badge>;
+              return <Badge variant={getSolverStatusVariant(schedule.solver_status)}>{getSolverStatusLabel(schedule.solver_status, result)}</Badge>;
+            };
+
+            const handleScheduleClick = () => {
+              if (isDraft) {
+                router.push(`/manager/schedule/create-schedule?id=${schedule.id}&place=${selectedPlaceId}`);
+                return;
+              }
+              if (hasSolverResult) {
+                setViewingScheduleId(schedule.id);
+                const sd = new Date(schedule.start_date + 'T00:00:00');
+                setCurrentMonth(new Date(sd.getFullYear(), sd.getMonth(), 1));
+                fetchWorkerHours(schedule.id);
+              }
+            };
+
+            return (
+              <Card
+                key={schedule.id}
+                className={`transition-all ${hasSolverResult || isDraft ? 'cursor-pointer hover:border-primary/40' : ''}`}
+                onClick={handleScheduleClick}
+              >
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-foreground">{schedule.name}</h4>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <div className="flex items-center gap-1 text-sm text-foreground-muted">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{formatDate(schedule.start_date)} – {formatDate(schedule.end_date)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        {getStatusBadge()}
+                        {hasSolverResult && (
+                          <span className="text-xs text-foreground-muted">{assignmentCount} shifts</span>
+                        )}
+                        {gapCount > 0 && (
+                          <span className="text-xs text-warning flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" /> {gapCount} gaps
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="ml-4 flex items-center gap-2">
+                      {schedule.status === 'closed' && hasSolverResult && (
+                        <Button size="sm" onClick={(e) => { e.stopPropagation(); handlePublish(schedule.id); }} isLoading={publishingId === schedule.id} disabled={publishingId !== null}>
+                          <Send className="w-3.5 h-3.5 mr-1" /> Publish
+                        </Button>
+                      )}
+                      {schedule.status !== 'schedule_published' && (
+                        <Button size="sm" variant="danger" onClick={(e) => { e.stopPropagation(); handleDeleteSchedule(schedule.id, schedule.name); }}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      {(hasSolverResult || isDraft) && <ChevronRight className="w-4 h-4 text-foreground-muted" />}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          };
+
+          return (
+            <>
+              {/* Back + header */}
+              <div className="flex items-center gap-3 mb-4">
+                <Button variant="outline" size="sm" onClick={() => setSelectedPlaceId(null)}>
+                  <ChevronLeft className="w-4 h-4 mr-1" /> Back
+                </Button>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-primary" />
+                    <h1 className="text-xl font-bold text-foreground">{place.name}</h1>
+                  </div>
+                </div>
+                <Link href={`/manager/schedule/create-schedule?place=${selectedPlaceId}`}>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" /> Create Schedule
+                  </Button>
+                </Link>
+              </div>
+
+              {/* View filter */}
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                {(['all', 'published', 'drafts', 'empty'] as const).map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => setCalendarFilter(filter)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all
+                      ${calendarFilter === filter
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-background text-foreground-muted hover:bg-background-secondary'
+                      }`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full ${
+                      filter === 'all' ? 'bg-primary' :
+                      filter === 'published' ? 'bg-success' :
+                      filter === 'drafts' ? 'bg-warning' :
+                      'bg-foreground-muted/30'
+                    }`} />
+                    {filter === 'all' && 'All'}
+                    {filter === 'published' && 'Published'}
+                    {filter === 'drafts' && 'Drafts'}
+                    {filter === 'empty' && 'Empty'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Place Calendar */}
+              <Card className="mb-6">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(mYear, mMonth - 1, 1))}>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-semibold text-foreground">{monthLabel}</h2>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        const now = new Date();
+                        setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                      }} className="text-xs">Today</Button>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(mYear, mMonth + 1, 1))}>
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex items-center gap-4 mb-3 text-xs text-foreground-muted">
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-success/30 border border-success/50" /> Published</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-warning/30 border border-warning/50" /> Draft</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-foreground-muted/10 border border-border" /> Empty</span>
+                  </div>
+
+                  <div className="grid grid-cols-7 mb-1">
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                      <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7">
+                    {calendarDays.map((cell, idx) => {
+                      const dayColor = getDayColor(cell.dateStr);
+                      const highlight = shouldHighlight(dayColor);
+                      const isToday = cell.dateStr === todayStr;
+                      const info = placeDateStatus[cell.dateStr];
+
+                      let cellBg = '';
+                      let cellBorder = 'border-border/50';
+                      let cellText = '';
+
+                      if (cell.isCurrentMonth && highlight) {
+                        if (dayColor === 'published') {
+                          cellBg = 'bg-success/15';
+                          cellBorder = 'border-success/40';
+                          cellText = 'text-success';
+                        } else if (dayColor === 'draft') {
+                          cellBg = 'bg-warning/15';
+                          cellBorder = 'border-warning/40';
+                          cellText = 'text-warning';
+                        }
+                      }
+
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            if (!cell.isCurrentMonth) return;
+                            if (info) {
+                              // Click on a scheduled day → open that schedule
+                              const sched = schedules.find(s => s.id === info.scheduleId);
+                              if (sched) {
+                                if (sched.status === 'draft') {
+                                  router.push(`/manager/schedule/create-schedule?id=${sched.id}&place=${selectedPlaceId}`);
+                                } else if (sched.solver_result?.assignments) {
+                                  setViewingScheduleId(sched.id);
+                                  setSelectedDate(cell.dateStr);
+                                  fetchWorkerHours(sched.id);
+                                }
+                              }
+                            }
+                          }}
+                          className={`relative flex flex-col items-start p-2 min-h-[72px] border text-left transition-all hover:scale-[1.02]
+                            ${cellBg} ${cellBorder}
+                            ${!cell.isCurrentMonth ? 'text-foreground-muted/30' : 'text-foreground'}
+                            ${cell.isCurrentMonth && info ? 'cursor-pointer hover:bg-background-secondary' : ''}
+                            ${cell.isCurrentMonth && !info ? 'cursor-default' : ''}`}
+                        >
+                          <span className={`text-sm font-semibold ${isToday ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center' : ''}`}>
+                            {cell.day}
+                          </span>
+                          {cell.isCurrentMonth && highlight && dayColor === 'published' && (
+                            <span className="mt-auto text-[10px] text-success font-medium truncate w-full text-center">
+                              Published
+                            </span>
+                          )}
+                          {cell.isCurrentMonth && highlight && dayColor === 'draft' && (
+                            <span className="mt-auto text-[10px] text-warning font-medium truncate w-full text-center">
+                              Draft
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Active Schedules */}
+              {activeSchedules.length > 0 && (
+                <div className="mb-6">
+                  <h2 className="text-lg font-semibold text-foreground mb-3">Active Schedules</h2>
+                  <div className="space-y-2">
+                    {activeSchedules.map(renderScheduleCard)}
+                  </div>
+                </div>
+              )}
+
+              {/* Past Schedules */}
+              <div>
+                <h2 className="text-lg font-semibold text-foreground mb-3">Past Schedules</h2>
+                {pastSchedules.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-6 text-center">
+                      <p className="text-sm text-foreground-muted">No past schedules for this place.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-2">
+                    {pastSchedules.map(renderScheduleCard)}
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
+
         {/* ========== INDIVIDUAL SCHEDULE VIEW ========== */}
         {viewingScheduleId && viewingSchedule && (
           <>
@@ -938,10 +1227,11 @@ export default function ManagerSchedulePage() {
             <div className="flex items-center gap-3 mb-2">
               <Button variant="outline" size="sm" onClick={() => {
                 setViewingScheduleId(null);
+                setSelectedDate(null);
                 stopEditing();
               }}>
                 <ChevronLeft className="w-4 h-4 mr-1" />
-                Back
+                {getPlaceName(viewingSchedule.place_id)}
               </Button>
               <div className="flex-1">
                 <h1 className="text-xl font-bold text-foreground">{viewingSchedule.name}</h1>
@@ -1050,14 +1340,8 @@ export default function ManagerSchedulePage() {
                       )}
                     </span>
                   </div>
-                  {isReady && editSchedule?.status === 'closed' && (
-                    <Button size="sm" onClick={async () => {
-                      const saved = await saveEdits(true);
-                      if (saved) {
-                        stopEditing();
-                        handlePublish(editSchedule.id);
-                      }
-                    }} isLoading={savingEdits || publishingId === editSchedule.id}>
+                  {isReady && editSchedule && editSchedule.status !== 'schedule_published' && (
+                    <Button size="sm" onClick={() => handleDirectPublish(editSchedule.id)} isLoading={savingEdits || publishingId === editSchedule.id}>
                       <Send className="w-3.5 h-3.5 mr-1" />
                       Publish to Employees
                     </Button>

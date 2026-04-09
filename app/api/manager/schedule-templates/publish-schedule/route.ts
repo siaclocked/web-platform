@@ -117,7 +117,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const { schedule_template_id } = await request.json();
+    const { schedule_template_id, skip_validation } = await request.json();
     if (!schedule_template_id) {
       return NextResponse.json({ error: 'schedule_template_id is required' }, { status: 400 });
     }
@@ -134,41 +134,52 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Schedule not found or access denied' }, { status: 404 });
     }
 
-    // Must be closed with solver results (or manually edited assignments)
-    if (template.status !== 'closed' || !template.solver_result) {
-      return NextResponse.json(
-        { error: 'Schedule must be closed with assignments before publishing' },
-        { status: 400 }
-      );
-    }
-
     // Ensure there are actual assignments to publish
     const solverResultData = template.solver_result as SolverResultData;
-    if (!solverResultData.assignments || solverResultData.assignments.length === 0) {
-      return NextResponse.json(
-        { error: 'Schedule has no assignments. Add shifts before publishing.' },
-        { status: 400 }
-      );
-    }
 
-    if (solverResultData.validation_status === 'INVALID') {
-      return NextResponse.json(
-        {
-          error: 'Schedule has hard-constraint violations and cannot be published.',
-          constraint_violations: solverResultData.constraint_violations || [],
-        },
-        { status: 400 }
-      );
-    }
+    if (skip_validation) {
+      // Manager override: skip solver validation, just verify assignments exist
+      if (!solverResultData?.assignments || solverResultData.assignments.length === 0) {
+        return NextResponse.json(
+          { error: 'Schedule has no assignments. Add shifts before publishing.' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Normal flow: full validation
+      if (template.status !== 'closed' || !template.solver_result) {
+        return NextResponse.json(
+          { error: 'Schedule must be closed with assignments before publishing' },
+          { status: 400 }
+        );
+      }
 
-    if ((solverResultData.coverage_gaps || []).length > 0) {
-      return NextResponse.json(
-        {
-          error: 'Schedule still has coverage gaps and cannot be published.',
-          coverage_gaps: solverResultData.coverage_gaps || [],
-        },
-        { status: 400 }
-      );
+      if (!solverResultData.assignments || solverResultData.assignments.length === 0) {
+        return NextResponse.json(
+          { error: 'Schedule has no assignments. Add shifts before publishing.' },
+          { status: 400 }
+        );
+      }
+
+      if (solverResultData.validation_status === 'INVALID') {
+        return NextResponse.json(
+          {
+            error: 'Schedule has hard-constraint violations and cannot be published.',
+            constraint_violations: solverResultData.constraint_violations || [],
+          },
+          { status: 400 }
+        );
+      }
+
+      if ((solverResultData.coverage_gaps || []).length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Schedule still has coverage gaps and cannot be published.',
+            coverage_gaps: solverResultData.coverage_gaps || [],
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Ensure publish schema exists (auto-migrate if needed)

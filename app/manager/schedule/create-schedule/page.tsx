@@ -46,6 +46,7 @@ export default function CreateSchedulePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get('id');
+  const preselectedPlaceId = searchParams.get('place');
 
   const [places, setPlaces] = useState<Place[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -54,7 +55,7 @@ export default function CreateSchedulePage() {
   const [formData, setFormData] = useState<ScheduleFormData>({
     id: 'new',
     name: '',
-    place_id: '',
+    place_id: preselectedPlaceId || '',
     start_date: '',
     end_date: '',
     availability_deadline: '',
