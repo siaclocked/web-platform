@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ziedonis Cafe — 2-Week Schedule Report</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+     background:#fff;color:#1a1a1a;line-height:1.5}
+
+/* Header */
+.report-header{padding:36px 48px 20px;border-bottom:1px solid #e5e5e5}
+.report-header h1{font-size:26px;font-weight:700}
+.report-header .sub{color:#888;font-size:13px;margin-top:4px}
+.status-pill{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-left:8px}
+.status-pill.ok{background:#dcfce7;color:#166534}
+.status-pill.warn{background:#fef3c7;color:#92400e}
+.status-pill.bad{background:#fee2e2;color:#991b1b}
+
+/* Stat tiles */
+.stat-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:20px 48px;
+  border-bottom:1px solid #f0f0f0;background:#fafafa}
+@media(max-width:900px){.stat-strip{grid-template-columns:repeat(3,1fr)}}
+.stat-tile{background:#fff;border:1px solid #eee;border-radius:8px;padding:14px 16px}
+.stat-tile .label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.stat-tile .value{font-size:22px;font-weight:700;color:#111;margin-top:4px}
+.stat-tile .value.ok{color:#16a34a}
+.stat-tile .value.warn{color:#d97706}
+.stat-tile .value.bad{color:#dc2626}
+.stat-tile .hint{font-size:11px;color:#aaa;margin-top:2px}
+
+/* Sections */
+.section{padding:28px 48px}
+.section h2{font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#333;
+  margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #eee}
+.section h3{font-size:14px;font-weight:700;color:#444;margin-bottom:10px}
+.section p.sub{color:#888;font-size:13px}
+
+/* Gap banner */
+.gap-banner{margin:0 48px 0;padding:18px 20px;border-radius:10px;background:#fff7ed;
+  border:1px solid #fdba74;border-left:4px solid #ea580c}
+.gap-banner h2{font-size:15px;font-weight:700;color:#9a3412;margin-bottom:6px;letter-spacing:0;text-transform:none;border:none;padding:0}
+.gap-banner .intro{font-size:13px;color:#7c2d12;margin-bottom:12px}
+.gap-banner ul{list-style:none;padding:0;margin:0}
+.gap-banner li{padding:10px 12px;background:#fff;border:1px solid #fed7aa;border-radius:6px;margin-bottom:6px;font-size:13px}
+.gap-banner li strong{color:#9a3412}
+.gap-banner li .reason{color:#7c2d12;font-size:12px;margin-top:4px;display:block}
+
+/* Info banner (assumptions) */
+.info-banner{margin:0 48px;padding:18px 20px;border-radius:10px;background:#eff6ff;
+  border:1px solid #bfdbfe;border-left:4px solid #3b82f6}
+.info-banner h2{font-size:15px;font-weight:700;color:#1e3a8a;margin-bottom:10px;letter-spacing:0;text-transform:none;border:none;padding:0}
+.info-banner ul{list-style:none;padding:0;margin:0}
+.info-banner li{padding:5px 0;font-size:13px;color:#1e3a8a}
+.info-banner li::before{content:"• ";color:#3b82f6;font-weight:700}
+.info-banner li strong{color:#1e40af}
+
+/* Grid (case summary) */
+.case-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px}
+@media(max-width:900px){.case-grid{grid-template-columns:1fr}}
+.req-card{background:#fafafa;border:1px solid #eee;border-radius:8px;padding:16px}
+.req-card h4{font-size:13px;font-weight:700;color:#444;margin-bottom:8px}
+
+/* Tables */
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table th{text-align:left;padding:8px 12px;background:#f8f8f8;color:#555;
+  font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+  border-bottom:2px solid #eee}
+.data-table td{padding:8px 12px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+.data-table.compact td,.data-table.compact th{padding:6px 10px}
+.data-table tbody tr:hover{background:#fafafa}
+.center{text-align:center}
+.total-row td{background:#f8f8f8;border-top:2px solid #ddd;font-weight:700}
+.constraint-cell{font-size:12px;color:#666}
+
+/* Dots & chips */
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.avail-ok{color:#16a34a}
+
+/* Delta coloring */
+.delta-ok{color:#16a34a;font-weight:600}
+.delta-warn{color:#d97706;font-weight:600}
+.delta-bad{color:#dc2626;font-weight:600}
+
+/* Bars */
+.bar-cell{width:180px}
+.bar{height:16px;border-radius:3px;min-width:4px}
+
+/* Weekly schedule grid */
+.weekgrid-wrap{overflow-x:auto;background:#fff;border:1px solid #eee;border-radius:8px}
+.weekgrid{width:100%;border-collapse:collapse;font-size:12px}
+.weekgrid th,.weekgrid td{border:1px solid #eee;padding:8px 8px;text-align:center;min-width:86px;vertical-align:middle}
+.weekgrid th{background:#f8f8f8;color:#555;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.weekgrid th.worker-col,.weekgrid td.worker-col{position:sticky;left:0;background:#fff;text-align:left;min-width:170px;z-index:1}
+.weekgrid th.worker-col{background:#f8f8f8}
+.weekgrid th.closed-col{background:#f1f5f9;color:#94a3b8}
+.weekgrid th.weekend-col{background:#fef9c3}
+.weekgrid td.cell-closed{background:#f8fafc;color:#94a3b8;font-style:italic}
+.weekgrid td.cell-off{background:#fef2f2;color:#991b1b;font-weight:600}
+.weekgrid td.cell-partial{background:#fffbeb;color:#92400e;font-size:11px}
+.weekgrid td.cell-free{background:#f9fafb;color:#cbd5e1}
+.weekgrid td.cell-shift{background:#ecfdf5;color:#065f46;font-weight:600;font-size:11px;line-height:1.35}
+.weekgrid td.cell-shift .skill-label{display:block;font-size:9px;color:#047857;font-weight:500;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+.weekgrid td.cell-shift.pinned{background:#fef3c7;color:#78350f;border:2px solid #f59e0b}
+.weekgrid td.cell-shift.pinned .lock{font-size:10px}
+.weekgrid .w-name{font-weight:700;color:#111;font-size:13px}
+.weekgrid .w-role{font-size:10px;color:#888;margin-top:2px}
+.weekgrid .col-hours{background:#f8f8f8;font-weight:700;color:#111}
+
+/* Week separator */
+.weekgrid td.week-sep, .weekgrid th.week-sep{border-left:3px solid #cbd5e1}
+
+/* Month-like grid (overview) */
+.month-grid{max-width:780px}
+.month-header{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:12px;
+  font-weight:700;color:#888;margin-bottom:6px}
+.month-row{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.day-cell{border-radius:8px;padding:8px 6px;text-align:center;text-decoration:none;display:flex;
+  flex-direction:column;align-items:center;min-height:68px;justify-content:center;border:1px solid #eee;
+  transition:transform .1s;color:inherit}
+.day-cell:hover{transform:scale(1.05)}
+.day-cell.empty{background:#fafafa;border-color:transparent}
+.day-cell.ok{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
+.day-cell.gap{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.day-cell.closed{background:#f1f5f9;border-color:#e2e8f0;color:#94a3b8}
+.day-num{font-size:18px;font-weight:700;line-height:1}
+.day-wd{font-size:10px;color:inherit;opacity:.7;margin-top:2px}
+.gap-badge{font-size:10px;background:#fee2e2;color:#dc2626;border-radius:3px;padding:1px 5px;margin-top:3px}
+.closed-badge{font-size:10px;background:#e2e8f0;color:#64748b;border-radius:3px;padding:1px 5px;margin-top:3px}
+
+/* Day detail */
+.day-detail{padding:20px 48px 28px;border-bottom:1px solid #f0f0f0}
+.day-detail.day-gap{border-left:4px solid #fca5a5}
+.day-detail.day-ok{border-left:4px solid #86efac}
+.day-detail.day-closed{border-left:4px solid #cbd5e1;background:#fafafa}
+.day-header{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.day-header h3{font-size:16px;font-weight:700;color:#111}
+.day-gap-badge{font-size:12px;background:#fee2e2;color:#dc2626;border-radius:5px;padding:3px 10px;font-weight:600}
+.day-ok-badge{font-size:12px;background:#dcfce7;color:#166534;border-radius:5px;padding:3px 10px;font-weight:600}
+.day-closed-badge{font-size:12px;background:#e2e8f0;color:#64748b;border-radius:5px;padding:3px 10px;font-weight:600}
+
+/* Availability row */
+.avail-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.avail-chip{font-size:11px;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.avail-chip.on{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.avail-chip.off{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.avail-chip.partial{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+
+/* Gantt */
+.gantt-wrap{position:relative;background:#fafafa;border:1px solid #e5e5e5;border-radius:8px;overflow:hidden}
+.gantt-role-group{display:flex;border-bottom:1px solid #f0f0f0}
+.gantt-role-group:last-of-type{border-bottom:none}
+.gantt-role-label{width:90px;min-width:90px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;color:#555;background:#f5f5f5;border-right:1px solid #e5e5e5;
+  padding:8px 4px;text-align:center}
+.gantt-role-label-spacer{width:90px;min-width:90px}
+.gantt-lanes{flex:1;position:relative;min-height:40px}
+.gantt-demand{position:absolute;top:0;background:#f0f9ff;border-left:2px dashed #93c5fd;
+  border-right:2px dashed #93c5fd;display:flex;align-items:flex-start;justify-content:center;
+  padding-top:4px;z-index:0}
+.demand-label{font-size:10px;color:#60a5fa;font-weight:600}
+.gantt-bar{position:absolute;height:30px;border-radius:5px;display:flex;align-items:center;
+  gap:6px;padding:0 8px;font-size:12px;white-space:nowrap;overflow:hidden;z-index:1}
+.gantt-bar.pinned{outline:2px dashed #f59e0b;outline-offset:-2px}
+.bar-lock{font-size:10px;color:#d97706}
+.bar-name{font-weight:700;font-size:12px}
+.bar-time{color:#666;font-size:11px}
+.bar-dur{color:#888;font-size:11px;background:#f0f0f0;padding:1px 4px;border-radius:3px}
+.gantt-gap{position:absolute;height:30px;border-radius:5px;display:flex;align-items:center;
+  padding:0 8px;font-size:11px;background:#fef2f2;border:1px dashed #fca5a5;color:#dc2626;
+  white-space:nowrap;z-index:1}
+.gantt-axis{display:flex;border-top:1px solid #e5e5e5;background:#f5f5f5}
+.gantt-time-labels{flex:1;position:relative;height:24px}
+.tick{position:absolute;font-size:10px;color:#aaa;transform:translateX(-50%);top:4px;font-weight:500}
+
+/* Legend */
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#666;margin-top:12px}
+.legend .swatch{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle;margin-right:5px}
+
+/* Diagnostics */
+.diag-list{list-style:none;padding:0}
+.diag-list li{padding:4px 0;font-size:13px;color:#555}
+.diag-list li::before{content:"→ ";color:#aaa}
+.gap-row td{color:#dc2626}
+
+@media print{
+  .day-detail{break-inside:avoid}
+  .gap-banner, .info-banner{break-inside:avoid}
+}
+</style>
+</head><body>
+
+<div class="report-header">
+<h1>Ziedonis Cafe — 2-Week Schedule <span class="status-pill warn">FEASIBLE</span></h1>
+<p class="sub">2026-04-27 → 2026-05-10  ·  5 workers  ·  32 coverage windows  ·  solved in 67ms</p>
+</div>
+<div class="stat-strip">
+<div class="stat-tile"><div class="label">Coverage</div><div class="value warn">97.2%</div><div class="hint">of required worker-minutes</div></div>
+<div class="stat-tile"><div class="label">Shifts</div><div class="value">30</div><div class="hint">3 pinned</div></div>
+<div class="stat-tile"><div class="label">Total hours</div><div class="value">210.0h</div><div class="hint">across 5 workers</div></div>
+<div class="stat-tile"><div class="label">Avg / worker</div><div class="value">42.0h</div><div class="hint">over 2 weeks</div></div>
+<div class="stat-tile"><div class="label">Gap days</div><div class="value warn">2</div><div class="hint">6.0h total gap</div></div>
+<div class="stat-tile"><div class="label">Open days</div><div class="value">12</div><div class="hint">of 14 in horizon</div></div>
+</div>
+<div class="section" style="padding-bottom:0"><div class="gap-banner">
+<h2>⚠ Understaffing Alerts</h2>
+<div class="intro"><strong>2 day(s)</strong> have coverage shortfalls (<strong>6.0 worker-hours</strong> short in total). Each entry below shows the time window where fewer workers are scheduled than the combined (baseline + peak) coverage template requires. Decide whether to bring in extra help, relax the peak requirement, or accept the gap.</div>
+<ul>
+<li><strong>Friday 08.05  ·  Waiter 18:00–21:00</strong> — short by <strong>1 worker</strong> for <strong>3.0h</strong>.<span class="reason">Unavailable: Estere (full day off), Marta (full day off)  ·  Available: Dana</span></li>
+<li><strong>Saturday 09.05  ·  Waiter 18:00–21:00</strong> — short by <strong>1 worker</strong> for <strong>3.0h</strong>.<span class="reason">Unavailable: Estere (full day off), Marta (full day off)  ·  Available: Dana</span></li>
+</ul></div></div>
+<div class="section" style="padding-bottom:0"><div class="info-banner">
+<h2>Key assumptions & pre-commitments</h2>
+<ul>
+<li><strong>Peak window = 18:00–21:00</strong> every open day. 1 extra waiter required on top of the quiet baseline during peak.</li>
+<li><strong>Head bartender arrives 14:30</strong> on weekdays (30 min pre-open prep). Weekend open 13:00 for everyone.</li>
+<li><strong>Pinned shifts:</strong> Robijs Bar 14:30–22:00 on Tue 28.04 and Tue 05.05; Diāna Bar 13:00–22:00 on Sat 02.05.</li>
+<li><strong>Dana (probation):</strong> cannot open/close → never the lone first-in / last-out. No explicit "pair with senior" constraint in this run.</li>
+<li><strong>Shift bounds:</strong> 3h–10h hard, preferred 4h–9h. 10h rest between shifts.</li>
+</ul></div></div>
+<div class="section"><h2>Case Summary</h2>
+<div class="case-grid">
+<div class="req-card"><h4>Opening Hours</h4>
+<table class="data-table compact">
+<tr><td>Monday</td><td class="center"><strong>Closed</strong></td></tr>
+<tr><td>Tuesday – Thursday</td><td class="center"><strong>15:00 – 22:00</strong></td></tr>
+<tr><td>Friday</td><td class="center"><strong>15:00 – 23:00</strong></td></tr>
+<tr><td>Saturday</td><td class="center"><strong>13:00 – 22:00</strong></td></tr>
+<tr><td>Sunday</td><td class="center"><strong>13:00 – 22:00</strong></td></tr>
+<tr><td>Head bartender pre-open</td><td class="center"><strong>14:30 (weekdays)</strong></td></tr>
+</table></div>
+<div class="req-card"><h4>Schedule Settings</h4>
+<table class="data-table compact">
+<tr><td>Shift length (hard)</td><td class="center"><strong>3h – 10h</strong></td></tr>
+<tr><td>Shift length (preferred)</td><td class="center"><strong>4h – 9h</strong></td></tr>
+<tr><td>Max hours/day</td><td class="center"><strong>10h</strong></td></tr>
+<tr><td>Min rest between shifts</td><td class="center"><strong>10h</strong></td></tr>
+<tr><td>Granularity</td><td class="center"><strong>30 min</strong></td></tr>
+<tr><td>Staff during quiet / peak</td><td class="center"><strong>2 / 3</strong></td></tr>
+</table></div>
+</div>
+<h3 style="margin-top:24px">Workers</h3>
+<table class="data-table"><thead><tr><th>Worker</th><th>Role</th><th>Skill</th><th>Rating</th><th>Contract</th><th>Min (2w)</th><th>Optimal (2w)</th><th>Can Open</th><th>Can Close</th><th>Constraints</th></tr></thead><tbody>
+<tr><td><span class="dot" style="background:#2563eb"></span><strong>Robijs</strong></td><td>Head Bartender</td><td>Bar</td><td class="center">10</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">✓</td><td class="center">✓</td><td class="constraint-cell">Off 08.05–09.05</td></tr>
+<tr><td><span class="dot" style="background:#0891b2"></span><strong>Diāna</strong></td><td>Bartender</td><td>Bar</td><td class="center">10</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">✓</td><td class="center">✓</td><td class="constraint-cell">Off 01.05; Off 03.05; Off 06.05</td></tr>
+<tr><td><span class="dot" style="background:#16a34a"></span><strong>Dana</strong></td><td>Waitress (probation, needs support)</td><td>Waiter</td><td class="center">8</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">✗</td><td class="center">✗</td><td class="constraint-cell">27.04 off 16:00–23:00; 03.05 off 19:00–23:00; 10.05 off 19:00–23:00</td></tr>
+<tr><td><span class="dot" style="background:#d97706"></span><strong>Estere</strong></td><td>Waitress (probation, works alone)</td><td>Waiter</td><td class="center">8</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">✓</td><td class="center">✓</td><td class="constraint-cell">Off 28.04–29.04; Off 06.05; Off 08.05–09.05; 27.04 off 09:00–17:00; 30.04 off 09:00–19:00; 05.05 off 09:00–14:00</td></tr>
+<tr><td><span class="dot" style="background:#7c3aed"></span><strong>Marta</strong></td><td>Waitress</td><td>Waiter</td><td class="center">9</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">✓</td><td class="center">✓</td><td class="constraint-cell">Off 08.05–09.05; 27.04 off 08:00–15:00, +6 more partial</td></tr>
+</tbody></table>
+</div>
+<div class="section"><h2>2-Week Overview</h2>
+<div class="month-grid">
+<div class="month-header">
+<span>Mon</span>
+<span>Tue</span>
+<span>Wed</span>
+<span>Thu</span>
+<span>Fri</span>
+<span>Sat</span>
+<span>Sun</span>
+</div>
+<div class="month-row">
+<a href="#day-0" class="day-cell closed"><span class="day-num">27</span><span class="day-wd">Mon</span><span class="closed-badge">Closed</span></a>
+<a href="#day-1" class="day-cell ok"><span class="day-num">28</span><span class="day-wd">Tue</span></a>
+<a href="#day-2" class="day-cell ok"><span class="day-num">29</span><span class="day-wd">Wed</span></a>
+<a href="#day-3" class="day-cell ok"><span class="day-num">30</span><span class="day-wd">Thu</span></a>
+<a href="#day-4" class="day-cell ok"><span class="day-num">1</span><span class="day-wd">Fri</span></a>
+<a href="#day-5" class="day-cell ok"><span class="day-num">2</span><span class="day-wd">Sat</span></a>
+<a href="#day-6" class="day-cell ok"><span class="day-num">3</span><span class="day-wd">Sun</span></a>
+</div><div class="month-row">
+<a href="#day-7" class="day-cell closed"><span class="day-num">4</span><span class="day-wd">Mon</span><span class="closed-badge">Closed</span></a>
+<a href="#day-8" class="day-cell ok"><span class="day-num">5</span><span class="day-wd">Tue</span></a>
+<a href="#day-9" class="day-cell ok"><span class="day-num">6</span><span class="day-wd">Wed</span></a>
+<a href="#day-10" class="day-cell ok"><span class="day-num">7</span><span class="day-wd">Thu</span></a>
+<a href="#day-11" class="day-cell gap"><span class="day-num">8</span><span class="day-wd">Fri</span><span class="gap-badge">3.0h gap</span></a>
+<a href="#day-12" class="day-cell gap"><span class="day-num">9</span><span class="day-wd">Sat</span><span class="gap-badge">3.0h gap</span></a>
+<a href="#day-13" class="day-cell ok"><span class="day-num">10</span><span class="day-wd">Sun</span></a>
+</div></div></div>
+<div class="section"><h2>Weekly Schedule Grid</h2>
+<p class="sub" style="margin-bottom:12px">Each row is a worker; each column is a day. Cells show the shift time. 🔒 = pinned / pre-committed.  Pink = unavailable full day.  Grey = closed.</p>
+<div class="weekgrid-wrap"><table class="weekgrid"><thead>
+<tr><th class="worker-col">Worker</th>
+<th class="closed-col">Mon<br>27.04</th>
+<th class="">Tue<br>28.04</th>
+<th class="">Wed<br>29.04</th>
+<th class="">Thu<br>30.04</th>
+<th class="">Fri<br>01.05</th>
+<th class="weekend-col">Sat<br>02.05</th>
+<th class="weekend-col">Sun<br>03.05</th>
+<th class="closed-col week-sep">Mon<br>04.05</th>
+<th class="">Tue<br>05.05</th>
+<th class="">Wed<br>06.05</th>
+<th class="">Thu<br>07.05</th>
+<th class="">Fri<br>08.05</th>
+<th class="weekend-col">Sat<br>09.05</th>
+<th class="weekend-col">Sun<br>10.05</th>
+<th class="col-hours">Total</th></tr></thead><tbody>
+<tr>
+<td class="worker-col"><span class="dot" style="background:#2563eb"></span><span class="w-name">Robijs</span><div class="w-role">Head Bartender</div></td>
+<td class="cell-closed">—</td>
+<td class="cell-shift pinned"><span class="lock">🔒 </span>14:30–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-free">—</td>
+<td class="cell-free">—</td>
+<td class="cell-shift">14:30–23:00<span class="skill-label">Bar</span></td>
+<td class="cell-free">—</td>
+<td class="cell-shift">13:00–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-closed week-sep">—</td>
+<td class="cell-shift pinned"><span class="lock">🔒 </span>14:30–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-shift">14:30–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-free">—</td>
+<td class="cell-off">Off</td>
+<td class="cell-off">Off</td>
+<td class="cell-shift">13:00–22:00<span class="skill-label">Bar</span></td>
+<td class="col-hours">49.0h</td></tr>
+<tr>
+<td class="worker-col"><span class="dot" style="background:#0891b2"></span><span class="w-name">Diāna</span><div class="w-role">Bartender</div></td>
+<td class="cell-closed">—</td>
+<td class="cell-free">—</td>
+<td class="cell-shift">14:30–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-shift">14:30–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-off">Off</td>
+<td class="cell-shift pinned"><span class="lock">🔒 </span>13:00–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-off">Off</td>
+<td class="cell-closed week-sep">—</td>
+<td class="cell-free">—</td>
+<td class="cell-off">Off</td>
+<td class="cell-shift">14:30–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-shift">14:30–23:00<span class="skill-label">Bar</span></td>
+<td class="cell-shift">13:00–22:00<span class="skill-label">Bar</span></td>
+<td class="cell-free">—</td>
+<td class="col-hours">49.0h</td></tr>
+<tr>
+<td class="worker-col"><span class="dot" style="background:#16a34a"></span><span class="w-name">Dana</span><div class="w-role">Waitress (probation, needs support)</div></td>
+<td class="cell-closed">—</td>
+<td class="cell-free">—</td>
+<td class="cell-free">—</td>
+<td class="cell-shift">18:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">15:00–21:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">18:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-partial">—</td>
+<td class="cell-closed week-sep">—</td>
+<td class="cell-free">—</td>
+<td class="cell-shift">15:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-free">—</td>
+<td class="cell-shift">15:00–23:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">13:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-partial">—</td>
+<td class="col-hours">38.0h</td></tr>
+<tr>
+<td class="worker-col"><span class="dot" style="background:#d97706"></span><span class="w-name">Estere</span><div class="w-role">Waitress (probation, works alone)</div></td>
+<td class="cell-closed">—</td>
+<td class="cell-off">Off</td>
+<td class="cell-off">Off</td>
+<td class="cell-partial">—</td>
+<td class="cell-shift">18:00–23:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">13:00–21:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">13:00–21:00<span class="skill-label">Waiter</span></td>
+<td class="cell-closed week-sep">—</td>
+<td class="cell-shift">15:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-off">Off</td>
+<td class="cell-shift">18:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-off">Off</td>
+<td class="cell-off">Off</td>
+<td class="cell-shift">18:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="col-hours">36.0h</td></tr>
+<tr>
+<td class="worker-col"><span class="dot" style="background:#7c3aed"></span><span class="w-name">Marta</span><div class="w-role">Waitress</div></td>
+<td class="cell-closed">—</td>
+<td class="cell-shift">15:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">15:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-shift">15:00–21:00<span class="skill-label">Waiter</span></td>
+<td class="cell-free">—</td>
+<td class="cell-free">—</td>
+<td class="cell-shift">18:00–22:00<span class="skill-label">Waiter</span></td>
+<td class="cell-closed week-sep">—</td>
+<td class="cell-partial">—</td>
+<td class="cell-partial">—</td>
+<td class="cell-shift">15:00–21:00<span class="skill-label">Waiter</span></td>
+<td class="cell-off">Off</td>
+<td class="cell-off">Off</td>
+<td class="cell-shift">13:00–21:00<span class="skill-label">Waiter</span></td>
+<td class="col-hours">38.0h</td></tr>
+</tbody></table></div>
+<div class="legend">
+<span><span class="swatch" style="background:#ecfdf5;border:1px solid #a7f3d0"></span>Scheduled shift</span>
+<span><span class="swatch" style="background:#fef3c7;border:2px solid #f59e0b"></span>Pinned (locked)</span>
+<span><span class="swatch" style="background:#fef2f2;border:1px solid #fecaca"></span>Unavailable full day</span>
+<span><span class="swatch" style="background:#f8fafc;border:1px solid #e2e8f0"></span>Café closed</span>
+</div></div>
+<div class="section"><h2>Hour Targets — Min / Optimal vs Actual</h2>
+<p class="sub" style="margin-bottom:16px">2-week prorated targets. Week 1 = 27.04–03.05 (d0–d6). Week 2 = 04.05–10.05 (d7–d13). Actuals are computed from solver-assigned shifts.</p>
+<table class="data-table"><thead><tr><th>Worker</th><th>Skill</th><th>Contract</th><th>Min (2w)</th><th>Optimal (2w)</th><th>Week 1</th><th>Week 2</th><th>Total</th><th>vs Min</th><th>vs Optimal</th><th>Bar</th></tr></thead><tbody>
+<tr><td><span class="dot" style="background:#2563eb"></span><strong>Robijs</strong></td><td>Bar</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">25.0h</td><td class="center">24.0h</td><td class="center"><strong>49.0h</strong></td><td class="center delta-ok">+9.0h</td><td class="center delta-bad">-6.0h</td><td class="bar-cell"><div class="bar" style="width:100.0%;background:#2563eb"></div></td></tr>
+<tr><td><span class="dot" style="background:#0891b2"></span><strong>Diāna</strong></td><td>Bar</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">24.0h</td><td class="center">25.0h</td><td class="center"><strong>49.0h</strong></td><td class="center delta-ok">+9.0h</td><td class="center delta-bad">-6.0h</td><td class="bar-cell"><div class="bar" style="width:100.0%;background:#0891b2"></div></td></tr>
+<tr><td><span class="dot" style="background:#16a34a"></span><strong>Dana</strong></td><td>Waiter</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">14.0h</td><td class="center">24.0h</td><td class="center"><strong>38.0h</strong></td><td class="center delta-bad">-2.0h</td><td class="center delta-bad">-17.0h</td><td class="bar-cell"><div class="bar" style="width:77.6%;background:#16a34a"></div></td></tr>
+<tr><td><span class="dot" style="background:#d97706"></span><strong>Estere</strong></td><td>Waiter</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">21.0h</td><td class="center">15.0h</td><td class="center"><strong>36.0h</strong></td><td class="center delta-bad">-4.0h</td><td class="center delta-bad">-19.0h</td><td class="bar-cell"><div class="bar" style="width:73.5%;background:#d97706"></div></td></tr>
+<tr><td><span class="dot" style="background:#7c3aed"></span><strong>Marta</strong></td><td>Waiter</td><td>Full-time</td><td class="center">40h</td><td class="center">55h</td><td class="center">24.0h</td><td class="center">14.0h</td><td class="center"><strong>38.0h</strong></td><td class="center delta-bad">-2.0h</td><td class="center delta-bad">-17.0h</td><td class="bar-cell"><div class="bar" style="width:77.6%;background:#7c3aed"></div></td></tr>
+<tr class="total-row"><td colspan="3">TOTALS</td><td class="center">200h</td><td class="center">275h</td><td></td><td></td><td class="center">210.0h</td><td class="center">+10.0h</td><td class="center">-65.0h</td><td></td></tr>
+</tbody></table>
+</div>
+<div class="section"><h2>Daily Schedule Details</h2></div>
+<div class="day-detail day-closed" id="day-0">
+<div class="day-header">
+<h3>Monday 27.04</h3>
+<span class="day-closed-badge">Closed — cafe not operating</span>
+</div>
+</div>
+<div class="day-detail day-ok" id="day-1">
+<div class="day-header">
+<h3>Tuesday 28.04</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip off"><span class="dot" style="background:#d97706"></span>Estere: Off</span>
+<span class="avail-chip partial"><span class="dot" style="background:#7c3aed"></span>Marta: off 11:00–15:00</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar pinned" style="left:0.00%;width:100.00%;background:#2563eb18;border-left:3px solid #2563eb;top:2px"><span class="bar-lock">🔒</span><span class="bar-name" style="color:#2563eb">Robijs</span><span class="bar-time">14:30–22:00</span><span class="bar-dur">7.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:6.67%;width:93.33%;height:36px" title="Need 1 worker(s) 15:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:6.67%;width:93.33%;background:#7c3aed18;border-left:3px solid #7c3aed;top:2px"><span class="bar-name" style="color:#7c3aed">Marta</span><span class="bar-time">15:00–22:00</span><span class="bar-dur">7.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:6.67%">15:00</span>
+<span class="tick" style="left:20.00%">16:00</span>
+<span class="tick" style="left:33.33%">17:00</span>
+<span class="tick" style="left:46.67%">18:00</span>
+<span class="tick" style="left:60.00%">19:00</span>
+<span class="tick" style="left:73.33%">20:00</span>
+<span class="tick" style="left:86.67%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-2">
+<div class="day-header">
+<h3>Wednesday 29.04</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip off"><span class="dot" style="background:#d97706"></span>Estere: Off</span>
+<span class="avail-chip partial"><span class="dot" style="background:#7c3aed"></span>Marta: off 11:00–15:00</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#0891b218;border-left:3px solid #0891b2;top:2px"><span class="bar-name" style="color:#0891b2">Diāna</span><span class="bar-time">14:30–22:00</span><span class="bar-dur">7.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:6.67%;width:93.33%;height:36px" title="Need 1 worker(s) 15:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:6.67%;width:93.33%;background:#7c3aed18;border-left:3px solid #7c3aed;top:2px"><span class="bar-name" style="color:#7c3aed">Marta</span><span class="bar-time">15:00–22:00</span><span class="bar-dur">7.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:6.67%">15:00</span>
+<span class="tick" style="left:20.00%">16:00</span>
+<span class="tick" style="left:33.33%">17:00</span>
+<span class="tick" style="left:46.67%">18:00</span>
+<span class="tick" style="left:60.00%">19:00</span>
+<span class="tick" style="left:73.33%">20:00</span>
+<span class="tick" style="left:86.67%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-3">
+<div class="day-header">
+<h3>Thursday 30.04</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip partial"><span class="dot" style="background:#d97706"></span>Estere: off 09:00–19:00</span>
+<span class="avail-chip partial"><span class="dot" style="background:#7c3aed"></span>Marta: off 11:00–15:00</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#0891b218;border-left:3px solid #0891b2;top:2px"><span class="bar-name" style="color:#0891b2">Diāna</span><span class="bar-time">14:30–22:00</span><span class="bar-dur">7.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:6.67%;width:93.33%;height:72px" title="Need 1 worker(s) 15:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:46.67%;width:40.00%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:6.67%;width:80.00%;background:#7c3aed18;border-left:3px solid #7c3aed;top:2px"><span class="bar-name" style="color:#7c3aed">Marta</span><span class="bar-time">15:00–21:00</span><span class="bar-dur">6.0h</span></div>
+<div class="gantt-bar" style="left:46.67%;width:53.33%;background:#16a34a18;border-left:3px solid #16a34a;top:38px"><span class="bar-name" style="color:#16a34a">Dana</span><span class="bar-time">18:00–22:00</span><span class="bar-dur">4.0h</span></div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:6.67%">15:00</span>
+<span class="tick" style="left:20.00%">16:00</span>
+<span class="tick" style="left:33.33%">17:00</span>
+<span class="tick" style="left:46.67%">18:00</span>
+<span class="tick" style="left:60.00%">19:00</span>
+<span class="tick" style="left:73.33%">20:00</span>
+<span class="tick" style="left:86.67%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-4">
+<div class="day-header">
+<h3>Friday 01.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip off"><span class="dot" style="background:#0891b2"></span>Diāna: Off</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip on"><span class="dot" style="background:#d97706"></span>Estere</span>
+<span class="avail-chip on"><span class="dot" style="background:#7c3aed"></span>Marta</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–23:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#2563eb18;border-left:3px solid #2563eb;top:2px"><span class="bar-name" style="color:#2563eb">Robijs</span><span class="bar-time">14:30–23:00</span><span class="bar-dur">8.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:5.88%;width:94.12%;height:72px" title="Need 1 worker(s) 15:00–23:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:41.18%;width:35.29%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:5.88%;width:70.59%;background:#16a34a18;border-left:3px solid #16a34a;top:2px"><span class="bar-name" style="color:#16a34a">Dana</span><span class="bar-time">15:00–21:00</span><span class="bar-dur">6.0h</span></div>
+<div class="gantt-bar" style="left:41.18%;width:58.82%;background:#d9770618;border-left:3px solid #d97706;top:38px"><span class="bar-name" style="color:#d97706">Estere</span><span class="bar-time">18:00–23:00</span><span class="bar-dur">5.0h</span></div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:5.88%">15:00</span>
+<span class="tick" style="left:17.65%">16:00</span>
+<span class="tick" style="left:29.41%">17:00</span>
+<span class="tick" style="left:41.18%">18:00</span>
+<span class="tick" style="left:52.94%">19:00</span>
+<span class="tick" style="left:64.71%">20:00</span>
+<span class="tick" style="left:76.47%">21:00</span>
+<span class="tick" style="left:88.24%">22:00</span>
+<span class="tick" style="left:100.00%">23:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-5">
+<div class="day-header">
+<h3>Saturday 02.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip on"><span class="dot" style="background:#d97706"></span>Estere</span>
+<span class="avail-chip on"><span class="dot" style="background:#7c3aed"></span>Marta</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar pinned" style="left:0.00%;width:100.00%;background:#0891b218;border-left:3px solid #0891b2;top:2px"><span class="bar-lock">🔒</span><span class="bar-name" style="color:#0891b2">Diāna</span><span class="bar-time">13:00–22:00</span><span class="bar-dur">9.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:72px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:55.56%;width:33.33%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:88.89%;background:#d9770618;border-left:3px solid #d97706;top:2px"><span class="bar-name" style="color:#d97706">Estere</span><span class="bar-time">13:00–21:00</span><span class="bar-dur">8.0h</span></div>
+<div class="gantt-bar" style="left:55.56%;width:44.44%;background:#16a34a18;border-left:3px solid #16a34a;top:38px"><span class="bar-name" style="color:#16a34a">Dana</span><span class="bar-time">18:00–22:00</span><span class="bar-dur">4.0h</span></div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:0.00%">13:00</span>
+<span class="tick" style="left:11.11%">14:00</span>
+<span class="tick" style="left:22.22%">15:00</span>
+<span class="tick" style="left:33.33%">16:00</span>
+<span class="tick" style="left:44.44%">17:00</span>
+<span class="tick" style="left:55.56%">18:00</span>
+<span class="tick" style="left:66.67%">19:00</span>
+<span class="tick" style="left:77.78%">20:00</span>
+<span class="tick" style="left:88.89%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-6">
+<div class="day-header">
+<h3>Sunday 03.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip off"><span class="dot" style="background:#0891b2"></span>Diāna: Off</span>
+<span class="avail-chip partial"><span class="dot" style="background:#16a34a"></span>Dana: off 19:00–23:00</span>
+<span class="avail-chip on"><span class="dot" style="background:#d97706"></span>Estere</span>
+<span class="avail-chip on"><span class="dot" style="background:#7c3aed"></span>Marta</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#2563eb18;border-left:3px solid #2563eb;top:2px"><span class="bar-name" style="color:#2563eb">Robijs</span><span class="bar-time">13:00–22:00</span><span class="bar-dur">9.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:72px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:55.56%;width:33.33%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:88.89%;background:#d9770618;border-left:3px solid #d97706;top:2px"><span class="bar-name" style="color:#d97706">Estere</span><span class="bar-time">13:00–21:00</span><span class="bar-dur">8.0h</span></div>
+<div class="gantt-bar" style="left:55.56%;width:44.44%;background:#7c3aed18;border-left:3px solid #7c3aed;top:38px"><span class="bar-name" style="color:#7c3aed">Marta</span><span class="bar-time">18:00–22:00</span><span class="bar-dur">4.0h</span></div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:0.00%">13:00</span>
+<span class="tick" style="left:11.11%">14:00</span>
+<span class="tick" style="left:22.22%">15:00</span>
+<span class="tick" style="left:33.33%">16:00</span>
+<span class="tick" style="left:44.44%">17:00</span>
+<span class="tick" style="left:55.56%">18:00</span>
+<span class="tick" style="left:66.67%">19:00</span>
+<span class="tick" style="left:77.78%">20:00</span>
+<span class="tick" style="left:88.89%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-closed" id="day-7">
+<div class="day-header">
+<h3>Monday 04.05</h3>
+<span class="day-closed-badge">Closed — cafe not operating</span>
+</div>
+</div>
+<div class="day-detail day-ok" id="day-8">
+<div class="day-header">
+<h3>Tuesday 05.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip partial"><span class="dot" style="background:#d97706"></span>Estere: off 09:00–14:00</span>
+<span class="avail-chip partial"><span class="dot" style="background:#7c3aed"></span>Marta: off 11:00–13:00</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar pinned" style="left:0.00%;width:100.00%;background:#2563eb18;border-left:3px solid #2563eb;top:2px"><span class="bar-lock">🔒</span><span class="bar-name" style="color:#2563eb">Robijs</span><span class="bar-time">14:30–22:00</span><span class="bar-dur">7.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:6.67%;width:93.33%;height:36px" title="Need 1 worker(s) 15:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:6.67%;width:93.33%;background:#d9770618;border-left:3px solid #d97706;top:2px"><span class="bar-name" style="color:#d97706">Estere</span><span class="bar-time">15:00–22:00</span><span class="bar-dur">7.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:6.67%">15:00</span>
+<span class="tick" style="left:20.00%">16:00</span>
+<span class="tick" style="left:33.33%">17:00</span>
+<span class="tick" style="left:46.67%">18:00</span>
+<span class="tick" style="left:60.00%">19:00</span>
+<span class="tick" style="left:73.33%">20:00</span>
+<span class="tick" style="left:86.67%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-9">
+<div class="day-header">
+<h3>Wednesday 06.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip off"><span class="dot" style="background:#0891b2"></span>Diāna: Off</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip off"><span class="dot" style="background:#d97706"></span>Estere: Off</span>
+<span class="avail-chip partial"><span class="dot" style="background:#7c3aed"></span>Marta: off 11:00–15:00</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#2563eb18;border-left:3px solid #2563eb;top:2px"><span class="bar-name" style="color:#2563eb">Robijs</span><span class="bar-time">14:30–22:00</span><span class="bar-dur">7.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:6.67%;width:93.33%;height:36px" title="Need 1 worker(s) 15:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:6.67%;width:93.33%;background:#16a34a18;border-left:3px solid #16a34a;top:2px"><span class="bar-name" style="color:#16a34a">Dana</span><span class="bar-time">15:00–22:00</span><span class="bar-dur">7.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:6.67%">15:00</span>
+<span class="tick" style="left:20.00%">16:00</span>
+<span class="tick" style="left:33.33%">17:00</span>
+<span class="tick" style="left:46.67%">18:00</span>
+<span class="tick" style="left:60.00%">19:00</span>
+<span class="tick" style="left:73.33%">20:00</span>
+<span class="tick" style="left:86.67%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-10">
+<div class="day-header">
+<h3>Thursday 07.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip on"><span class="dot" style="background:#d97706"></span>Estere</span>
+<span class="avail-chip partial"><span class="dot" style="background:#7c3aed"></span>Marta: off 11:00–15:00</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#0891b218;border-left:3px solid #0891b2;top:2px"><span class="bar-name" style="color:#0891b2">Diāna</span><span class="bar-time">14:30–22:00</span><span class="bar-dur">7.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:6.67%;width:93.33%;height:72px" title="Need 1 worker(s) 15:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:46.67%;width:40.00%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:6.67%;width:80.00%;background:#7c3aed18;border-left:3px solid #7c3aed;top:2px"><span class="bar-name" style="color:#7c3aed">Marta</span><span class="bar-time">15:00–21:00</span><span class="bar-dur">6.0h</span></div>
+<div class="gantt-bar" style="left:46.67%;width:53.33%;background:#d9770618;border-left:3px solid #d97706;top:38px"><span class="bar-name" style="color:#d97706">Estere</span><span class="bar-time">18:00–22:00</span><span class="bar-dur">4.0h</span></div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:6.67%">15:00</span>
+<span class="tick" style="left:20.00%">16:00</span>
+<span class="tick" style="left:33.33%">17:00</span>
+<span class="tick" style="left:46.67%">18:00</span>
+<span class="tick" style="left:60.00%">19:00</span>
+<span class="tick" style="left:73.33%">20:00</span>
+<span class="tick" style="left:86.67%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-gap" id="day-11">
+<div class="day-header">
+<h3>Friday 08.05</h3>
+<span class="day-gap-badge">1 gap (3.0 worker-hours short)</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip off"><span class="dot" style="background:#2563eb"></span>Robijs: Off</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip off"><span class="dot" style="background:#d97706"></span>Estere: Off</span>
+<span class="avail-chip off"><span class="dot" style="background:#7c3aed"></span>Marta: Off</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 14:30–23:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#0891b218;border-left:3px solid #0891b2;top:2px"><span class="bar-name" style="color:#0891b2">Diāna</span><span class="bar-time">14:30–23:00</span><span class="bar-dur">8.5h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:5.88%;width:94.12%;height:72px" title="Need 1 worker(s) 15:00–23:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:41.18%;width:35.29%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:5.88%;width:94.12%;background:#16a34a18;border-left:3px solid #16a34a;top:2px"><span class="bar-name" style="color:#16a34a">Dana</span><span class="bar-time">15:00–23:00</span><span class="bar-dur">8.0h</span></div>
+<div class="gantt-gap" style="left:41.18%;width:35.29%;top:38px">GAP 18:00–21:00: short by 1 worker</div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:5.88%">15:00</span>
+<span class="tick" style="left:17.65%">16:00</span>
+<span class="tick" style="left:29.41%">17:00</span>
+<span class="tick" style="left:41.18%">18:00</span>
+<span class="tick" style="left:52.94%">19:00</span>
+<span class="tick" style="left:64.71%">20:00</span>
+<span class="tick" style="left:76.47%">21:00</span>
+<span class="tick" style="left:88.24%">22:00</span>
+<span class="tick" style="left:100.00%">23:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-gap" id="day-12">
+<div class="day-header">
+<h3>Saturday 09.05</h3>
+<span class="day-gap-badge">1 gap (3.0 worker-hours short)</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip off"><span class="dot" style="background:#2563eb"></span>Robijs: Off</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip on"><span class="dot" style="background:#16a34a"></span>Dana</span>
+<span class="avail-chip off"><span class="dot" style="background:#d97706"></span>Estere: Off</span>
+<span class="avail-chip off"><span class="dot" style="background:#7c3aed"></span>Marta: Off</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#0891b218;border-left:3px solid #0891b2;top:2px"><span class="bar-name" style="color:#0891b2">Diāna</span><span class="bar-time">13:00–22:00</span><span class="bar-dur">9.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:72px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:55.56%;width:33.33%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#16a34a18;border-left:3px solid #16a34a;top:2px"><span class="bar-name" style="color:#16a34a">Dana</span><span class="bar-time">13:00–22:00</span><span class="bar-dur">9.0h</span></div>
+<div class="gantt-gap" style="left:55.56%;width:33.33%;top:38px">GAP 18:00–21:00: short by 1 worker</div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:0.00%">13:00</span>
+<span class="tick" style="left:11.11%">14:00</span>
+<span class="tick" style="left:22.22%">15:00</span>
+<span class="tick" style="left:33.33%">16:00</span>
+<span class="tick" style="left:44.44%">17:00</span>
+<span class="tick" style="left:55.56%">18:00</span>
+<span class="tick" style="left:66.67%">19:00</span>
+<span class="tick" style="left:77.78%">20:00</span>
+<span class="tick" style="left:88.89%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="day-detail day-ok" id="day-13">
+<div class="day-header">
+<h3>Sunday 10.05</h3>
+<span class="day-ok-badge">✓ Fully covered</span>
+</div>
+<div class="avail-row">
+<span class="avail-chip on"><span class="dot" style="background:#2563eb"></span>Robijs</span>
+<span class="avail-chip on"><span class="dot" style="background:#0891b2"></span>Diāna</span>
+<span class="avail-chip partial"><span class="dot" style="background:#16a34a"></span>Dana: off 19:00–23:00</span>
+<span class="avail-chip on"><span class="dot" style="background:#d97706"></span>Estere</span>
+<span class="avail-chip on"><span class="dot" style="background:#7c3aed"></span>Marta</span>
+</div>
+<div class="gantt-wrap">
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:40px"><span>Bar</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:36px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:100.00%;background:#2563eb18;border-left:3px solid #2563eb;top:2px"><span class="bar-name" style="color:#2563eb">Robijs</span><span class="bar-time">13:00–22:00</span><span class="bar-dur">9.0h</span></div>
+<div style="height:40px"></div>
+</div></div>
+<div class="gantt-role-group">
+<div class="gantt-role-label" style="height:76px"><span>Waiter</span></div>
+<div class="gantt-lanes">
+<div class="gantt-demand" style="left:0.00%;width:100.00%;height:72px" title="Need 1 worker(s) 13:00–22:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-demand" style="left:55.56%;width:33.33%;height:72px" title="Need 1 worker(s) 18:00–21:00"><span class="demand-label">need 1</span></div>
+<div class="gantt-bar" style="left:0.00%;width:88.89%;background:#7c3aed18;border-left:3px solid #7c3aed;top:2px"><span class="bar-name" style="color:#7c3aed">Marta</span><span class="bar-time">13:00–21:00</span><span class="bar-dur">8.0h</span></div>
+<div class="gantt-bar" style="left:55.56%;width:44.44%;background:#d9770618;border-left:3px solid #d97706;top:38px"><span class="bar-name" style="color:#d97706">Estere</span><span class="bar-time">18:00–22:00</span><span class="bar-dur">4.0h</span></div>
+<div style="height:76px"></div>
+</div></div>
+<div class="gantt-axis">
+<div class="gantt-role-label-spacer"></div><div class="gantt-time-labels">
+<span class="tick" style="left:0.00%">13:00</span>
+<span class="tick" style="left:11.11%">14:00</span>
+<span class="tick" style="left:22.22%">15:00</span>
+<span class="tick" style="left:33.33%">16:00</span>
+<span class="tick" style="left:44.44%">17:00</span>
+<span class="tick" style="left:55.56%">18:00</span>
+<span class="tick" style="left:66.67%">19:00</span>
+<span class="tick" style="left:77.78%">20:00</span>
+<span class="tick" style="left:88.89%">21:00</span>
+<span class="tick" style="left:100.00%">22:00</span>
+</div></div>
+</div></div>
+<div class="section"><h2>Solver Diagnostics</h2>
+<ul class="diag-list">
+<li>Generated 30 shifts (CP-SAT)</li>
+<li>Solve time: 67ms</li>
+<li>4 coverage gaps remaining</li>
+<li>4 hard-constraint violations found</li>
+<li>4 coverage gaps remaining</li>
+</ul>
+<h3 style="margin-top:16px;color:#dc2626">Constraint Violations (4)</h3>
+<table class="data-table compact"><thead><tr><th>Code</th><th>Message</th><th>Worker</th><th>Day</th><th>Time</th></tr></thead><tbody>
+<tr class="gap-row"><td>COVERAGE_GAP</td><td>Coverage minimum is not satisfied</td><td>None</td><td>11</td><td>18:00–21:00</td></tr>
+<tr class="gap-row"><td>COVERAGE_GAP</td><td>Coverage minimum is not satisfied</td><td>None</td><td>11</td><td>18:00–21:00</td></tr>
+<tr class="gap-row"><td>COVERAGE_GAP</td><td>Coverage minimum is not satisfied</td><td>None</td><td>12</td><td>18:00–21:00</td></tr>
+<tr class="gap-row"><td>COVERAGE_GAP</td><td>Coverage minimum is not satisfied</td><td>None</td><td>12</td><td>18:00–21:00</td></tr>
+</tbody></table>
+<h3 style="margin-top:16px;color:#dc2626">Coverage Gaps (raw — 4)</h3>
+<table class="data-table compact"><thead><tr><th>Day</th><th>Time</th><th>Skill</th><th>Need</th><th>Have</th></tr></thead><tbody>
+<tr class="gap-row"><td>Fri 08.05</td><td>18:00–21:00</td><td>Waiter</td><td class="center">1</td><td class="center">1</td></tr>
+<tr class="gap-row"><td>Fri 08.05</td><td>18:00–21:00</td><td>Waiter</td><td class="center">1</td><td class="center">1</td></tr>
+<tr class="gap-row"><td>Sat 09.05</td><td>18:00–21:00</td><td>Waiter</td><td class="center">1</td><td class="center">1</td></tr>
+<tr class="gap-row"><td>Sat 09.05</td><td>18:00–21:00</td><td>Waiter</td><td class="center">1</td><td class="center">1</td></tr>
+</tbody></table>
+</div>
+</body></html>

@@ -97,6 +97,7 @@ class CoverageWindow(BaseModel):
     start_minutes: int
     end_minutes: int
     min_workers: int = 1
+    max_workers: int | None = None
 
 
 class ExistingAssignment(BaseModel):
@@ -309,6 +310,30 @@ def _build_demand(coverage_windows: list[CoverageWindow], granularity: int):
         for slot in range(start_slot, end_slot):
             demand[(cov.day, cov.skill_id, slot)] = demand.get((cov.day, cov.skill_id, slot), 0) + cov.min_workers
     return demand, extent
+
+
+def _build_slot_cap(
+    coverage_windows: list[CoverageWindow], granularity: int
+) -> dict[tuple[int, str, int], int]:
+    """Build a per-slot max-worker cap from coverage windows.
+
+    Rule: for each slot, cap = sum of `max_workers` across all windows covering
+    that slot that set a cap. If ANY covering window has `max_workers=None`,
+    the slot is left uncapped (absent from the returned dict). This lets
+    clients mix capped and uncapped windows intentionally.
+    """
+    per_slot_sum: dict[tuple[int, str, int], int] = {}
+    per_slot_has_uncapped: dict[tuple[int, str, int], bool] = {}
+    for cov in coverage_windows:
+        start_slot = cov.start_minutes // granularity
+        end_slot = cov.end_minutes // granularity
+        for slot in range(start_slot, end_slot):
+            key = (cov.day, cov.skill_id, slot)
+            if cov.max_workers is None:
+                per_slot_has_uncapped[key] = True
+            else:
+                per_slot_sum[key] = per_slot_sum.get(key, 0) + max(0, int(cov.max_workers))
+    return {k: v for k, v in per_slot_sum.items() if not per_slot_has_uncapped.get(k)}
 
 
 def _build_coverage_boundaries(
@@ -781,6 +806,7 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
     unavail_lookup = _build_unavailability_lookup(request.unavailability)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     demand, extent = _build_demand(request.coverage_windows, granularity)
+    slot_caps = _build_slot_cap(request.coverage_windows, granularity)
     cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity, max_slots=max_slots)
     remaining = dict(demand)
 
@@ -879,6 +905,16 @@ def _solve_greedy(request: SolveRequest) -> SolveResponse:
                                 break
                         if violates_rating:
                             continue
+
+                    # Hard cap: reject candidates that would exceed max_workers on any slot.
+                    violates_cap = False
+                    for slot in range(start_slot, end_slot):
+                        cap = slot_caps.get((day, skill_id, slot))
+                        if cap is not None and slot_counts.get((day, skill_id, slot), 0) + 1 > cap:
+                            violates_cap = True
+                            break
+                    if violates_cap:
+                        continue
 
                     coverage_slots = sum(min(remaining.get((day, skill_id, slot), 0), 1) for slot in range(start_slot, end_slot))
                     if coverage_slots <= 0:
@@ -997,6 +1033,7 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
     workers = request.workers
     workers_by_id = {worker.id: worker for worker in workers}
     demand, extent = _build_demand(request.coverage_windows, granularity)
+    slot_caps = _build_slot_cap(request.coverage_windows, granularity)
     cov_boundaries = _build_coverage_boundaries(request.coverage_windows, granularity, max_slots=max_slots)
     skill_thresholds = _build_skill_thresholds(request.skill_constraints)
     unavail_lookup = _build_unavailability_lookup(request.unavailability)
@@ -1087,6 +1124,12 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
         model.Add((sum(covering) if covering else 0) + slack >= required)
         slack_vars[(day, skill_id, slot)] = slack
 
+    # Hard upper-bound on headcount per slot when max_workers is specified.
+    for (day, skill_id, slot), cap in slot_caps.items():
+        covering = slot_vars.get((day, skill_id, slot), [])
+        if covering:
+            model.Add(sum(covering) <= cap)
+
     for (day, skill_id, slot), covering in slot_vars.items():
         threshold = skill_thresholds.get(skill_id)
         if threshold is None or not covering:
@@ -1156,6 +1199,147 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
     for slack in slack_vars.values():
         objectives.append(slack * 1000000)
 
+    # Handoff preference: penalize "nested" shifts on the same (day, skill) —
+    # i.e. a later-arriving worker whose shift ends before an already-present
+    # worker's shift. Prefers opener + closer handoff patterns where the later
+    # arrival stays to close. Weight is small enough to only break ties.
+    shifts_by_day_skill: dict[tuple[int, str], list[tuple[int, int, cp_model.IntVar]]] = {}
+    for (worker_index, day, skill_id, start_slot, end_slot), variable in shift_vars.items():
+        shifts_by_day_skill.setdefault((day, skill_id), []).append(
+            (start_slot, end_slot, variable)
+        )
+    nested_weight = 250
+    for (day, skill_id), shifts in shifts_by_day_skill.items():
+        for i, (s_a, e_a, var_a) in enumerate(shifts):
+            for s_b, e_b, var_b in shifts[i + 1:]:
+                # Nested = one shift starts strictly after the other AND ends
+                # strictly before. That is the "peak helper who leaves before
+                # the opener" anomaly.
+                if (s_a < s_b and e_a > e_b) or (s_b < s_a and e_b > e_a):
+                    nested = model.NewBoolVar(
+                        f"nested_{day}_{skill_id}_{s_a}_{e_a}_{s_b}_{e_b}"
+                    )
+                    model.Add(nested >= var_a + var_b - 1)
+                    model.Add(nested <= var_a)
+                    model.Add(nested <= var_b)
+                    objectives.append(nested * nested_weight)
+
+    # ── Per-worker totals & per-day "works" flags (reused by next 3 objectives) ─
+    horizon_days = len(day_dates)
+    max_total_slots = slots_per_day * horizon_days
+
+    worker_total_slots: dict[int, cp_model.IntVar] = {}
+    for worker_index in range(len(workers)):
+        contrib = []
+        for (wi, _day, _sk, start_slot, end_slot), variable in shift_vars.items():
+            if wi == worker_index:
+                contrib.append((end_slot - start_slot) * variable)
+        if not contrib:
+            continue
+        total = model.NewIntVar(0, max_total_slots, f"total_slots_{worker_index}")
+        model.Add(total == sum(contrib))
+        worker_total_slots[worker_index] = total
+
+    # works_d[(wi, d)] is a 0/1 IntExpr — reuses the existing "≤1 shift per day"
+    # constraint, so the sum of day's shift indicators is itself the day flag.
+    works_d: dict[tuple[int, int], cp_model.LinearExpr] = {}
+    for (wi, d), variables in worker_day_vars.items():
+        works_d[(wi, d)] = sum(variable for _, _, _, variable in variables)
+
+    # ── (a) Peer hour balance ─────────────────────────────────────────────────
+    # For each pair of workers sharing a skill, minimize the absolute slot
+    # difference between their totals. This is the *primary* fairness lever:
+    # same-position colleagues should land within a few hours of each other.
+    PEER_BALANCE_WEIGHT = 100  # per slot (≈ 200 per hour)
+    # ── (a2) Peer working-day balance ─────────────────────────────────────────
+    # Same-position colleagues should also have a similar number of *days*
+    # worked. (You can match hours by giving one worker a few long shifts and
+    # the other many short ones — that still feels unfair, hence this term.)
+    PEER_DAY_BALANCE_WEIGHT = 2000  # per day of |Δ days|
+
+    worker_days_worked: dict[int, cp_model.IntVar] = {}
+    for wi in range(len(workers)):
+        day_terms = [works_d[(wi, d)] for d in range(horizon_days) if (wi, d) in works_d]
+        if not day_terms:
+            continue
+        dw = model.NewIntVar(0, horizon_days, f"days_worked_{wi}")
+        model.Add(dw == sum(day_terms))
+        worker_days_worked[wi] = dw
+
+    skill_to_workers: dict[str, list[int]] = {}
+    for wi, w in enumerate(workers):
+        for sk in w.skill_ids:
+            skill_to_workers.setdefault(sk, []).append(wi)
+    seen_pairs: set[tuple[int, int]] = set()
+    for members in skill_to_workers.values():
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                if a == b:
+                    continue
+                key = (min(a, b), max(a, b))
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                ta = worker_total_slots.get(a)
+                tb = worker_total_slots.get(b)
+                if ta is not None and tb is not None:
+                    diff = model.NewIntVar(0, max_total_slots, f"peer_diff_{key[0]}_{key[1]}")
+                    model.Add(diff >= ta - tb)
+                    model.Add(diff >= tb - ta)
+                    objectives.append(diff * PEER_BALANCE_WEIGHT)
+                da = worker_days_worked.get(a)
+                db = worker_days_worked.get(b)
+                if da is not None and db is not None:
+                    day_diff = model.NewIntVar(0, horizon_days, f"peer_day_diff_{key[0]}_{key[1]}")
+                    model.Add(day_diff >= da - db)
+                    model.Add(day_diff >= db - da)
+                    objectives.append(day_diff * PEER_DAY_BALANCE_WEIGHT)
+
+    # ── (b) Day-off-gap minimization (block-count compression) ────────────────
+    # A "day-off gap" is one or more off-days sandwiched between working days.
+    # We penalize the COUNT of such gaps — equivalently, we penalize the number
+    # of working blocks beyond the first. Implemented by counting block starts:
+    # `block_start[wi,d] = works(d) AND NOT works(d-1)`. Summed across the
+    # horizon, this equals the number of contiguous working-day blocks.
+    # Penalizing each block start adds a fixed cost per block; since every
+    # worker who works at all has ≥1 block, the marginal cost of an *extra*
+    # block (i.e. an extra gap) is GAP_PENALTY. This is INTENTIONALLY lighter
+    # than peer balance — fairness wins, gaps are a tie-breaker.
+    GAP_PENALTY = 250  # per extra working block (= per extra day-off gap)
+    for wi in range(len(workers)):
+        for d in range(horizon_days):
+            cur = works_d.get((wi, d))
+            if cur is None:
+                continue
+            prev_val = works_d.get((wi, d - 1), 0) if d > 0 else 0
+            block_start = model.NewBoolVar(f"block_start_{wi}_{d}")
+            # block_start => cur (only counts if worker works this day)
+            model.Add(block_start <= cur)
+            # block_start => NOT prev (only counts if previous day was off)
+            if not isinstance(prev_val, int):
+                model.Add(block_start + prev_val <= 1)
+            # Force block_start=1 when cur=1 and prev=0.
+            model.Add(block_start >= cur - prev_val)
+            objectives.append(block_start * GAP_PENALTY)
+
+    # ── (c) Soft cap: penalize 4+ consecutive working days ────────────────────
+    # For each sliding 4-day window, fire a boolean if the worker works all 4.
+    # A 5-day run triggers 2 windows, 6-day triggers 3, etc., so the penalty
+    # grows with the length of the run beyond 3.
+    EXCESS_RUN_PENALTY = 1500
+    for wi in range(len(workers)):
+        for d_start in range(horizon_days - 3):
+            window_days = [d_start + i for i in range(4)]
+            day_vars = [works_d.get((wi, d)) for d in window_days]
+            if any(v is None for v in day_vars):
+                continue
+            all4 = model.NewBoolVar(f"run4_{wi}_{d_start}")
+            # all4 = AND of the 4 day-indicators
+            for v in day_vars:
+                model.Add(all4 <= v)
+            model.Add(all4 >= sum(day_vars) - 3)
+            objectives.append(all4 * EXCESS_RUN_PENALTY)
+
     if request.minimize_changes:
         for assignment in request.existing_assignments:
             if assignment.is_locked:
@@ -1207,8 +1391,21 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
     for day, day_date in enumerate(day_dates):
         days_by_month.setdefault(_month_start_for_date(day_date), []).append(day)
 
+    # If the horizon is shorter than a full calendar month and spans multiple
+    # calendar months (e.g. a 2-week period crossing a month boundary),
+    # splitting the monthly targets per calendar month distorts the objective
+    # (each partial month would be expected to hit the full monthly quota).
+    # In that case we treat the whole horizon as a single "period" so that
+    # `monthly_optimal_hours` is interpreted as the target for the horizon.
+    if len(day_dates) <= 31 and len(days_by_month) > 1:
+        days_by_period: dict[str, list[int]] = {
+            day_dates[0].isoformat(): list(range(len(day_dates)))
+        }
+    else:
+        days_by_period = days_by_month
+
     for worker_index, worker in enumerate(workers):
-        for month_start, month_days in days_by_month.items():
+        for month_start, month_days in days_by_period.items():
             month_variables = [
                 (end_slot - start_slot, variable)
                 for (index, day, skill_id, start_slot, end_slot), variable in shift_vars.items()
@@ -1217,7 +1414,13 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
             if not month_variables:
                 continue
             assigned_slots_expr = sum(length * variable for length, variable in month_variables)
-            baseline_slots = baseline_month_slots.get((worker.id, month_start), 0)
+            if days_by_period is days_by_month:
+                baseline_slots = baseline_month_slots.get((worker.id, month_start), 0)
+            else:
+                baseline_slots = sum(
+                    baseline_month_slots.get((worker.id, mkey), 0)
+                    for mkey in days_by_month
+                )
 
             if worker.monthly_min_hours is not None:
                 target_slots = int(round(float(worker.monthly_min_hours) * 60 / granularity))
@@ -1233,8 +1436,8 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
                 model.Add(deviation >= target_slots - (baseline_slots + assigned_slots_expr))
                 dev_squared = model.NewIntVar(0, max_dev * max_dev, f"dev_sq_{worker_index}_{month_start}")
                 model.AddMultiplicationEquality(dev_squared, [deviation, deviation])
-                objectives.append(dev_squared * 2)
-                objectives.append(deviation * 10)
+                objectives.append(dev_squared * 1)
+                objectives.append(deviation * 5)
 
     if request.balance_hours and len(workers) > 1:
         total_demand_slots = sum(demand.values())
@@ -1302,7 +1505,7 @@ def _solve_cpsat(request: SolveRequest, progress_queue: queue_module.Queue | Non
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = request.solver_timeout_seconds
     solver.parameters.num_search_workers = min(8, os.cpu_count() or 4)
-    solver.parameters.relative_gap_limit = 0.005
+    solver.parameters.relative_gap_limit = 0.0001
     solver.parameters.linearization_level = 2
     if progress_queue is not None:
         progress_queue.put({"type": "phase", "phase": "solving", "variables": len(shift_vars)})
