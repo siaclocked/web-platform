@@ -1,7 +1,7 @@
 -- Add manager_id to users table (if it doesn't exist) - MUST BE FIRST
 -- This will fail if column already exists, but that's okay
 -- Note: If this fails, it means manager_id already exists, which is what we want
-ALTER TABLE users ADD COLUMN manager_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS manager_id UUID REFERENCES users(id) ON DELETE SET NULL;
 
 -- Add places table for work locations (if it doesn't exist) - AFTER manager_id exists
 -- This should work since manager_id should exist now (either from above or already there)
@@ -18,9 +18,10 @@ CREATE TABLE IF NOT EXISTS places (
 );
 
 -- Add place_id to users table (if it doesn't exist)
--- This will fail if column already exists, but that's okay
--- Note: If this fails, it means place_id already exists, which is what we want
-ALTER TABLE users ADD COLUMN place_id UUID REFERENCES places(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS place_id UUID REFERENCES places(id) ON DELETE SET NULL;
+
+-- Ensure places.manager_id exists (in case places came from 001_initial_schema without it)
+ALTER TABLE places ADD COLUMN IF NOT EXISTS manager_id UUID REFERENCES users(id) ON DELETE SET NULL;
 
 -- Create index for faster queries (if they don't exist)
 CREATE INDEX IF NOT EXISTS idx_places_company_manager ON places(company_id, manager_id);

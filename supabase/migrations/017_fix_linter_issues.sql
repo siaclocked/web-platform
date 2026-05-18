@@ -168,92 +168,10 @@ BEGIN
 END;
 $$;
 
--- ============================================
--- RLS Policies for schedule_history table
--- ============================================
-
--- Managers can view schedule history for their company
-CREATE POLICY "Managers can view schedule history" ON public.schedule_history
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM schedule_templates st
-      JOIN users u ON u.id = st.manager_id
-      WHERE st.id = schedule_history.schedule_template_id
-      AND u.id = auth.uid()
-    )
-  );
-
--- Managers can insert schedule history
-CREATE POLICY "Managers can insert schedule history" ON public.schedule_history
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM schedule_templates st
-      JOIN users u ON u.id = st.manager_id
-      WHERE st.id = schedule_history.schedule_template_id
-      AND u.id = auth.uid()
-    )
-  );
-
--- ============================================
--- RLS Policies for shift_interests table
--- ============================================
-
--- Workers can view their own shift interests
-CREATE POLICY "Workers can view own shift interests" ON public.shift_interests
-  FOR SELECT USING (worker_id = auth.uid());
-
--- Workers can create their own shift interests
-CREATE POLICY "Workers can create own shift interests" ON public.shift_interests
-  FOR INSERT WITH CHECK (worker_id = auth.uid());
-
--- Workers can update their own shift interests
-CREATE POLICY "Workers can update own shift interests" ON public.shift_interests
-  FOR UPDATE USING (worker_id = auth.uid());
-
--- Workers can delete their own shift interests
-CREATE POLICY "Workers can delete own shift interests" ON public.shift_interests
-  FOR DELETE USING (worker_id = auth.uid());
-
--- Managers can view shift interests for their timesheets
-CREATE POLICY "Managers can view shift interests" ON public.shift_interests
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM schedule_templates st
-      JOIN users u ON u.id = st.manager_id
-      WHERE st.id = shift_interests.schedule_template_id
-      AND u.id = auth.uid()
-    )
-  );
-
--- ============================================
--- RLS Policies for timesheet_edits table
--- ============================================
-
--- Managers can view timesheet edits for their schedules
-CREATE POLICY "Managers can view timesheet edits" ON public.timesheet_edits
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM schedule_templates st
-      JOIN users u ON u.id = st.manager_id
-      WHERE st.id = timesheet_edits.schedule_template_id
-      AND u.id = auth.uid()
-    )
-  );
-
--- Managers can insert timesheet edits
-CREATE POLICY "Managers can insert timesheet edits" ON public.timesheet_edits
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM schedule_templates st
-      JOIN users u ON u.id = st.manager_id
-      WHERE st.id = timesheet_edits.schedule_template_id
-      AND u.id = auth.uid()
-    )
-  );
-
--- Workers can view timesheet edits affecting them
-CREATE POLICY "Workers can view own timesheet edits" ON public.timesheet_edits
-  FOR SELECT USING (worker_id = auth.uid());
+-- Note: policies for schedule_history, shift_interests, timesheet_edits removed.
+-- shift_interests and timesheet_edits are dropped in migration 018.
+-- schedule_history is retained but its schema doesn't have schedule_template_id,
+-- so the original policies referenced a column that never existed on this schema lineage.
 
 -- ============================================
 -- WARNINGS: Fix function search_path
@@ -297,9 +215,9 @@ BEGIN
 END;
 $$;
 
--- Fix get_user_role function
+-- Fix get_user_role function (keep VARCHAR return to match original signature)
 CREATE OR REPLACE FUNCTION public.get_user_role()
-RETURNS TEXT
+RETURNS VARCHAR
 LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = public

@@ -1,7 +1,12 @@
 -- Worker Availability Calendar (Fixed - handles existing objects)
 
--- Drop existing objects if they exist
-DROP TRIGGER IF EXISTS update_worker_availability_updated_at ON worker_availability;
+-- Drop existing objects if they exist (table-conditional to avoid errors on fresh DB)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'worker_availability') THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS update_worker_availability_updated_at ON worker_availability';
+  END IF;
+END $$;
 DROP INDEX IF EXISTS idx_worker_availability_worker_date;
 DROP INDEX IF EXISTS idx_worker_availability_date;
 DROP INDEX IF EXISTS idx_worker_availability_worker;

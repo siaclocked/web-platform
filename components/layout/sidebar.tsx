@@ -15,6 +15,7 @@ import {
   Bell,
   User,
   Eye,
+  Building2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -41,11 +42,12 @@ const workerNavItems = [
   { href: '/worker/profile', icon: User, label: 'Profile' },
 ];
 
+// Admin inherits everything from manager, plus company-level controls
 const adminNavItems = [
-  { href: '/company', icon: Home, label: 'Dashboard' },
-  { href: '/company/places', icon: MapPin, label: 'Places' },
-  { href: '/company/settings', icon: Settings, label: 'Settings' },
-  { href: '/company/managers', icon: Users, label: 'Managers' },
+  ...managerNavItems,
+  { href: '/company', icon: Building2, label: 'Company Overview' },
+  { href: '/company/managers', icon: Users, label: 'Manage Managers' },
+  { href: '/company/settings', icon: Settings, label: 'Company Settings' },
 ];
 
 export function Sidebar() {
@@ -65,7 +67,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-5 pt-6 pb-4">
         <Link
-          href={`/${user?.role === 'admin' ? 'company' : user?.role || 'worker'}`}
+          href={`/${user?.role === 'admin' ? 'manager' : user?.role || 'worker'}`}
           className="block"
         >
           <span className="text-2xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
@@ -78,7 +80,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isHome = item.href === '/manager' || item.href === '/worker' || item.href === '/company';
+          const isHome = item.href === '/manager' || item.href === '/worker';
           const isActive = isHome
             ? pathname === item.href
             : pathname === item.href || pathname.startsWith(item.href + '/');

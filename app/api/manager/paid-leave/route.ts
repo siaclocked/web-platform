@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.SUPABASE_SECRET_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 }
@@ -23,7 +23,7 @@ async function getManagerUser(request: Request) {
     .eq('id', user.id)
     .single();
 
-  if (!userData || userData.role !== 'manager') return null;
+  if (!userData || (userData.role !== 'manager' && userData.role !== 'admin')) return null;
   return userData;
 }
 

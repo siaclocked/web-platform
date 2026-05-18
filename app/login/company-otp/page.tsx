@@ -85,8 +85,8 @@ export default function CompanyOTPLoginPage() {
         .single();
 
       if (userData?.role === "admin") {
-        console.log("User is admin, redirecting to company dashboard...");
-        router.push("/dashboard/company");
+        console.log("User is admin, redirecting to manager workspace...");
+        router.push("/manager");
       } else {
         setError("This login is for company administrators only");
       }

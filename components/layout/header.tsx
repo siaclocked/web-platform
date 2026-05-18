@@ -27,7 +27,7 @@ export function Header() {
       <div className="flex items-center justify-between h-14 px-4 lg:px-6">
         {/* Mobile logo — only on small screens where sidebar is hidden */}
         <div className="flex items-center gap-3 lg:hidden">
-          <Link href={`/${user.role === 'admin' ? 'company' : user.role}`} className="flex items-center gap-2">
+          <Link href={`/${user.role === 'admin' ? 'manager' : user.role}`} className="flex items-center gap-2">
             <span className="text-xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
               CLOCKED
             </span>

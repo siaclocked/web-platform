@@ -16,6 +16,7 @@ import {
   DollarSign,
   X,
   MoreHorizontal,
+  Building2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -43,11 +44,12 @@ const managerNavItems = [
   { href: '/manager/notifications', icon: Bell, label: 'Alerts' },
 ];
 
+// Admin inherits everything from manager, plus company-level controls
 const adminNavItems = [
-  { href: '/company', icon: Home, label: 'Home' },
-  { href: '/company/places', icon: MapPin, label: 'Places' },
-  { href: '/company/settings', icon: Settings, label: 'Company' },
-  { href: '/company/managers', icon: Users, label: 'Managers' },
+  ...managerNavItems,
+  { href: '/company', icon: Building2, label: 'Company' },
+  { href: '/company/managers', icon: Users, label: 'Mgrs' },
+  { href: '/company/settings', icon: Settings, label: 'Settings' },
 ];
 
 export function BottomNav() {
@@ -85,7 +87,7 @@ export function BottomNav() {
   }, [pathname]);
 
   const isActiveHref = (href: string) => {
-    const isHome = href === '/manager' || href === '/worker' || href === '/company';
+    const isHome = href === '/manager' || href === '/worker';
     return isHome ? pathname === href : pathname === href || pathname.startsWith(href + '/');
   };
 

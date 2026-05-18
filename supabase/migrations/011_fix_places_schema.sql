@@ -30,8 +30,8 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create trigger if it doesn't exist
--- Note: This will fail if trigger already exists, but that's okay
-CREATE TRIGGER update_places_updated_at 
-  BEFORE UPDATE ON places 
+-- Create trigger (drop first for idempotency)
+DROP TRIGGER IF EXISTS update_places_updated_at ON places;
+CREATE TRIGGER update_places_updated_at
+  BEFORE UPDATE ON places
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

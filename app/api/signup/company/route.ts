@@ -8,16 +8,13 @@ export async function POST(request: Request) {
     const { companyData, adminData } = await request.json();
     console.log('API: Received data:', { companyData, adminData });
 
-    // Check if required environment variables are set
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      console.error('API: NEXT_PUBLIC_SUPABASE_URL not set');
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
+      console.error('API: Supabase env vars not set');
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
     }
 
-    // Create a Supabase client with service role key to bypass RLS
-    // Fall back to anon key if service role is not available
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SECRET_KEY;
     
     console.log('API: Creating Supabase client with URL:', supabaseUrl);
     

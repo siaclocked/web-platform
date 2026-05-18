@@ -74,9 +74,8 @@ export default function CompanyPasswordLoginPage() {
           router.push("/signup/company");
         }, 2000);
       } else if (userData.role === "admin") {
-        console.log("User is admin, redirecting to company dashboard...");
-        // Redirect immediately
-        router.push("/company");
+        console.log("User is admin, redirecting to manager workspace...");
+        router.push("/manager");
       } else {
         setError("This login is for company administrators only");
       }
