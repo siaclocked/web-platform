@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { createBulkNotifications, NOTIFICATION_TYPES } from '@/lib/notifications';
 import { buildSolverRequest } from '../solver-payload';
 
-const SOLVER_URL = process.env.SOLVER_URL || 'http://localhost:8000';
+const SOLVER_URL = process.env.SOLVER_SERVICE_URL || process.env.SOLVER_URL || 'http://localhost:8000';
 
 type ScheduleAssignment = {
   worker_id: string;

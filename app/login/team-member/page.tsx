@@ -129,7 +129,7 @@ export default function WorkerLoginPage() {
         // Skip additional database verification since we already verified in step 1
         // This avoids RLS infinite recursion issues
         console.log("Worker OTP verified successfully, redirecting...");
-        router.push("/worker");
+        router.push("/team-member");
       }
     } catch (err) {
       console.error("Verify OTP error:", err);

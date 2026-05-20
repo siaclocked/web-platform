@@ -343,7 +343,7 @@ export default function CoverageTemplatesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-foreground-muted mb-1">Min Workers</label>
+                  <label className="block text-xs font-medium text-foreground-muted mb-1">Min Team Members</label>
                   <input
                     type="number"
                     min="1"
@@ -354,7 +354,7 @@ export default function CoverageTemplatesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-foreground-muted mb-1">Max Workers</label>
+                  <label className="block text-xs font-medium text-foreground-muted mb-1">Max Team Members</label>
                   <input
                     type="number"
                     min="1"

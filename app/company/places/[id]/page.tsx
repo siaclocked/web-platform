@@ -130,7 +130,7 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
             <div className="flex gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-foreground">{place.worker_count}</div>
-                <div className="text-sm text-muted-foreground">Workers</div>
+                <div className="text-sm text-muted-foreground">Team Members</div>
               </div>
             </div>
           </div>
@@ -138,7 +138,7 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
 
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Workers at this Location</h2>
+            <h2 className="text-xl font-semibold">Team Members at this Location</h2>
             <Badge variant="default">
               {workers.length} total
             </Badge>
@@ -148,9 +148,9 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
             <Card>
               <CardContent className="text-center py-8">
                 <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">No workers assigned</h3>
+                <h3 className="text-lg font-medium mb-2">No team members assigned</h3>
                 <p className="text-muted-foreground">
-                  No workers are currently assigned to this location
+                  No team members are currently assigned to this location
                 </p>
               </CardContent>
             </Card>

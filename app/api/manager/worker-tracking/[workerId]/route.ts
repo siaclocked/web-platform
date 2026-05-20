@@ -62,7 +62,9 @@ export async function GET(
       name: wp.places?.name || 'Unknown',
     }));
 
-    // Get all completed sessions for this worker, grouped by place
+    // Get all completed sessions for this worker, grouped by place.
+    // Display includes all statuses (so manager can approve), but totals
+    // count only `approved` sessions.
     const { data: sessions } = await supabase
       .from('work_sessions')
       .select(`
@@ -70,6 +72,7 @@ export async function GET(
         place_id,
         start_time,
         end_time,
+        status,
         is_scheduled,
         places (name)
       `)
@@ -77,37 +80,53 @@ export async function GET(
       .not('end_time', 'is', null)
       .order('start_time', { ascending: false });
 
-    // Calculate hours per place
-    const placeHours: Record<string, { place_name: string; total_hours: number; sessions: any[] }> = {};
-    (sessions || []).forEach((s: any) => {
+    type SessionRow = {
+      id: string;
+      place_id: string;
+      start_time: string;
+      end_time: string;
+      status?: string;
+      is_scheduled?: boolean;
+      places?: { name?: string } | null;
+    };
+
+    const placeHours: Record<string, { place_name: string; total_hours: number; pending_hours: number; sessions: Array<{ id: string; start_time: string; end_time: string; hours: number; status?: string; is_scheduled?: boolean }> }> = {};
+    (sessions as SessionRow[] || []).forEach((s) => {
       const placeId = s.place_id;
       if (!placeHours[placeId]) {
         placeHours[placeId] = {
           place_name: s.places?.name || 'Unknown',
           total_hours: 0,
+          pending_hours: 0,
           sessions: [],
         };
       }
       const hours = (new Date(s.end_time).getTime() - new Date(s.start_time).getTime()) / (1000 * 60 * 60);
-      placeHours[placeId].total_hours += hours;
+      if (s.status === 'approved') {
+        placeHours[placeId].total_hours += hours;
+      } else if (s.status && s.status !== 'active') {
+        placeHours[placeId].pending_hours += hours;
+      }
       placeHours[placeId].sessions.push({
         id: s.id,
         start_time: s.start_time,
         end_time: s.end_time,
         hours: parseFloat(hours.toFixed(2)),
+        status: s.status,
         is_scheduled: s.is_scheduled,
       });
     });
 
-    // Calculate estimated wages per place
+    // Calculate estimated wages per place (only approved hours count)
     const hourlyRate = workerData.hourly_rate || 0;
     const placeSummaries = Object.entries(placeHours).map(([placeId, data]) => ({
       place_id: placeId,
       place_name: data.place_name,
       total_hours: parseFloat(data.total_hours.toFixed(2)),
+      pending_hours: parseFloat(data.pending_hours.toFixed(2)),
       estimated_wage: parseFloat((data.total_hours * hourlyRate).toFixed(2)),
       session_count: data.sessions.length,
-      sessions: data.sessions.slice(0, 20), // limit to 20 most recent per place
+      sessions: data.sessions.slice(0, 20),
     }));
 
     return NextResponse.json({

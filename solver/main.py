@@ -118,7 +118,9 @@ class Unavailability(BaseModel):
 
 
 class PlaceSettings(BaseModel):
-    max_hours_per_day: float = 12.0
+    # NOTE: removed `max_hours_per_day` — the solver only schedules one shift
+    # per worker per day (see hard constraint where worker_day_vars sum <= 1),
+    # so a per-day cap is redundant with max_shift_minutes / max_hours_per_block.
     min_shift_minutes: int | None = None
     max_shift_minutes: int | None = None
     min_hours_per_block: float | None = 2.0
@@ -263,8 +265,6 @@ def _settings_slots(settings: PlaceSettings) -> dict[str, int]:
 
     min_slots = max(1, min_shift_minutes // granularity)
     max_slots = max(min_slots, max_shift_minutes // granularity)
-    daily_max_slots = max(1, int((settings.max_hours_per_day * 60) // granularity))
-    max_slots = min(max_slots, daily_max_slots)
     soft_min_slots = max(min_slots, (soft_min_minutes // granularity) if soft_min_minutes is not None else min_slots)
     soft_max_slots = max(min_slots, (soft_max_minutes // granularity) if soft_max_minutes is not None else max_slots)
     rest_slots = max(0, int((settings.min_rest_between_shifts * 60) // granularity))

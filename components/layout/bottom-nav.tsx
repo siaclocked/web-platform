@@ -24,23 +24,23 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const workerNavItems = [
-  { href: '/worker', icon: Home, label: 'Home' },
-  { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
-  { href: '/worker/clock-in', icon: Clock, label: 'Clock In' },
-  { href: '/worker/set-availability', icon: ClipboardList, label: 'Availability' },
-  { href: '/worker/hours', icon: DollarSign, label: 'Hours' },
-  { href: '/worker/notifications', icon: Bell, label: 'Alerts' },
-  { href: '/worker/profile', icon: User, label: 'Profile' },
+  { href: '/team-member', icon: Home, label: 'Home' },
+  { href: '/team-member/schedule', icon: Calendar, label: 'Schedule' },
+  { href: '/team-member/clock-in', icon: Clock, label: 'Clock In' },
+  { href: '/team-member/set-availability', icon: ClipboardList, label: 'Availability' },
+  { href: '/team-member/hours', icon: DollarSign, label: 'Hours' },
+  { href: '/team-member/notifications', icon: Bell, label: 'Alerts' },
+  { href: '/team-member/profile', icon: User, label: 'Profile' },
 ];
 
 const managerNavItems = [
   { href: '/manager', icon: Home, label: 'Home' },
   { href: '/manager/schedule', icon: Calendar, label: 'Schedule' },
-  { href: '/manager/workers', icon: Users, label: 'Team' },
-  { href: '/manager/worker-availability', icon: Eye, label: 'Availability' },
+  { href: '/manager/team', icon: Users, label: 'Team' },
+  { href: '/manager/team-availability', icon: Eye, label: 'Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
-  { href: '/manager/worker-tracking', icon: Clock, label: 'Tracking' },
+  { href: '/manager/team-tracking', icon: Clock, label: 'Tracking' },
   { href: '/manager/notifications', icon: Bell, label: 'Alerts' },
 ];
 
@@ -87,7 +87,7 @@ export function BottomNav() {
   }, [pathname]);
 
   const isActiveHref = (href: string) => {
-    const isHome = href === '/manager' || href === '/worker';
+    const isHome = href === '/manager' || href === '/team-member';
     return isHome ? pathname === href : pathname === href || pathname.startsWith(href + '/');
   };
 

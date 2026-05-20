@@ -20,26 +20,27 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
+import { roleHomeSegment } from '@/lib/utils';
 
 const managerNavItems = [
   { href: '/manager', icon: Home, label: 'Dashboard' },
   { href: '/manager/schedule', icon: Calendar, label: 'Scheduling' },
-  { href: '/manager/workers', icon: Users, label: 'Employees' },
-  { href: '/manager/worker-availability', icon: Eye, label: 'Worker Availability' },
+  { href: '/manager/team', icon: Users, label: 'Team' },
+  { href: '/manager/team-availability', icon: Eye, label: 'Team Availability' },
   { href: '/manager/places', icon: MapPin, label: 'Places' },
   { href: '/manager/positions', icon: Layers, label: 'Positions' },
-  { href: '/manager/worker-tracking', icon: Clock, label: 'Worker Tracking' },
+  { href: '/manager/team-tracking', icon: Clock, label: 'Team Tracking' },
   { href: '/manager/notifications', icon: Bell, label: 'Notifications' },
 ];
 
 const workerNavItems = [
-  { href: '/worker', icon: Home, label: 'Dashboard' },
-  { href: '/worker/schedule', icon: Calendar, label: 'Schedule' },
-  { href: '/worker/clock-in', icon: Clock, label: 'Clock In' },
-  { href: '/worker/set-availability', icon: ClipboardList, label: 'Availability' },
-  { href: '/worker/hours', icon: DollarSign, label: 'My Hours' },
-  { href: '/worker/notifications', icon: Bell, label: 'Notifications' },
-  { href: '/worker/profile', icon: User, label: 'Profile' },
+  { href: '/team-member', icon: Home, label: 'Dashboard' },
+  { href: '/team-member/schedule', icon: Calendar, label: 'Schedule' },
+  { href: '/team-member/clock-in', icon: Clock, label: 'Clock In' },
+  { href: '/team-member/set-availability', icon: ClipboardList, label: 'Availability' },
+  { href: '/team-member/hours', icon: DollarSign, label: 'My Hours' },
+  { href: '/team-member/notifications', icon: Bell, label: 'Notifications' },
+  { href: '/team-member/profile', icon: User, label: 'Profile' },
 ];
 
 // Admin inherits everything from manager, plus company-level controls
@@ -67,7 +68,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-5 pt-6 pb-4">
         <Link
-          href={`/${user?.role === 'admin' ? 'manager' : user?.role || 'worker'}`}
+          href={`/${roleHomeSegment(user?.role)}`}
           className="block"
         >
           <span className="text-2xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
@@ -80,7 +81,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isHome = item.href === '/manager' || item.href === '/worker';
+          const isHome = item.href === '/manager' || item.href === '/team-member';
           const isActive = isHome
             ? pathname === item.href
             : pathname === item.href || pathname.startsWith(item.href + '/');

@@ -52,6 +52,43 @@ export function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+export interface MonthGridCell {
+  day: number;
+  dateStr: string;
+  isCurrentMonth: boolean;
+  dow: number;
+}
+
+// Builds a 6-row × 7-col month grid (42 cells) for `year`/`month` (month is 0-indexed).
+// Cells outside the target month are tagged `isCurrentMonth: false` for trailing/leading days.
+export function buildMonthGrid(year: number, month: number): MonthGridCell[] {
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const gridStart = new Date(year, month, 1 - firstDayOfWeek);
+  const cells: MonthGridCell[] = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    cells.push({
+      day: d.getDate(),
+      dateStr: `${yyyy}-${mm}-${dd}`,
+      isCurrentMonth: d.getMonth() === month && d.getFullYear() === year,
+      dow: d.getDay(),
+    });
+  }
+  return cells;
+}
+
+// Maps a user.role to the URL segment of their primary workspace.
+// admin and manager both live in /manager/* (admin inherits per Task 2).
+// worker lives in /team-member/* (renamed from /worker/*).
+export function roleHomeSegment(role: string | null | undefined): 'manager' | 'team-member' {
+  if (role === 'worker') return 'team-member';
+  return 'manager';
+}
+
 export function isWithinGracePeriod(
   scheduledStart: Date,
   currentTime: Date,

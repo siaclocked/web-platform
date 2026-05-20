@@ -53,12 +53,12 @@ export default function Home() {
           <FeatureCard
             icon={<Users className="w-6 h-6" />}
             title="Team Management"
-            description="Manage workers, skills, and multiple locations. Assign shifts based on availability and qualifications."
+            description="Manage your team, skills, and multiple locations. Assign shifts based on availability and qualifications."
           />
           <FeatureCard
             icon={<Shield className="w-6 h-6" />}
             title="Role-Based Access"
-            description="Secure access control for admins, managers, and workers. Everyone sees what they need."
+            description="Secure access control for admins, managers, and team members. Everyone sees what they need."
           />
           <FeatureCard
             icon={<Zap className="w-6 h-6" />}

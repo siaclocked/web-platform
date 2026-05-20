@@ -32,6 +32,9 @@ export default function ManagerPositionsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  // Form-level save outcome — drives the submit button's variant + label for ~2.5s after save.
+  const [saveResult, setSaveResult] = useState<"success" | "error" | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetchPositions();
@@ -65,15 +68,16 @@ export default function ManagerPositionsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
+    setSaveResult(null);
 
     if (!formData.name.trim()) {
       setError("Position name is required");
       return;
     }
 
+    setIsSubmitting(true);
+    let outcome: "success" | "error" = "error";
     try {
-      // Get auth token
       const supabase = createClient();
       const {
         data: { session },
@@ -95,22 +99,27 @@ export default function ManagerPositionsPage() {
       });
 
       if (response.ok) {
-        setFormData({ name: "", description: "" });
-        setIsAddingPosition(false);
-        setEditingPosition(null);
+        outcome = "success";
+        setSaveResult("success");
         await fetchPositions();
-        setSuccess(
-          editingPosition
-            ? "Position updated successfully!"
-            : "Position added successfully!",
-        );
-        setTimeout(() => setSuccess(""), 3000);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to save position");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save position");
+      setSaveResult("error");
+    } finally {
+      setIsSubmitting(false);
+      setTimeout(() => {
+        setSaveResult(null);
+        setError("");
+        if (outcome === "success") {
+          setFormData({ name: "", description: "" });
+          setIsAddingPosition(false);
+          setEditingPosition(null);
+        }
+      }, 2500);
     }
   };
 
@@ -144,6 +153,7 @@ export default function ManagerPositionsPage() {
 
       if (response.ok) {
         setSuccess("Position deleted successfully!");
+        setTimeout(() => setSuccess(""), 2500);
         fetchPositions();
       } else {
         const errorData = await response.json();
@@ -227,20 +237,34 @@ export default function ManagerPositionsPage() {
                   />
                 </div>
 
-                {error && (
+                {error && saveResult !== "success" && (
                   <div className="p-3 bg-danger-muted/20 border border-danger/30 rounded-lg">
                     <p className="text-sm text-danger">{error}</p>
                   </div>
                 )}
 
                 <div className="flex gap-3">
-                  <Button type="submit" isLoading={false}>
-                    {editingPosition ? "Update Position" : "Add Position"}
-                  </Button>
+                  {(() => {
+                    const variant =
+                      saveResult === "success" ? "success"
+                      : saveResult === "error" ? "danger"
+                      : "primary";
+                    const baseLabel = editingPosition ? "Update Position" : "Add Position";
+                    const label =
+                      saveResult === "success" ? (editingPosition ? "Updated!" : "Added!")
+                      : saveResult === "error" ? "Save failed — retry"
+                      : baseLabel;
+                    return (
+                      <Button type="submit" variant={variant} isLoading={isSubmitting}>
+                        {label}
+                      </Button>
+                    );
+                  })()}
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleCancel}
+                    disabled={isSubmitting}
                   >
                     Cancel
                   </Button>

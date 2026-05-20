@@ -60,8 +60,8 @@ export default function CreateSchedulePage() {
     } else {
       setDiagnostics([
         'Could not generate a valid schedule',
-        'Not enough workers available',
-        'Consider adjusting constraints or adding more workers',
+        'Not enough team members available',
+        'Consider adjusting constraints or adding more team members',
       ]);
     }
   };
@@ -176,7 +176,7 @@ export default function CreateSchedulePage() {
                   Respect availability
                 </p>
                 <p className="text-xs text-foreground-muted">
-                  Only schedule workers when they&apos;re available
+                  Only schedule team members when they&apos;re available
                 </p>
               </div>
             </label>
@@ -190,7 +190,7 @@ export default function CreateSchedulePage() {
               <div>
                 <p className="font-medium text-foreground">Balance hours</p>
                 <p className="text-xs text-foreground-muted">
-                  Distribute work hours fairly among workers
+                  Distribute work hours fairly among team members
                 </p>
               </div>
             </label>

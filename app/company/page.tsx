@@ -82,7 +82,7 @@ export default function CompanyPage() {
             <CardContent className="p-4 text-center">
               <Users className="w-8 h-8 mx-auto mb-2 text-blue-500" />
               <div className="text-2xl font-bold">{stats.totalWorkers}</div>
-              <div className="text-sm text-foreground-muted">Workers</div>
+              <div className="text-sm text-foreground-muted">Team Members</div>
             </CardContent>
           </Card>
           

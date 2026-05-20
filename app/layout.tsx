@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clocked - Worker Scheduling Made Simple",
+  title: "Clocked - Team Scheduling Made Simple",
   description: "A modern worker clock-in and schedule manager app for managing shifts and time tracking.",
   manifest: "/manifest.json",
   appleWebApp: {

@@ -31,6 +31,7 @@ export async function POST(request: Request) {
         id,
         start_time,
         end_time,
+        status,
         place_id,
         places:place_id (
           name
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
       `)
       .eq('worker_id', userId)
       .order('start_time', { ascending: false })
-      .limit(5);
+      .limit(10);
 
     if (error) {
       console.error('Work sessions error:', error);
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
         id: session.id,
         start_time: session.start_time,
         end_time: session.end_time,
+        status: session.status,
         place: { name: placeName },
       };
     }) || [];

@@ -7,9 +7,12 @@ import { Card, CardContent, Button, Input, Badge } from "@/components/ui";
 import {
   Play,
   Square,
-  Clock,
   MapPin,
   MessageSquare,
+  Edit2,
+  Check,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -28,14 +31,25 @@ interface Place {
   name: string;
 }
 
+type SessionStatus = 'active' | 'clocked_out' | 'auto_closed' | 'pending_review' | 'approved';
+
 interface RecentSession {
   id: string;
   start_time: string;
-  end_time: string;
+  end_time: string | null;
+  status?: SessionStatus;
   place?: { name: string };
   places?: { name: string };
   skills?: { name: string };
 }
+
+const STATUS_LABEL: Record<SessionStatus, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' | 'info' }> = {
+  active: { label: 'Active', variant: 'success' },
+  clocked_out: { label: 'Submitted', variant: 'default' },
+  auto_closed: { label: 'Auto-closed', variant: 'warning' },
+  pending_review: { label: 'Pending review', variant: 'warning' },
+  approved: { label: 'Approved', variant: 'success' },
+};
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -43,6 +57,13 @@ function formatElapsed(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+}
+
+// Format ISO string as YYYY-MM-DDTHH:MM in local time (for datetime-local input)
+function toLocalDateTimeInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function WorkerClockInPage() {
@@ -57,8 +78,15 @@ export default function WorkerClockInPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isClocking, setIsClocking] = useState(false);
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editStart, setEditStart] = useState('');
+  const [editEnd, setEditEnd] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
+    // Fire-and-forget: auto-close any of *this worker's* expired sessions before loading.
+    // Server endpoint sweeps all active sessions; we don't await — it just runs in parallel.
+    fetch('/api/time-tracking/auto-clockout', { method: 'POST' }).catch(() => {});
     fetchInitialData();
   }, []);
 
@@ -178,6 +206,64 @@ export default function WorkerClockInPage() {
       alert("An error occurred while clocking out");
     } finally {
       setIsClocking(false);
+    }
+  };
+
+  const startEditingSession = (session: RecentSession) => {
+    if (!session.end_time) return;
+    setEditingSessionId(session.id);
+    // Local-time HH:MM for inputs; full ISO will be reconstructed using the session date
+    setEditStart(toLocalDateTimeInput(session.start_time));
+    setEditEnd(toLocalDateTimeInput(session.end_time));
+  };
+
+  const cancelEdit = () => {
+    setEditingSessionId(null);
+    setEditStart('');
+    setEditEnd('');
+  };
+
+  const saveEdit = async (sessionId: string) => {
+    if (!editStart || !editEnd) {
+      alert('Both start and end are required');
+      return;
+    }
+    const startIso = new Date(editStart).toISOString();
+    const endIso = new Date(editEnd).toISOString();
+
+    if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+      alert('End time must be after start time');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch(`/api/profile/work-sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ start_time: startIso, end_time: endIso }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || 'Failed to save');
+        return;
+      }
+
+      cancelEdit();
+      await fetchInitialData();
+    } catch (err) {
+      console.error('Edit error:', err);
+      alert('An error occurred while saving');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -316,40 +402,100 @@ export default function WorkerClockInPage() {
                 Session History
               </h3>
               <div className="space-y-3">
-                {recentSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className="flex items-center justify-between p-3 bg-background-secondary rounded-lg"
-                  >
-                    <div>
-                      <p className="font-medium text-foreground text-sm">
-                        {session.place?.name || session.places?.name || "Unknown"}
-                      </p>
-                      <p className="text-xs text-foreground-muted">
-                        {new Date(session.start_time).toLocaleDateString()} •{" "}
-                        {new Date(session.start_time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: false,
-                        })}
-                        {session.end_time &&
-                          ` \u2013 ${new Date(session.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      {session.end_time ? (
-                        <span className="text-sm font-medium text-foreground">
-                          {formatSessionDuration(
-                            session.start_time,
-                            session.end_time,
+                {recentSessions.map((session) => {
+                  const status = (session.status || (session.end_time ? 'clocked_out' : 'active')) as SessionStatus;
+                  const statusInfo = STATUS_LABEL[status];
+                  const placeName = session.place?.name || session.places?.name || 'Unknown';
+                  const isEditing = editingSessionId === session.id;
+                  const isEditable = !!session.end_time && status !== 'approved' && status !== 'active';
+
+                  return (
+                    <div key={session.id} className="p-3 bg-background-secondary rounded-lg space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-foreground text-sm">{placeName}</p>
+                            <Badge variant={statusInfo.variant}>
+                              {statusInfo.label}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-foreground-muted mt-1">
+                            {new Date(session.start_time).toLocaleDateString()}
+                            {' · '}
+                            {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            {session.end_time && ` – ${new Date(session.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`}
+                          </p>
+                          {status === 'approved' && (
+                            <p className="text-[11px] text-success mt-0.5 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Locked by manager
+                            </p>
                           )}
-                        </span>
-                      ) : (
-                        <Badge variant="success">Active</Badge>
+                          {status === 'pending_review' && (
+                            <p className="text-[11px] text-warning mt-0.5 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" /> Waiting for manager approval
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right flex flex-col items-end gap-1">
+                          {session.end_time ? (
+                            <span className="text-sm font-medium text-foreground">
+                              {formatSessionDuration(session.start_time, session.end_time)}
+                            </span>
+                          ) : (
+                            <Badge variant="success">Active</Badge>
+                          )}
+                          {isEditable && !isEditing && (
+                            <button
+                              onClick={() => startEditingSession(session)}
+                              className="text-[11px] text-primary hover:underline flex items-center gap-0.5"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isEditing && (
+                        <div className="pt-2 border-t border-border space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] text-foreground-muted mb-1">Start</label>
+                              <input
+                                type="datetime-local"
+                                value={editStart}
+                                onChange={(e) => setEditStart(e.target.value)}
+                                className="w-full p-1.5 border border-border rounded text-xs bg-background text-foreground"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-foreground-muted mb-1">End</label>
+                              <input
+                                type="datetime-local"
+                                value={editEnd}
+                                onChange={(e) => setEditEnd(e.target.value)}
+                                className="w-full p-1.5 border border-border rounded text-xs bg-background text-foreground"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <Button size="sm" variant="outline" onClick={cancelEdit} disabled={savingEdit}>
+                              <X className="w-3 h-3 mr-1" />
+                              Cancel
+                            </Button>
+                            <Button size="sm" onClick={() => saveEdit(session.id)} isLoading={savingEdit}>
+                              <Check className="w-3 h-3 mr-1" />
+                              Submit for review
+                            </Button>
+                          </div>
+                          <p className="text-[10px] text-foreground-muted">
+                            Editing will set the shift back to pending review until a manager approves it.
+                          </p>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

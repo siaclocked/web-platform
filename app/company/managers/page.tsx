@@ -348,10 +348,10 @@ export default function CompanyManagersPage() {
                 <CardContent className="p-6">
                   <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
                     <Users className="w-5 h-5 text-primary" />
-                    Workers ({selectedManager.workers.length})
+                    Team Members ({selectedManager.workers.length})
                   </h3>
                   {selectedManager.workers.length === 0 ? (
-                    <p className="text-sm text-foreground-muted text-center py-4">No workers under this manager</p>
+                    <p className="text-sm text-foreground-muted text-center py-4">No team members under this manager</p>
                   ) : (
                     <div className="space-y-3">
                       {selectedManager.workers.map((worker) => (

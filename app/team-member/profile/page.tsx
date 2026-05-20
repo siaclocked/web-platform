@@ -211,7 +211,7 @@ export default function WorkerProfilePage() {
                 </h1>
                 <p className="text-foreground-muted mb-2">{profile.email}</p>
                 <div className="flex items-center gap-2">
-                  <Badge variant="info">Worker</Badge>
+                  <Badge variant="info">Team Member</Badge>
                   <span className="text-sm text-foreground-muted">
                     at {profile.companies?.name}
                   </span>

@@ -250,7 +250,7 @@ export default function ManagerProfilePage() {
                     <p className="text-2xl font-bold text-foreground">
                       {workerCount?.total_workers || 0}
                     </p>
-                    <p className="text-sm text-foreground-muted">Total Workers</p>
+                    <p className="text-sm text-foreground-muted">Total Team Members</p>
                   </div>
                 </div>
               </div>

@@ -240,6 +240,7 @@ export async function POST(request: NextRequest) {
         .from('work_sessions')
         .update({
           end_time: new Date().toISOString(),
+          status: 'clocked_out',
           handoff_note: handoff_note || null,
           handoff_audience: handoff_audience || null,
         })

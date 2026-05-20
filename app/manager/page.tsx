@@ -118,13 +118,13 @@ export default function ManagerDashboard() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-6">
             <span className="text-3xl font-bold text-foreground">{activeWorkers.length}</span>
-            <span className="text-sm text-foreground-muted mt-1">Active Workers</span>
+            <span className="text-sm text-foreground-muted mt-1">Active Team</span>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-6">
             <span className="text-3xl font-bold text-foreground">{workerCount}</span>
-            <span className="text-sm text-foreground-muted mt-1">Total Employees</span>
+            <span className="text-sm text-foreground-muted mt-1">Total Team Members</span>
           </CardContent>
         </Card>
         <Card>

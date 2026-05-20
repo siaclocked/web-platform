@@ -163,7 +163,7 @@ export default function AdminPlacesPage() {
     <PageContainer>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground mb-2">Company Places Overview</h1>
-        <p className="text-foreground-muted">View all places, their managers, workers, and active schedules</p>
+        <p className="text-foreground-muted">View all places, their managers, team members, and active schedules</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -201,7 +201,7 @@ export default function AdminPlacesPage() {
                       <div className="flex items-center gap-4 text-sm">
                         <div className="flex items-center gap-1 text-foreground-muted">
                           <Users className="w-4 h-4" />
-                          <span>{place.worker_count} workers</span>
+                          <span>{place.worker_count} team members</span>
                         </div>
                         <div className="flex items-center gap-1 text-foreground-muted">
                           <Calendar className="w-4 h-4" />
@@ -275,7 +275,7 @@ export default function AdminPlacesPage() {
                     <CardContent className="p-4">
                       <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
                         <Users className="w-5 h-5 text-primary" />
-                        Workers ({selectedPlace.workers.length})
+                        Team Members ({selectedPlace.workers.length})
                       </h3>
                       <div className="space-y-3">
                         {selectedPlace.workers.map((worker) => (
@@ -310,7 +310,7 @@ export default function AdminPlacesPage() {
                         ))}
                         {selectedPlace.workers.length === 0 && (
                           <div className="text-sm text-foreground-muted text-center py-4">
-                            No workers assigned to this place
+                            No team members assigned to this place
                           </div>
                         )}
                       </div>

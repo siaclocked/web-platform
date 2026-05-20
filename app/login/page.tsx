@@ -84,7 +84,7 @@ export default function LoginPage() {
 
           <Card
             className="hover:bg-background-secondary transition-colors cursor-pointer"
-            onClick={() => router.push('/login/worker')}
+            onClick={() => router.push('/login/team-member')}
           >
             <CardContent className="p-6">
               <div className="text-center mb-6">
@@ -92,7 +92,7 @@ export default function LoginPage() {
                   <User className="w-8 h-8 text-primary" />
                 </div>
                 <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Worker
+                  Team Member
                 </h3>
                 <p className="text-sm text-foreground-muted">
                   Sign in with email OTP code

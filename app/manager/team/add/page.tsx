@@ -188,7 +188,7 @@ export default function AddWorkerPage() {
     return (
       <PageContainer
         title="Success"
-        description="Worker account created"
+        description="Team member account created"
       >
         <Card>
           <CardContent className="text-center py-8">
@@ -197,12 +197,12 @@ export default function AddWorkerPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h3 className="text-xl font-semibold mb-2">Worker Created Successfully!</h3>
+            <h3 className="text-xl font-semibold mb-2">Team Member Created Successfully!</h3>
             <p className="text-foreground-muted mb-6">
-              {formData.email} will receive an email to set up their account
+              Account is ready. If <strong>{formData.email}</strong> is a real address, they can sign in at the team member login page where an OTP code will be sent to that email.
             </p>
             <div className="flex gap-3 justify-center">
-              <Button variant="outline" onClick={() => router.push('/manager/workers')}>
+              <Button variant="outline" onClick={() => router.push('/manager/team')}>
                 View Workers
               </Button>
               <Button onClick={() => {
@@ -223,7 +223,7 @@ export default function AddWorkerPage() {
                 setSelectedPositions([]);
                 setSelectedPlaces([]);
               }}>
-                Add Another Worker
+                Add Another Team Member
               </Button>
             </div>
           </CardContent>
@@ -234,7 +234,7 @@ export default function AddWorkerPage() {
 
   return (
     <PageContainer
-      title="Add Worker"
+      title="Add Team Member"
       description="Create a new worker account"
     >
       <Card className="max-w-md mx-auto">

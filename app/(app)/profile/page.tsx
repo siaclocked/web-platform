@@ -85,7 +85,7 @@ export default function ProfilePage() {
               ? 'Company Admin'
               : user.role === 'manager'
               ? 'Manager'
-              : 'Worker'}
+              : 'Team Member'}
           </Badge>
         </CardContent>
       </Card>

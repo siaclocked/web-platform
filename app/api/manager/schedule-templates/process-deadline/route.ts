@@ -6,7 +6,7 @@ import {
 } from '@/lib/notifications';
 import { buildSolverRequest } from '../solver-payload';
 
-const SOLVER_URL = process.env.SOLVER_URL || 'http://localhost:8000';
+const SOLVER_URL = process.env.SOLVER_SERVICE_URL || process.env.SOLVER_URL || 'http://localhost:8000';
 
 export async function POST(request: Request) {
   try {

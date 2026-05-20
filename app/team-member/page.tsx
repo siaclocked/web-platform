@@ -115,7 +115,7 @@ export default function WorkerDashboard() {
           </CardContent>
         </Card>
       ) : nextShift ? (
-        <Link href="/worker/schedule">
+        <Link href="/team-member/schedule">
           <Card className={`mb-4 border-l-4 ${nextShift.is_active ? "border-l-success bg-success-muted/10" : nextShift.is_today ? "border-l-primary bg-primary-muted/10" : "border-l-accent"}`}>
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
@@ -189,7 +189,7 @@ export default function WorkerDashboard() {
         </div>
       ) : hoursData ? (
         <div className="grid grid-cols-2 gap-3">
-          <Link href="/worker/hours">
+          <Link href="/team-member/hours">
             <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
               <CardContent className="flex flex-col items-center justify-center py-6">
                 <div className="w-10 h-10 bg-primary-muted rounded-full flex items-center justify-center mb-2">
@@ -201,7 +201,7 @@ export default function WorkerDashboard() {
               </CardContent>
             </Card>
           </Link>
-          <Link href="/worker/hours">
+          <Link href="/team-member/hours">
             <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
               <CardContent className="flex flex-col items-center justify-center py-6">
                 <div className="w-10 h-10 bg-success-muted rounded-full flex items-center justify-center mb-2">

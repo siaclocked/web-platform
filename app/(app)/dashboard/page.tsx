@@ -129,7 +129,7 @@ function ManagerDashboard() {
           <div className="flex items-center gap-3">
             <div className="w-3 h-3 bg-success rounded-full animate-pulse" />
             <div>
-              <p className="font-medium text-foreground">5 Workers Currently Clocked In</p>
+              <p className="font-medium text-foreground">5 Team Members Currently Clocked In</p>
               <p className="text-sm text-foreground-muted">All locations</p>
             </div>
           </div>
@@ -146,7 +146,7 @@ function ManagerDashboard() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-foreground">12</p>
-                <p className="text-xs text-foreground-muted">Workers</p>
+                <p className="text-xs text-foreground-muted">Team Members</p>
               </div>
             </div>
           </CardContent>
@@ -215,12 +215,12 @@ function ManagerDashboard() {
           </Card>
         </Link>
 
-        <Link href="/workers/add">
+        <Link href="/manager/team/add">
           <Card className="hover:bg-background-tertiary transition-colors cursor-pointer">
             <CardContent className="flex flex-col items-center py-4">
               <Users className="w-6 h-6 text-accent mb-2" />
               <span className="text-sm font-medium text-foreground">
-                Add Worker
+                Add Team Member
               </span>
             </CardContent>
           </Card>

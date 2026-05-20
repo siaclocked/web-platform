@@ -5,6 +5,7 @@ import { Avatar, Button } from '@/components/ui';
 import { Bell, LogOut, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { roleHomeSegment } from '@/lib/utils';
 
 export function Header() {
   const { user } = useAuthStore();
@@ -27,7 +28,7 @@ export function Header() {
       <div className="flex items-center justify-between h-14 px-4 lg:px-6">
         {/* Mobile logo — only on small screens where sidebar is hidden */}
         <div className="flex items-center gap-3 lg:hidden">
-          <Link href={`/${user.role === 'admin' ? 'manager' : user.role}`} className="flex items-center gap-2">
+          <Link href={`/${roleHomeSegment(user.role)}`} className="flex items-center gap-2">
             <span className="text-xl font-black tracking-tight text-foreground" style={{ fontFamily: "'Georgia', serif" }}>
               CLOCKED
             </span>
@@ -40,7 +41,7 @@ export function Header() {
         {/* Right side: notifications + avatar + logout */}
         <div className="flex items-center gap-2">
           <Link
-            href={`/${user.role === 'admin' ? 'company' : user.role}/notifications`}
+            href={`/${roleHomeSegment(user.role)}/notifications`}
             className="relative p-2 rounded-lg hover:bg-background-secondary transition-colors"
           >
             <Bell className="w-5 h-5 text-foreground-muted" />
@@ -52,7 +53,7 @@ export function Header() {
           </Link>
 
           <Link
-            href={`/${user.role === 'admin' ? 'company' : user.role}/profile`}
+            href={`/${roleHomeSegment(user.role)}/profile`}
             className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-background-secondary transition-colors"
           >
             <Avatar name={displayName} src={user.avatar_url} size="sm" />

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input } from '@/components/ui';
-import { Clock, Users, MapPin, ChevronRight, ChevronDown, ChevronUp, DollarSign, ArrowLeft, Search } from 'lucide-react';
+import { Clock, Users, MapPin, ChevronRight, ChevronDown, ChevronUp, DollarSign, ArrowLeft, Search, AlertTriangle, Check } from 'lucide-react';
 
 interface ActiveSession {
   id: string;
@@ -67,9 +67,24 @@ function formatElapsed(ms: number): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+type PendingSessionStatus = 'clocked_out' | 'auto_closed' | 'pending_review';
+
+interface PendingSession {
+  id: string;
+  worker_id: string;
+  worker_name: string;
+  place_id: string;
+  start_time: string;
+  end_time: string;
+  status: PendingSessionStatus;
+  places?: { name: string };
+}
+
 export default function ManagerWorkerTrackingPage() {
   const router = useRouter();
   const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -83,6 +98,8 @@ export default function ManagerWorkerTrackingPage() {
   const [expandedPlace, setExpandedPlace] = useState<string | null>(null);
 
   useEffect(() => {
+    // Sweep auto-clockout opportunistically so managers see fresh state
+    fetch('/api/time-tracking/auto-clockout', { method: 'POST' }).catch(() => {});
     fetchData();
   }, []);
 
@@ -98,19 +115,71 @@ export default function ManagerWorkerTrackingPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push('/login'); return; }
 
-      const response = await fetch('/api/manager/worker-tracking', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
+      const [trackingRes, ...pendingResponses] = await Promise.all([
+        fetch('/api/manager/worker-tracking', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }),
+        fetch('/api/manager/work-sessions?status=pending_review&limit=50', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }),
+        fetch('/api/manager/work-sessions?status=clocked_out&limit=50', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }),
+        fetch('/api/manager/work-sessions?status=auto_closed&limit=50', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }),
+      ]);
 
-      if (response.ok) {
-        const data = await response.json();
+      if (trackingRes.ok) {
+        const data = await trackingRes.json();
         setActiveSessions(data.activeSessions || []);
         setWorkers(data.workers || []);
       }
+
+      const pending: PendingSession[] = [];
+      for (const res of pendingResponses) {
+        if (res.ok) {
+          const d = await res.json();
+          pending.push(...(d.sessions || []));
+        }
+      }
+      pending.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+      setPendingSessions(pending);
     } catch (error) {
       console.error('Error fetching tracking data:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const approveSession = async (id: string) => {
+    setApprovingId(id);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch(`/api/manager/work-sessions/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: 'approve' }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || 'Failed to approve');
+        return;
+      }
+
+      setPendingSessions(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.error('Approve error:', err);
+      alert('An error occurred');
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -168,7 +237,7 @@ export default function ManagerWorkerTrackingPage() {
               className="flex items-center gap-1 text-sm text-foreground-muted hover:text-foreground mb-3 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              Back to Worker Tracking
+              Back to Team Tracking
             </button>
             <h1 className="text-2xl font-bold text-foreground">
               {workerDetail.worker.first_name} {workerDetail.worker.last_name}
@@ -296,11 +365,69 @@ export default function ManagerWorkerTrackingPage() {
     <PageContainer>
       <div className="max-w-4xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Worker Tracking</h1>
+          <h1 className="text-2xl font-bold text-foreground">Team Tracking</h1>
           <p className="text-foreground-muted">
             Monitor active clock-in sessions and worker hours
           </p>
         </div>
+
+        {/* Sessions awaiting approval */}
+        {pendingSessions.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              Awaiting Approval ({pendingSessions.length})
+            </h2>
+            <div className="space-y-2">
+              {pendingSessions.map(s => {
+                const start = new Date(s.start_time);
+                const end = new Date(s.end_time);
+                const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+                const statusLabel =
+                  s.status === 'pending_review' ? 'Edited — needs review'
+                  : s.status === 'auto_closed' ? 'Auto-closed'
+                  : 'Submitted';
+                const statusVariant: 'warning' | 'default' = s.status === 'pending_review' ? 'warning' : 'default';
+
+                return (
+                  <Card key={s.id} className={s.status === 'pending_review' ? 'border-l-4 border-l-warning' : ''}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-foreground">{s.worker_name}</p>
+                            <Badge variant={statusVariant}>{statusLabel}</Badge>
+                          </div>
+                          <p className="text-xs text-foreground-muted mt-1 flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {s.places?.name || 'Unknown'}
+                          </p>
+                          <p className="text-xs text-foreground-muted mt-0.5">
+                            {start.toLocaleDateString()}
+                            {' · '}
+                            {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            {' – '}
+                            {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            {' · '}
+                            <span className="font-medium text-foreground">{hours.toFixed(2)}h</span>
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => approveSession(s.id)}
+                          isLoading={approvingId === s.id}
+                        >
+                          <Check className="w-4 h-4 mr-1" />
+                          Approve
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Active Sessions */}
         <div className="mb-8">
@@ -312,7 +439,7 @@ export default function ManagerWorkerTrackingPage() {
             <Card>
               <CardContent className="py-6 text-center">
                 <Clock className="w-10 h-10 mx-auto mb-3 text-foreground-muted" />
-                <p className="text-foreground-muted">No workers currently clocked in</p>
+                <p className="text-foreground-muted">No team members currently clocked in</p>
               </CardContent>
             </Card>
           ) : (
@@ -360,7 +487,7 @@ export default function ManagerWorkerTrackingPage() {
         <div>
           <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
             <Users className="w-5 h-5 text-foreground-muted" />
-            All Workers ({workers.length})
+            All Team Members ({workers.length})
           </h2>
 
           <div className="mb-3">
@@ -368,7 +495,7 @@ export default function ManagerWorkerTrackingPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
               <Input
                 type="text"
-                placeholder="Search workers..."
+                placeholder="Search team members..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -380,7 +507,7 @@ export default function ManagerWorkerTrackingPage() {
             <Card>
               <CardContent className="py-6 text-center">
                 <Users className="w-10 h-10 mx-auto mb-3 text-foreground-muted" />
-                <p className="text-foreground-muted">No workers found</p>
+                <p className="text-foreground-muted">No team members found</p>
               </CardContent>
             </Card>
           ) : (

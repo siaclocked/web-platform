@@ -283,7 +283,7 @@ export default function ManagerWorkersPage() {
       });
 
       if (response.ok) {
-        setSuccess('Worker updated successfully!');
+        setSuccess('Team member updated successfully!');
         fetchWorkers();
         setTimeout(() => {
           setEditingWorker(null);
@@ -416,7 +416,7 @@ export default function ManagerWorkersPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground-muted w-4 h-4" />
             <Input
               type="text"
-              placeholder="Search employees etc."
+              placeholder="Search team members etc."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -434,7 +434,7 @@ export default function ManagerWorkersPage() {
             <CardContent className="text-center py-8">
               <Users className="w-12 h-12 mx-auto mb-4 text-foreground-muted" />
               <h3 className="text-lg font-medium mb-2">
-                {searchTerm ? 'No workers found' : 'No workers yet'}
+                {searchTerm ? 'No team members found' : 'No team members yet'}
               </h3>
               <p className="text-foreground-muted mb-4">
                 {searchTerm 
@@ -443,9 +443,9 @@ export default function ManagerWorkersPage() {
                 }
               </p>
               {!searchTerm && (
-                <Button onClick={() => router.push('/manager/workers/add')}>
+                <Button onClick={() => router.push('/manager/team/add')}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Worker
+                  Add Team Member
                 </Button>
               )}
             </CardContent>
@@ -764,15 +764,15 @@ export default function ManagerWorkersPage() {
               </div>
             ))}
 
-            {/* Add New Employee — wireframe style */}
+            {/* Add New Team Member — wireframe style */}
             <div
               className="flex items-center gap-4 px-4 py-3 bg-background-secondary border border-border border-dashed rounded-xl mt-2 hover:bg-background-tertiary transition-colors cursor-pointer"
-              onClick={() => router.push('/manager/workers/add')}
+              onClick={() => router.push('/manager/team/add')}
             >
               <div className="w-10 h-10 bg-background border border-border rounded-full flex items-center justify-center shrink-0">
                 <Users className="w-5 h-5 text-foreground-muted" />
               </div>
-              <span className="font-medium text-foreground">Add New Employee</span>
+              <span className="font-medium text-foreground">Add New Team Member</span>
               <Plus className="w-5 h-5 text-foreground-muted ml-auto" />
             </div>
           </div>

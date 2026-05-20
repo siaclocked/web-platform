@@ -8,7 +8,6 @@ import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp, S
 import { createClient } from '@/lib/supabase/client';
 
 interface PlaceSettings {
-  max_hours_per_day: number;
   min_hours_per_block: number;
   max_hours_per_block: number;
   min_rest_between_shifts: number;
@@ -17,7 +16,6 @@ interface PlaceSettings {
 }
 
 const DEFAULT_SETTINGS: PlaceSettings = {
-  max_hours_per_day: 12,
   min_hours_per_block: 2,
   max_hours_per_block: 10,
   min_rest_between_shifts: 8,
@@ -65,6 +63,9 @@ export default function ManagerPlacesPage() {
   const [expandedSettings, setExpandedSettings] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingSkillRules, setSavingSkillRules] = useState(false);
+  // Per-place save outcome — drives the Save button's variant + label for 2s after a save.
+  const [saveResult, setSaveResult] = useState<Record<string, 'success' | 'error' | null>>({});
+  const [saveError, setSaveError] = useState<Record<string, string>>({});
   const [expandedWorkers, setExpandedWorkers] = useState<string | null>(null);
   const [loadingWorkers, setLoadingWorkers] = useState<string | null>(null);
   const [skillRules, setSkillRules] = useState<PlaceSkillRule[]>([]);
@@ -228,6 +229,9 @@ export default function ManagerPlacesPage() {
     setSavingSettings(true);
     setSavingSkillRules(true);
     setError('');
+    setSaveResult(s => ({ ...s, [placeId]: null }));
+    setSaveError(s => ({ ...s, [placeId]: '' }));
+    let outcome: 'success' | 'error' = 'error';
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -269,16 +273,30 @@ export default function ManagerPlacesPage() {
         }
 
         setSuccess('Settings and skill rules saved!');
+        setSaveResult(s => ({ ...s, [placeId]: 'success' }));
+        outcome = 'success';
         await fetchPlaces();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save settings');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save settings');
+      const msg = err instanceof Error ? err.message : 'Failed to save settings';
+      setError(msg);
+      setSaveResult(s => ({ ...s, [placeId]: 'error' }));
+      setSaveError(s => ({ ...s, [placeId]: msg }));
     } finally {
       setSavingSettings(false);
       setSavingSkillRules(false);
+      // Auto-reset the button state after 2.5s so the next save starts fresh.
+      // On success, also collapse the settings panel (only if this place's panel is still the one open).
+      setTimeout(() => {
+        setSaveResult(s => ({ ...s, [placeId]: null }));
+        setSaveError(s => ({ ...s, [placeId]: '' }));
+        if (outcome === 'success') {
+          setExpandedSettings(current => (current === placeId ? null : current));
+        }
+      }, 2500);
     }
   };
 
@@ -548,7 +566,7 @@ export default function ManagerPlacesPage() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-foreground-muted py-2">No workers assigned to this place yet</p>
+                        <p className="text-sm text-foreground-muted py-2">No team members assigned to this place yet</p>
                       )}
                     </div>
                   )}
@@ -560,19 +578,6 @@ export default function ManagerPlacesPage() {
                         Scheduling Settings
                       </h4>
                       <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-foreground-muted mb-1">
-                            Max Hours Per Day
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="24"
-                            value={settingsForm.max_hours_per_day}
-                            onChange={(e) => setSettingsForm(s => ({ ...s, max_hours_per_day: Number(e.target.value) }))}
-                            className="w-full p-2 border border-border rounded-lg text-sm"
-                          />
-                        </div>
                         <div>
                           <label className="block text-xs font-medium text-foreground-muted mb-1">
                             Min Hours Per Shift
@@ -680,13 +685,28 @@ export default function ManagerPlacesPage() {
                           </div>
                         )}
                       </div>
-                      <div className="mt-4 flex gap-2">
-                        <Button size="sm" onClick={() => saveSettings(place.id)} isLoading={savingSettings || savingSkillRules}>
-                          Save Settings & Rules
-                        </Button>
+                      <div className="mt-4 flex items-center gap-2">
+                        {(() => {
+                          const result = saveResult[place.id] ?? null;
+                          const variant = result === 'success' ? 'success' : result === 'error' ? 'danger' : 'primary';
+                          const label = result === 'success' ? 'Saved!' : result === 'error' ? 'Save failed — retry' : 'Save Settings & Rules';
+                          return (
+                            <Button
+                              size="sm"
+                              variant={variant}
+                              onClick={() => saveSettings(place.id)}
+                              isLoading={(savingSettings || savingSkillRules) && expandedSettings === place.id}
+                            >
+                              {label}
+                            </Button>
+                          );
+                        })()}
                         <Button size="sm" variant="outline" onClick={() => setExpandedSettings(null)}>
                           Cancel
                         </Button>
+                        {saveResult[place.id] === 'error' && saveError[place.id] && (
+                          <span className="text-xs text-danger">{saveError[place.id]}</span>
+                        )}
                       </div>
                     </div>
                   )}

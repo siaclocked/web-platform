@@ -106,6 +106,7 @@ export async function POST() {
           .from('work_sessions')
           .update({
             end_time: autoEndTime.toISOString(),
+            status: 'auto_closed',
             handoff_note: 'Auto clocked out (shift ended)',
           })
           .eq('id', session.id);

@@ -144,8 +144,8 @@ export async function POST(request: Request) {
           await createBulkNotifications({
             userIds: managerIds,
             type: NOTIFICATION_TYPES.WORKER_AVAILABILITY_SET,
-            title: 'Worker Availability Updated',
-            message: `${workerName} has set their availability! Check it out in the Worker Availability page.`,
+            title: 'Team Availability Updated',
+            message: `${workerName} has set their availability! Check it out in the Team Availability page.`,
             metadata: { worker_id: user.id },
           });
         }

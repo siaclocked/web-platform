@@ -505,7 +505,7 @@ export default function CreateSchedulePage() {
 
       if (solverResponse.ok && solverResult.success) {
         if (solverResult.is_feasible) {
-          alert(`Schedule generated successfully! ${solverResult.result?.assignments?.length || 0} shifts assigned.\n\nReview the schedule and approve it to send to employees.`);
+          alert(`Schedule generated successfully! ${solverResult.result?.assignments?.length || 0} shifts assigned.\n\nReview the schedule and approve it to send to the team.`);
         } else {
           alert(`Schedule generated with coverage gaps. Review the results and edit manually if needed.`);
         }

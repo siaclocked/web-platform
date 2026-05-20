@@ -56,7 +56,6 @@ type SolverRequest = {
     scheduled_hours_outside_interval: number;
   }>;
   settings: {
-    max_hours_per_day: number;
     min_shift_minutes: number;
     max_shift_minutes: number;
     min_hours_per_block: number;
@@ -282,8 +281,8 @@ export async function buildSolverRequest(params: {
     }
     workerAvailabilityMap[entry.worker_id][entry.date] = {
       type: entry.availability_type,
-      start_time: entry.start_time,
-      end_time: entry.end_time,
+      start_time: entry.start_time ?? undefined,
+      end_time: entry.end_time ?? undefined,
     };
   });
 
@@ -493,7 +492,6 @@ export async function buildSolverRequest(params: {
     unavailability,
     worker_month_context: workerMonthContext,
     settings: {
-      max_hours_per_day: Number(placeSettings.max_hours_per_day) || 12,
       min_shift_minutes: minShiftMinutes,
       max_shift_minutes: maxShiftMinutes,
       min_hours_per_block: minShiftMinutes / 60,
