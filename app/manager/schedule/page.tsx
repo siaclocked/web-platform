@@ -6,8 +6,9 @@ import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 
 import { Calendar, Users, Clock, MapPin, ChevronDown, ChevronUp, AlertCircle, Send, CheckCircle, ChevronLeft, ChevronRight, Plus, Trash2, Edit2, Save, BarChart3 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import Link from 'next/link';
+import { buildMonthGrid } from '@/lib/utils';
 
 type ViewMode = 'month' | 'week' | 'grid' | 'list' | 'hours';
 
@@ -176,16 +177,7 @@ export default function ManagerSchedulePage() {
 
   const fetchSchedules = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) return;
-
-      const response = await fetch('/api/manager/schedule-templates', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token || ''}`,
-        },
-      });
+      const response = await authedFetch('/api/manager/schedule-templates');
 
       if (response.ok) {
         const data = (await response.json()) as ScheduleTemplateResponse;
@@ -198,15 +190,7 @@ export default function ManagerSchedulePage() {
 
   const fetchPlaces = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/manager/places', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token || ''}`,
-        },
-      });
+      const response = await authedFetch('/api/manager/places');
 
       if (response.ok) {
         const data = await response.json();
@@ -219,15 +203,7 @@ export default function ManagerSchedulePage() {
 
   const fetchPositions = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/manager/positions', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
+      const response = await authedFetch('/api/manager/positions');
 
       if (response.ok) {
         const data = await response.json();
@@ -241,13 +217,7 @@ export default function ManagerSchedulePage() {
   const fetchWorkerHours = async (scheduleId: string) => {
     setIsLoadingHours(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(`/api/manager/schedule-templates/${scheduleId}/worker-hours`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
+      const response = await authedFetch(`/api/manager/schedule-templates/${scheduleId}/worker-hours`);
 
       if (response.ok) {
         const data = await response.json();
@@ -271,18 +241,12 @@ export default function ManagerSchedulePage() {
 
     // Fetch workers from all schedule places (deduplicated)
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
       const placeIds = [...new Set(schedules.map(s => s.place_id))];
       const allWorkers: AvailableWorker[] = [];
       const seenIds = new Set<string>();
 
       for (const placeId of placeIds) {
-        const response = await fetch(`/api/manager/places/${placeId}/workers`, {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
-        });
+        const response = await authedFetch(`/api/manager/places/${placeId}/workers`);
         if (response.ok) {
           const data = (await response.json()) as PlaceWorkersResponse;
           (data.workers || []).forEach((worker) => {
@@ -414,10 +378,6 @@ export default function ManagerSchedulePage() {
   const saveEdits = async (silent = false): Promise<boolean> => {
     setSavingEdits(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return false;
-
       // Only save the schedule currently being edited
       const schedule = schedules.find(s => s.id === editingScheduleId);
       if (!schedule || !schedule.solver_result) {
@@ -426,11 +386,10 @@ export default function ManagerSchedulePage() {
         return false;
       }
 
-      const response = await fetch('/api/manager/schedule-templates/edit-assignments', {
+      const response = await authedFetch('/api/manager/schedule-templates/edit-assignments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           schedule_template_id: schedule.id,
@@ -717,15 +676,10 @@ export default function ManagerSchedulePage() {
       if (!saved) { setPublishingId(null); return; }
       stopEditing();
 
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/manager/schedule-templates/publish-schedule', {
+      const response = await authedFetch('/api/manager/schedule-templates/publish-schedule', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ schedule_template_id: scheduleId, skip_validation: true }),
       });
@@ -750,15 +704,10 @@ export default function ManagerSchedulePage() {
     if (!confirm('Publish this schedule? Team members will be notified of their assigned shifts.')) return;
     setPublishingId(scheduleId);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/manager/schedule-templates/publish-schedule', {
+      const response = await authedFetch('/api/manager/schedule-templates/publish-schedule', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ schedule_template_id: scheduleId }),
       });
@@ -784,15 +733,10 @@ export default function ManagerSchedulePage() {
       return;
     }
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/manager/schedule-templates', {
+      const response = await authedFetch('/api/manager/schedule-templates', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ id: scheduleId }),
       });
@@ -822,33 +766,10 @@ export default function ManagerSchedulePage() {
   // Month calendar helpers
   const mYear = currentMonth.getFullYear();
   const mMonth = currentMonth.getMonth();
-  const daysInMonth = new Date(mYear, mMonth + 1, 0).getDate();
-  const firstDayOfWeek = new Date(mYear, mMonth, 1).getDay();
   const monthLabel = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const todayStr = new Date().toISOString().split('T')[0];
 
-  const calendarDays: Array<{ day: number; dateStr: string; isCurrentMonth: boolean }> = [];
-  // Previous month filler
-  const prevMonthLastDay = new Date(mYear, mMonth, 0).getDate();
-  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-    const d = prevMonthLastDay - i;
-    const pm = mMonth === 0 ? 12 : mMonth;
-    const py = mMonth === 0 ? mYear - 1 : mYear;
-    calendarDays.push({ day: d, dateStr: `${py}-${String(pm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${mYear}-${String(mMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    calendarDays.push({ day: d, dateStr, isCurrentMonth: true });
-  }
-  // Next month filler
-  const remainingCells = 7 - (calendarDays.length % 7);
-  if (remainingCells < 7) {
-    for (let d = 1; d <= remainingCells; d++) {
-      const nm = mMonth + 2 > 12 ? 1 : mMonth + 2;
-      const ny = mMonth + 2 > 12 ? mYear + 1 : mYear;
-      calendarDays.push({ day: d, dateStr: `${ny}-${String(nm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
-    }
-  }
+  const calendarDays = buildMonthGrid(mYear, mMonth);
 
   // Week view helpers
   const weekDays: string[] = [];
@@ -1118,7 +1039,7 @@ export default function ManagerSchedulePage() {
                   </div>
 
                   <div className="grid grid-cols-7 mb-1">
-                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                    {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => (
                       <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
                     ))}
                   </div>
@@ -1454,7 +1375,7 @@ export default function ManagerSchedulePage() {
                     </div>
 
                     <div className="grid grid-cols-7 mb-1">
-                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                      {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => (
                         <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
                       ))}
                     </div>

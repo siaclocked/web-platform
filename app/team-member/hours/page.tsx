@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Badge } from '@/components/ui';
 import { Clock, DollarSign, TrendingUp, MapPin, Briefcase } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch, NotAuthenticatedError } from '@/lib/api';
 
 interface Session {
   id: string;
@@ -40,25 +40,17 @@ export default function WorkerHoursPage() {
 
   const fetchHours = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await fetch('/api/worker/hours', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
+      const response = await authedFetch('/api/worker/hours');
 
       if (response.ok) {
         const result = await response.json();
         setData(result);
       }
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) {
+        router.push('/login');
+        return;
+      }
       console.error('Error fetching hours:', error);
     } finally {
       setIsLoading(false);

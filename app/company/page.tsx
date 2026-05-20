@@ -6,7 +6,7 @@ import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { Building2, Users, Calendar, Plus, TrendingUp, MapPin } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 
 export default function CompanyPage() {
   const router = useRouter();
@@ -24,16 +24,11 @@ export default function CompanyPage() {
 
   const fetchStats = async () => {
     try {
-      // Get auth token
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
       // Use service role API to bypass RLS issues
-      const response = await fetch('/api/company/stats', {
+      const response = await authedFetch('/api/company/stats', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
       });
       

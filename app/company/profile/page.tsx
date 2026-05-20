@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Avatar, Badge } from '@/components/ui';
 import { User, Mail, Phone, Building2, Edit2, Save, X } from 'lucide-react';
@@ -82,21 +83,11 @@ export default function CompanyProfilePage() {
     setSaveLoading(true);
 
     try {
-      const supabase = createClient();
-      
-      // Get current session token
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        throw new Error('Not authenticated');
-      }
-      
       // Update profile using service role API
-      const response = await fetch('/api/company/profile/update', {
+      const response = await authedFetch('/api/company/profile/update', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           first_name: editForm.first_name,

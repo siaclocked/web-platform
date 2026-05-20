@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input } from '@/components/ui';
 import { Users, Plus, Eye, Trash2, Mail, Phone, Search, MapPin, ChevronLeft, Edit2, Save, X } from 'lucide-react';
@@ -83,22 +83,14 @@ export default function CompanyManagersPage() {
     }
   }, [searchTerm, managers]);
 
-  const getToken = async () => {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || '';
-  };
-
   const fetchManagers = async () => {
     try {
-      const token = await getToken();
-      const response = await fetch('/api/company/managers', {
+      const response = await authedFetch('/api/company/managers', {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
       });
-      
+
       if (response.ok) {
         const { managers: managersData } = await response.json();
         setManagers(managersData || []);
@@ -119,10 +111,7 @@ export default function CompanyManagersPage() {
   const fetchManagerDetails = async (managerId: string) => {
     setIsLoadingDetails(true);
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/company/managers/${managerId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const response = await authedFetch(`/api/company/managers/${managerId}`);
 
       if (response.ok) {
         const data: ManagerDetails = await response.json();
@@ -145,12 +134,10 @@ export default function CompanyManagersPage() {
     if (!selectedManager) return;
     setIsSaving(true);
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/company/managers/${selectedManager.manager.id}`, {
+      const response = await authedFetch(`/api/company/managers/${selectedManager.manager.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(editForm),
       });

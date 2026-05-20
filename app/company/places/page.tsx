@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { MapPin, Users, Calendar, Building2, User, ChevronRight } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 
 interface Manager {
   id: string;
@@ -36,15 +36,8 @@ export default function CompanyPlacesPage() {
 
   const fetchPlaces = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/company/places', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch('/api/company/places');
+
       if (response.ok) {
         const data = await response.json();
         setPlaces(data.places || []);

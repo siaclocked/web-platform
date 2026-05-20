@@ -6,7 +6,7 @@ import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button } from '@/components/ui';
 
 import { Building2, Mail, Phone, MapPin, Clock, Save } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch, NotAuthenticatedError } from '@/lib/api';
 
 interface Company {
   id: string;
@@ -42,17 +42,7 @@ export default function CompanySettingsPage() {
   const fetchCompanyData = async () => {
     setIsLoading(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await fetch('/api/company/settings', {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
+      const response = await authedFetch('/api/company/settings');
 
       if (!response.ok) {
         console.error('Error fetching company settings');
@@ -66,6 +56,10 @@ export default function CompanySettingsPage() {
         name: data.company.name,
       });
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) {
+        router.push('/login');
+        return;
+      }
       console.error('Error fetching company data:', error);
     } finally {
       setIsLoading(false);
@@ -74,24 +68,15 @@ export default function CompanySettingsPage() {
 
   const handleSave = async () => {
     if (!company) return;
-    
+
     setSaving(true);
     setSaveMessage(null);
 
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await fetch('/api/company/settings', {
+      const response = await authedFetch('/api/company/settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify(editedCompany),
       });
@@ -104,6 +89,10 @@ export default function CompanySettingsPage() {
         setSaveMessage(err.error || 'Failed to save changes');
       }
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) {
+        router.push('/login');
+        return;
+      }
       console.error('Error saving:', error);
       setSaveMessage('An error occurred');
     } finally {

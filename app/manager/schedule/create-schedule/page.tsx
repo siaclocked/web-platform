@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 
@@ -85,13 +85,7 @@ export default function CreateSchedulePage() {
 
   const loadExistingSchedule = async (id: string) => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch('/api/manager/schedule-templates', {
-        headers: { 'Authorization': `Bearer ${session.access_token || ''}` },
-      });
+      const response = await authedFetch('/api/manager/schedule-templates');
 
       if (response.ok) {
         const data = await response.json();
@@ -135,13 +129,7 @@ export default function CreateSchedulePage() {
 
   const fetchPlaces = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setPlaces([]); return; }
-
-      const response = await fetch('/api/manager/places', {
-        headers: { 'Authorization': `Bearer ${session.access_token || ''}` },
-      });
+      const response = await authedFetch('/api/manager/places');
 
       if (response.ok) {
         const data = await response.json();
@@ -157,12 +145,7 @@ export default function CreateSchedulePage() {
 
   const fetchPositions = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const response = await fetch('/api/manager/positions', {
-        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` },
-      });
+      const response = await authedFetch('/api/manager/positions');
 
       if (response.ok) {
         const data = await response.json();
@@ -178,8 +161,9 @@ export default function CreateSchedulePage() {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1);
+    const mondayOffset = (firstDay.getDay() + 6) % 7; // 0=Mon..6=Sun
     const calendarStart = new Date(firstDay);
-    calendarStart.setDate(calendarStart.getDate() - firstDay.getDay());
+    calendarStart.setDate(calendarStart.getDate() - mondayOffset);
 
     const days: Array<{
       date: number; month: number; year: number;
@@ -395,15 +379,6 @@ export default function CreateSchedulePage() {
     setIsSaving(true);
 
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        alert('You must be logged in');
-        setIsSaving(false);
-        return;
-      }
-
       // Auto-set availability deadline for backwards compat
       const endDate = dateRange.end || new Date();
       const deadline = new Date(endDate);
@@ -428,20 +403,18 @@ export default function CreateSchedulePage() {
 
       let response;
       if (isNew) {
-        response = await fetch('/api/manager/schedule-templates', {
+        response = await authedFetch('/api/manager/schedule-templates', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token || ''}`,
           },
           body: JSON.stringify(templateData),
         });
       } else {
-        response = await fetch('/api/manager/schedule-templates', {
+        response = await authedFetch('/api/manager/schedule-templates', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token || ''}`,
           },
           body: JSON.stringify({ id: formData.id, ...templateData }),
         });
@@ -453,7 +426,7 @@ export default function CreateSchedulePage() {
           if (andPublish) {
             // Publish and run solver
             const scheduleId = result.id || formData.id;
-            await publishAndSolve(session.access_token, scheduleId);
+            await publishAndSolve(scheduleId);
           } else {
             router.push('/manager/schedule');
           }
@@ -472,14 +445,13 @@ export default function CreateSchedulePage() {
     }
   };
 
-  const publishAndSolve = async (accessToken: string, scheduleId: string) => {
+  const publishAndSolve = async (scheduleId: string) => {
     try {
       // Step 1: Mark as published
-      const pubResponse = await fetch('/api/manager/schedule-templates/publish', {
+      const pubResponse = await authedFetch('/api/manager/schedule-templates/publish', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ id: scheduleId }),
       });
@@ -492,11 +464,10 @@ export default function CreateSchedulePage() {
       }
 
       // Step 2: Trigger solver
-      const solverResponse = await fetch('/api/manager/schedule-templates/process-deadline', {
+      const solverResponse = await authedFetch('/api/manager/schedule-templates/process-deadline', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ schedule_template_id: scheduleId }),
       });
@@ -763,7 +734,7 @@ export default function CreateSchedulePage() {
               </div>
 
               <div className="grid grid-cols-7 gap-1 text-xs">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
                   <div key={day} className="text-center font-medium text-foreground-muted p-1">
                     {day}
                   </div>

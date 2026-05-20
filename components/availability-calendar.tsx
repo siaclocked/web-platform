@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { memo, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card, CardContent, Button } from '@/components/ui';
 import { ChevronLeft, ChevronRight, X, Clock, Palmtree, HelpCircle, Undo2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import { buildMonthGrid } from '@/lib/utils';
 
 // Semantics: a worker is **available by default** on every date. Only explicit
@@ -83,6 +83,13 @@ export function AvailabilityCalendar({
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Cache of months we've already fetched. Key: "${apiEndpoint}|${targetWorkerId||'self'}|${yyyy-MM}".
+  // Lets us flip between adjacent months without re-fetching the same data and flickering the spinner.
+  const fetchedKeysRef = useRef<Set<string>>(new Set());
+  // Latest `dirty` set, read inside the merge updater to preserve user edits during a refetch.
+  const dirtyRef = useRef<Set<string>>(dirty);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
   const [helpDismissed, setHelpDismissed] = useState(true);
   useEffect(() => {
     setHelpDismissed(typeof window !== 'undefined' && localStorage.getItem(HELP_DISMISS_KEY) === '1');
@@ -125,47 +132,74 @@ export function AvailabilityCalendar({
     return new Set(inMonthDates.slice(lo, hi + 1));
   }, [dragAnchor, dragHover, inMonthDates, inMonthIndex]);
 
+  // Build the 3 month keys we'd cover with a fetch around (mYear, mMonth).
+  const buildMonthKeys = useCallback((year: number, month: number) => {
+    const prefix = `${apiEndpoint}|${targetWorkerId || 'self'}`;
+    const keys: string[] = [];
+    for (let offset = -1; offset <= 1; offset++) {
+      const d = new Date(year, month + offset, 1);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      keys.push(`${prefix}|${yyyy}-${mm}`);
+    }
+    return keys;
+  }, [apiEndpoint, targetWorkerId]);
+
   const fetchAvailability = useCallback(async () => {
+    const monthKeys = buildMonthKeys(mYear, mMonth);
+    if (monthKeys.every(k => fetchedKeysRef.current.has(k))) {
+      // Cache hit — data already in `availability` from a prior fetch.
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
       const start = new Date(mYear, mMonth - 1, 1).toISOString().split('T')[0];
       const end = new Date(mYear, mMonth + 2, 0).toISOString().split('T')[0];
 
       const params = new URLSearchParams({ start_date: start, end_date: end });
       if (targetWorkerId) params.set('worker_id', targetWorkerId);
 
-      const response = await fetch(`${apiEndpoint}?${params}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const response = await authedFetch(`${apiEndpoint}?${params}`);
 
       if (response.ok) {
         const data = await response.json();
-        const map: AvailabilityMap = {};
         type EntryRow = { date: string; availability_type: StoredType; start_time?: string | null; end_time?: string | null };
-        (data.entries as EntryRow[] || []).forEach((e) => {
-          if (e.availability_type === 'available_all_day') return;
-          map[e.date] = {
-            date: e.date,
-            availability_type: e.availability_type,
-            start_time: e.start_time,
-            end_time: e.end_time,
-          };
+        const entries = (data.entries as EntryRow[] || []);
+        // Merge into existing state, preserving any dirty (unsaved) edits.
+        setAvailability(prev => {
+          const next = { ...prev };
+          const dirtyNow = dirtyRef.current;
+          for (const e of entries) {
+            if (e.availability_type === 'available_all_day') continue;
+            if (dirtyNow.has(e.date)) continue;
+            next[e.date] = {
+              date: e.date,
+              availability_type: e.availability_type,
+              start_time: e.start_time,
+              end_time: e.end_time,
+            };
+          }
+          return next;
         });
-        setAvailability(map);
-        setDirty(new Set());
-        setSaveResult(null);
-        setSaveError('');
+        monthKeys.forEach(k => fetchedKeysRef.current.add(k));
       }
     } catch (error) {
       console.error('Error fetching availability:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [apiEndpoint, targetWorkerId, mYear, mMonth]);
+  }, [apiEndpoint, targetWorkerId, mYear, mMonth, buildMonthKeys]);
+
+  // When the target (endpoint or worker) changes, invalidate cache and local state.
+  useEffect(() => {
+    fetchedKeysRef.current = new Set();
+    setAvailability({});
+    setDirty(new Set());
+    setSaveResult(null);
+    setSaveError('');
+  }, [apiEndpoint, targetWorkerId]);
 
   useEffect(() => {
     fetchAvailability();
@@ -249,16 +283,18 @@ export function AvailabilityCalendar({
     dragStateRef.current = { anchor: dragAnchor, hover: dragHover };
   }, [dragAnchor, dragHover]);
 
-  const handlePointerDown = (dateStr: string, isCurrentMonth: boolean) => {
+  // Stable handlers (empty deps) — read latest drag state from a ref so memo'd cells aren't invalidated.
+  const handlePointerDown = useCallback((dateStr: string, isCurrentMonth: boolean) => {
     if (!isCurrentMonth) return;
     setDragAnchor(dateStr);
     setDragHover(dateStr);
-  };
-  const handlePointerEnter = (dateStr: string, isCurrentMonth: boolean) => {
-    if (!dragAnchor || !isCurrentMonth) return;
-    if (dateStr === dragHover) return; // dedupe — no setState if same cell
+  }, []);
+  const handlePointerEnter = useCallback((dateStr: string, isCurrentMonth: boolean) => {
+    const { anchor, hover } = dragStateRef.current;
+    if (!anchor || !isCurrentMonth) return;
+    if (dateStr === hover) return;
     setDragHover(dateStr);
-  };
+  }, []);
 
   useEffect(() => {
     if (!dragAnchor) return;
@@ -355,11 +391,6 @@ export function AvailabilityCalendar({
     setSaveError('');
 
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const token = session.access_token;
-
       const entriesToSave: AvailabilityEntry[] = [];
       const datesToDelete: string[] = [];
 
@@ -371,9 +402,9 @@ export function AvailabilityCalendar({
       const bodyExtra = targetWorkerId ? { worker_id: targetWorkerId } : {};
 
       if (entriesToSave.length > 0) {
-        const res = await fetch(apiEndpoint, {
+        const res = await authedFetch(apiEndpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...bodyExtra, entries: entriesToSave }),
         });
         if (!res.ok) {
@@ -383,9 +414,9 @@ export function AvailabilityCalendar({
       }
 
       if (datesToDelete.length > 0) {
-        const res = await fetch(apiEndpoint, {
+        const res = await authedFetch(apiEndpoint, {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...bodyExtra, dates: datesToDelete }),
         });
         if (!res.ok) {
@@ -523,10 +554,10 @@ export function AvailabilityCalendar({
           </div>
 
           <div className="grid grid-cols-7 mb-1">
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
+            {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d, i) => (
               <div
                 key={d}
-                className={`text-center text-xs font-semibold py-2 ${i === 0 || i === 6 ? 'text-foreground-muted/80' : 'text-foreground-muted'}`}
+                className={`text-center text-xs font-semibold py-2 ${i === 5 || i === 6 ? 'text-foreground-muted/80' : 'text-foreground-muted'}`}
               >
                 {d}
               </div>
@@ -539,33 +570,20 @@ export function AvailabilityCalendar({
             </div>
           ) : (
             <div className="grid grid-cols-7 select-none">
-              {calendarDays.map((cell) => {
-                const isToday = cell.dateStr === todayStr;
-                const label = cell.isCurrentMonth ? cellLabel(cell.dateStr) : null;
-                const isDirtyCell = dirty.has(cell.dateStr);
-
-                return (
-                  <button
-                    key={cell.dateStr + (cell.isCurrentMonth ? 'i' : 'o')}
-                    onPointerDown={(e) => { e.preventDefault(); handlePointerDown(cell.dateStr, cell.isCurrentMonth); }}
-                    onPointerEnter={() => handlePointerEnter(cell.dateStr, cell.isCurrentMonth)}
-                    disabled={!cell.isCurrentMonth}
-                    className={cellClasses(cell)}
-                  >
-                    <span className={`text-sm font-semibold leading-none ${isToday ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center' : ''} ${!cell.isCurrentMonth ? 'text-foreground-muted/40' : 'text-foreground'}`}>
-                      {cell.day}
-                    </span>
-                    {label && (
-                      <span className="mt-auto text-[10px] sm:text-xs text-foreground-muted truncate w-full">
-                        {label}
-                      </span>
-                    )}
-                    {isDirtyCell && (
-                      <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-warning rounded-full" />
-                    )}
-                  </button>
-                );
-              })}
+              {calendarDays.map((cell) => (
+                <DayCell
+                  key={cell.dateStr + (cell.isCurrentMonth ? 'i' : 'o')}
+                  dateStr={cell.dateStr}
+                  day={cell.day}
+                  isCurrentMonth={cell.isCurrentMonth}
+                  isToday={cell.dateStr === todayStr}
+                  className={cellClasses(cell)}
+                  label={cell.isCurrentMonth ? cellLabel(cell.dateStr) : null}
+                  isDirty={dirty.has(cell.dateStr)}
+                  onPointerDown={handlePointerDown}
+                  onPointerEnter={handlePointerEnter}
+                />
+              ))}
             </div>
           )}
 
@@ -695,6 +713,51 @@ interface TypeChipProps {
   icon: React.ReactNode;
   onClick: () => void;
 }
+
+interface DayCellProps {
+  dateStr: string;
+  day: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  className: string;
+  label: string | null;
+  isDirty: boolean;
+  onPointerDown: (dateStr: string, isCurrentMonth: boolean) => void;
+  onPointerEnter: (dateStr: string, isCurrentMonth: boolean) => void;
+}
+
+const DayCell = memo(function DayCell({
+  dateStr,
+  day,
+  isCurrentMonth,
+  isToday,
+  className,
+  label,
+  isDirty,
+  onPointerDown,
+  onPointerEnter,
+}: DayCellProps) {
+  const dayClass = isToday
+    ? 'bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-semibold leading-none'
+    : `text-sm font-semibold leading-none ${isCurrentMonth ? 'text-foreground' : 'text-foreground-muted/40'}`;
+
+  return (
+    <button
+      onPointerDown={(e) => { e.preventDefault(); onPointerDown(dateStr, isCurrentMonth); }}
+      onPointerEnter={() => onPointerEnter(dateStr, isCurrentMonth)}
+      disabled={!isCurrentMonth}
+      className={className}
+    >
+      <span className={dayClass}>{day}</span>
+      {label && (
+        <span className="mt-auto text-[10px] sm:text-xs text-foreground-muted truncate w-full">{label}</span>
+      )}
+      {isDirty && (
+        <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-warning rounded-full" />
+      )}
+    </button>
+  );
+});
 
 function TypeChip({ type, active, icon, onClick }: TypeChipProps) {
   const tokens = TYPE_TOKENS[type];

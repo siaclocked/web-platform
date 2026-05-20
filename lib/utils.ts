@@ -60,10 +60,13 @@ export interface MonthGridCell {
 }
 
 // Builds a 6-row × 7-col month grid (42 cells) for `year`/`month` (month is 0-indexed).
-// Cells outside the target month are tagged `isCurrentMonth: false` for trailing/leading days.
+// Week starts on **Monday** — column 0 = Mon, column 6 = Sun. `dow` is still the raw JS
+// day-of-week (0=Sun..6=Sat), so weekend detection (`dow === 0 || dow === 6`) is unaffected.
+// Cells outside the target month are tagged `isCurrentMonth: false`.
 export function buildMonthGrid(year: number, month: number): MonthGridCell[] {
-  const firstDayOfWeek = new Date(year, month, 1).getDay();
-  const gridStart = new Date(year, month, 1 - firstDayOfWeek);
+  const jsFirstDay = new Date(year, month, 1).getDay(); // 0=Sun..6=Sat
+  const mondayOffset = (jsFirstDay + 6) % 7;            // 0=Mon..6=Sun
+  const gridStart = new Date(year, month, 1 - mondayOffset);
   const cells: MonthGridCell[] = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(gridStart);

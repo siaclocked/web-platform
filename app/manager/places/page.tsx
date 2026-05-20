@@ -5,7 +5,7 @@ import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Toggle } from '@/components/ui';
 
 import { MapPin, Plus, Edit2, Trash2, Users, Settings, ChevronDown, ChevronUp, Search } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 
 interface PlaceSettings {
   min_hours_per_block: number;
@@ -77,15 +77,8 @@ export default function ManagerPlacesPage() {
 
   const fetchPlaces = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/places', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch('/api/manager/places');
+
       if (response.ok) {
         const data = await response.json();
         setPlaces(data.places || []);
@@ -100,18 +93,11 @@ export default function ManagerPlacesPage() {
   const fetchWorkersForPlace = async (placeId: string) => {
     setLoadingWorkers(placeId);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(`/api/manager/places/${placeId}/workers`, {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch(`/api/manager/places/${placeId}/workers`);
+
       if (response.ok) {
         const data = await response.json();
-        setPlaces(prev => prev.map(p => 
+        setPlaces(prev => prev.map(p =>
           p.id === placeId ? { ...p, workers: data.workers || [] } : p
         ));
       }
@@ -145,21 +131,16 @@ export default function ManagerPlacesPage() {
     }
 
     try {
-      // Get auth token
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const url = editingPlace 
+      const url = editingPlace
         ? `/api/manager/places/${editingPlace.id}`
         : '/api/manager/places';
-      
+
       const method = editingPlace ? 'PUT' : 'POST';
-      
-      const response = await fetch(url, {
+
+      const response = await authedFetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify({
           name: formData.name.trim(),
@@ -193,13 +174,7 @@ export default function ManagerPlacesPage() {
 
   const fetchSkillRules = async (placeId: string) => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(`/api/manager/places/${placeId}/skill-configs`, {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
+      const response = await authedFetch(`/api/manager/places/${placeId}/skill-configs`);
 
       if (response.ok) {
         const data = await response.json();
@@ -233,16 +208,13 @@ export default function ManagerPlacesPage() {
     setSaveError(s => ({ ...s, [placeId]: '' }));
     let outcome: 'success' | 'error' = 'error';
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
       const place = places.find(p => p.id === placeId);
       if (!place) return;
 
-      const response = await fetch(`/api/manager/places/${placeId}`, {
+      const response = await authedFetch(`/api/manager/places/${placeId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify({
           name: place.name,
@@ -252,11 +224,10 @@ export default function ManagerPlacesPage() {
       });
 
       if (response.ok) {
-        const rulesResponse = await fetch(`/api/manager/places/${placeId}/skill-configs`, {
+        const rulesResponse = await authedFetch(`/api/manager/places/${placeId}/skill-configs`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || ''}`,
           },
           body: JSON.stringify({
             skill_configs: skillRules.map((r) => ({
@@ -331,15 +302,8 @@ export default function ManagerPlacesPage() {
     }
 
     try {
-      // Get auth token
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(`/api/manager/places/${placeId}`, {
+      const response = await authedFetch(`/api/manager/places/${placeId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
       });
 
       if (response.ok) {

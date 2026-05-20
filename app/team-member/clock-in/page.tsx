@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { authedFetch } from "@/lib/api";
 
 interface ActiveSession {
   id: string;
@@ -116,9 +117,7 @@ export default function WorkerClockInPage() {
 
       // Fetch active session + places, and recent sessions in parallel
       const [activeRes, recentRes] = await Promise.all([
-        fetch("/api/time-tracking", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }),
+        authedFetch("/api/time-tracking"),
         fetch("/api/profile/work-sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -238,15 +237,10 @@ export default function WorkerClockInPage() {
 
     setSavingEdit(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const res = await fetch(`/api/profile/work-sessions/${sessionId}`, {
+      const res = await authedFetch(`/api/profile/work-sessions/${sessionId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ start_time: startIso, end_time: endIso }),
       });

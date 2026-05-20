@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch, NotAuthenticatedError } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input } from '@/components/ui';
 import { Clock, Users, MapPin, ChevronRight, ChevronDown, ChevronUp, DollarSign, ArrowLeft, Search, AlertTriangle, Check } from 'lucide-react';
@@ -111,23 +111,11 @@ export default function ManagerWorkerTrackingPage() {
 
   const fetchData = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push('/login'); return; }
-
       const [trackingRes, ...pendingResponses] = await Promise.all([
-        fetch('/api/manager/worker-tracking', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
-        }),
-        fetch('/api/manager/work-sessions?status=pending_review&limit=50', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
-        }),
-        fetch('/api/manager/work-sessions?status=clocked_out&limit=50', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
-        }),
-        fetch('/api/manager/work-sessions?status=auto_closed&limit=50', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` },
-        }),
+        authedFetch('/api/manager/worker-tracking'),
+        authedFetch('/api/manager/work-sessions?status=pending_review&limit=50'),
+        authedFetch('/api/manager/work-sessions?status=clocked_out&limit=50'),
+        authedFetch('/api/manager/work-sessions?status=auto_closed&limit=50'),
       ]);
 
       if (trackingRes.ok) {
@@ -146,6 +134,7 @@ export default function ManagerWorkerTrackingPage() {
       pending.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
       setPendingSessions(pending);
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) { router.push('/login'); return; }
       console.error('Error fetching tracking data:', error);
     } finally {
       setIsLoading(false);
@@ -155,15 +144,10 @@ export default function ManagerWorkerTrackingPage() {
   const approveSession = async (id: string) => {
     setApprovingId(id);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const res = await fetch(`/api/manager/work-sessions/${id}`, {
+      const res = await authedFetch(`/api/manager/work-sessions/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ action: 'approve' }),
       });
@@ -188,13 +172,7 @@ export default function ManagerWorkerTrackingPage() {
     setSelectedWorker(workerId);
     setExpandedPlace(null);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(`/api/manager/worker-tracking/${workerId}`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-      });
+      const response = await authedFetch(`/api/manager/worker-tracking/${workerId}`);
 
       if (response.ok) {
         const data = await response.json();

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent, Button, Input, Badge } from "@/components/ui";
 import { Briefcase, Plus, Edit2, Trash2, Users, Search } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { authedFetch } from "@/lib/api";
 
 interface PositionWorker {
   id: string;
@@ -42,17 +42,7 @@ export default function ManagerPositionsPage() {
 
   const fetchPositions = async () => {
     try {
-      // Get auth token
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const response = await fetch("/api/manager/positions", {
-        headers: {
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-      });
+      const response = await authedFetch("/api/manager/positions");
 
       if (response.ok) {
         const data = await response.json();
@@ -78,22 +68,16 @@ export default function ManagerPositionsPage() {
     setIsSubmitting(true);
     let outcome: "success" | "error" = "error";
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
       const url = editingPosition
         ? `/api/manager/positions/${editingPosition.id}`
         : "/api/manager/positions";
 
       const method = editingPosition ? "PUT" : "POST";
 
-      const response = await fetch(url, {
+      const response = await authedFetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify(formData),
       });
@@ -138,17 +122,8 @@ export default function ManagerPositionsPage() {
     }
 
     try {
-      // Get auth token
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const response = await fetch(`/api/manager/positions/${positionId}`, {
+      const response = await authedFetch(`/api/manager/positions/${positionId}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
       });
 
       if (response.ok) {

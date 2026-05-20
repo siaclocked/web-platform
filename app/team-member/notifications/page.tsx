@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch, NotAuthenticatedError } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { Bell, CheckCircle, Clock, Users, AlertCircle, Calendar } from 'lucide-react';
@@ -28,25 +28,17 @@ export default function WorkerNotificationsPage() {
 
   const fetchNotifications = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await fetch('/api/notifications', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
+      const response = await authedFetch('/api/notifications');
 
       if (response.ok) {
         const data = await response.json();
         setNotifications(data.notifications || []);
       }
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) {
+        router.push('/login');
+        return;
+      }
       console.error('Error fetching notifications:', error);
     } finally {
       setIsLoading(false);
@@ -55,46 +47,36 @@ export default function WorkerNotificationsPage() {
 
   const markAsRead = async (notificationId: string) => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) return;
-
-      await fetch('/api/notifications', {
+      await authedFetch('/api/notifications', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ notification_id: notificationId }),
       });
 
-      setNotifications(prev => 
+      setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n)
       );
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) return;
       console.error('Error marking notification as read:', error);
     }
   };
 
   const markAllAsRead = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) return;
-
-      await fetch('/api/notifications', {
+      await authedFetch('/api/notifications', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ mark_all_read: true }),
       });
 
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) return;
       console.error('Error marking all notifications as read:', error);
     }
   };

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui";
 import {} from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { authedFetch } from "@/lib/api";
 
 interface ActiveWorker {
   id: string;
@@ -27,16 +27,7 @@ export default function ManagerDashboard() {
 
   const fetchWorkerCount = async () => {
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const response = await fetch("/api/manager/workers", {
-        headers: {
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-      });
+      const response = await authedFetch("/api/manager/workers");
 
       if (response.ok) {
         const data = await response.json();
@@ -49,16 +40,7 @@ export default function ManagerDashboard() {
 
   const fetchPlacesCount = async () => {
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const response = await fetch("/api/manager/places", {
-        headers: {
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-      });
+      const response = await authedFetch("/api/manager/places");
 
       if (response.ok) {
         const data = await response.json();
@@ -71,16 +53,7 @@ export default function ManagerDashboard() {
 
   const fetchActiveSessions = async () => {
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const response = await fetch("/api/manager/active-sessions", {
-        headers: {
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-      });
+      const response = await authedFetch("/api/manager/active-sessions");
 
       if (response.ok) {
         const data = await response.json();

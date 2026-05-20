@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { authedFetch, NotAuthenticatedError } from "@/lib/api";
+import { buildMonthGrid } from "@/lib/utils";
 
 interface Assignment {
   date: string;
@@ -50,23 +51,17 @@ export default function WorkerSchedulePage() {
 
   const fetchSchedules = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.push("/login");
-        return;
-      }
-
-      const response = await fetch("/api/worker/schedule", {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const response = await authedFetch("/api/worker/schedule");
 
       if (response.ok) {
         const data = await response.json();
         setSchedules(data.schedules || []);
       }
     } catch (error) {
+      if (error instanceof NotAuthenticatedError) {
+        router.push("/login");
+        return;
+      }
       console.error("Error fetching schedules:", error);
     } finally {
       setIsLoading(false);
@@ -92,8 +87,6 @@ export default function WorkerSchedulePage() {
   // Calendar helpers
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0=Sun
 
   const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
@@ -130,29 +123,7 @@ export default function WorkerSchedulePage() {
     return count;
   }, [shiftsByDate, year, month]);
 
-  // Build calendar grid with prev/next month filler days (same as availability calendar)
-  const calendarDaysGrid: Array<{ day: number; dateStr: string; isCurrentMonth: boolean }> = [];
-  // Previous month filler
-  const prevMonthLastDay = new Date(year, month, 0).getDate();
-  for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-    const d = prevMonthLastDay - i;
-    const pm = month === 0 ? 12 : month;
-    const py = month === 0 ? year - 1 : year;
-    calendarDaysGrid.push({ day: d, dateStr: `${py}-${String(pm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    calendarDaysGrid.push({ day: d, dateStr, isCurrentMonth: true });
-  }
-  // Next month filler
-  const remainingCells = 7 - (calendarDaysGrid.length % 7);
-  if (remainingCells < 7) {
-    for (let d = 1; d <= remainingCells; d++) {
-      const nm = month + 2 > 12 ? 1 : month + 2;
-      const ny = month + 2 > 12 ? year + 1 : year;
-      calendarDaysGrid.push({ day: d, dateStr: `${ny}-${String(nm).padStart(2, '0')}-${String(d).padStart(2, '0')}`, isCurrentMonth: false });
-    }
-  }
+  const calendarDaysGrid = buildMonthGrid(year, month);
 
   const getCellStyle = (dateStr: string) => {
     const shifts = shiftsByDate[dateStr];
@@ -210,7 +181,7 @@ export default function WorkerSchedulePage() {
 
             {/* Day headers */}
             <div className="grid grid-cols-7 mb-1">
-              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+              {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => (
                 <div key={d} className="text-center text-xs font-semibold text-foreground-muted py-2">{d}</div>
               ))}
             </div>

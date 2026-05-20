@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch, NotAuthenticatedError } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Input, Toggle } from '@/components/ui';
 import { Briefcase, MapPin, Star, Calendar } from 'lucide-react';
@@ -48,15 +48,8 @@ export default function AddWorkerPage() {
 
   const fetchPositions = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/positions', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch('/api/manager/positions');
+
       if (response.ok) {
         const data = await response.json();
         setPositions(data.positions || []);
@@ -71,15 +64,8 @@ export default function AddWorkerPage() {
 
   const fetchPlaces = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/places', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch('/api/manager/places');
+
       if (response.ok) {
         const data = await response.json();
         setPlaces(data.places || []);
@@ -122,16 +108,10 @@ export default function AddWorkerPage() {
     setIsLoading(true);
 
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) throw new Error('Not authenticated');
-
-      const response = await fetch('/api/manager/workers/create', {
+      const response = await authedFetch('/api/manager/workers/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           email: formData.email.trim(),
@@ -159,7 +139,11 @@ export default function AddWorkerPage() {
       setSuccess(true);
     } catch (err) {
       console.error('Error creating worker:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create worker account');
+      if (err instanceof NotAuthenticatedError) {
+        setError('Not authenticated');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to create worker account');
+      }
     } finally {
       setIsLoading(false);
     }

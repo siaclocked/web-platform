@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge } from '@/components/ui';
 import { MapPin, Users, Mail, Phone, Briefcase } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 
 interface Place {
   id: string;
@@ -65,17 +65,10 @@ export default function CompanyPlaceDetailPage({ params }: { params: Promise<{ i
 
   const fetchPlaceDetails = async () => {
     if (!resolvedParams) return;
-    
+
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(`/api/company/places/${resolvedParams.id}`, {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch(`/api/company/places/${resolvedParams.id}`);
+
       if (response.ok) {
         const data = await response.json();
         setPlace(data.place);

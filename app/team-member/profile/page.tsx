@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Avatar, Badge, Button, Input } from '@/components/ui';
 import { User, Mail, Phone, Clock, Calendar, MapPin, Briefcase, Edit2, Save, X } from 'lucide-react';
@@ -281,14 +282,10 @@ export default function WorkerProfilePage() {
                         setIsSaving(true);
                         setEditError('');
                         try {
-                          const supabase = createClient();
-                          const { data: { session } } = await supabase.auth.getSession();
-                          if (!session) return;
-                          const response = await fetch('/api/worker/profile', {
+                          const response = await authedFetch('/api/worker/profile', {
                             method: 'PUT',
                             headers: {
                               'Content-Type': 'application/json',
-                              'Authorization': `Bearer ${session.access_token}`,
                             },
                             body: JSON.stringify(editForm),
                           });

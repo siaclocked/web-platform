@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authedFetch } from '@/lib/api';
 import { PageContainer } from '@/components/layout';
 import { Card, CardContent, Button, Badge, Input, Toggle } from '@/components/ui';
 import { Users, Plus, Trash2, Search, ChevronRight, Filter, Palmtree, CalendarDays } from 'lucide-react';
@@ -110,18 +110,13 @@ export default function ManagerWorkersPage() {
 
   const fetchWorkers = async () => {
     try {
-      // Get auth token
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/workers', {
+      const response = await authedFetch('/api/manager/workers', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
       });
-      
+
       if (response.ok) {
         const { workers: workersData } = await response.json();
         setWorkers(workersData || []);
@@ -140,21 +135,16 @@ export default function ManagerWorkersPage() {
 
   const handleRemoveWorker = async (workerId: string) => {
     if (!confirm('Are you sure you want to remove this worker?')) return;
-    
+
     try {
-      // Get auth token
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/workers/remove', {
+      const response = await authedFetch('/api/manager/workers/remove', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify({ workerId }),
       });
-      
+
       if (response.ok) {
         fetchWorkers(); // Refresh the list
       }
@@ -165,15 +155,8 @@ export default function ManagerWorkersPage() {
 
   const fetchPositions = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/positions', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch('/api/manager/positions');
+
       if (response.ok) {
         const data = await response.json();
         setPositions(data.positions || []);
@@ -185,15 +168,8 @@ export default function ManagerWorkersPage() {
 
   const fetchPlaces = async () => {
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/manager/places', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-        },
-      });
-      
+      const response = await authedFetch('/api/manager/places');
+
       if (response.ok) {
         const data = await response.json();
         setPlaces(data.places || []);
@@ -256,9 +232,6 @@ export default function ManagerWorkersPage() {
     setSuccess('');
 
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
       const updateData = {
         workerId: editingWorker.id,
         positionIds: editPositions,
@@ -272,12 +245,11 @@ export default function ManagerWorkersPage() {
         can_open: editForm.can_open,
         can_close: editForm.can_close,
       };
-      
-      const response = await fetch('/api/manager/workers/update', {
+
+      const response = await authedFetch('/api/manager/workers/update', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify(updateData),
       });
@@ -303,11 +275,7 @@ export default function ManagerWorkersPage() {
   const fetchPaidLeave = async (workerId: string) => {
     setIsLoadingLeave(true);
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/manager/paid-leave?worker_id=${workerId}`, {
-        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` },
-      });
+      const res = await authedFetch(`/api/manager/paid-leave?worker_id=${workerId}`);
       if (res.ok) {
         const data = await res.json();
         setPaidLeaveRecords(data.paid_leave || []);
@@ -327,13 +295,10 @@ export default function ManagerWorkersPage() {
     setIsSubmittingLeave(true);
     setError('');
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/manager/paid-leave', {
+      const res = await authedFetch('/api/manager/paid-leave', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify({
           worker_id: workerId,
@@ -361,11 +326,8 @@ export default function ManagerWorkersPage() {
   const handleDeletePaidLeave = async (leaveId: string, workerId: string) => {
     if (!confirm('Remove this paid leave? The vacation days will be cleared.')) return;
     try {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/manager/paid-leave?id=${leaveId}`, {
+      const res = await authedFetch(`/api/manager/paid-leave?id=${leaveId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${session?.access_token || ''}` },
       });
       if (res.ok) {
         setSuccess('Paid leave removed');
